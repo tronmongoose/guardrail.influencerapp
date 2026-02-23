@@ -27,6 +27,14 @@ export async function GET(
   if (!program) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (program.creatorId !== user.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+  const latestJob = await prisma.generationJob.findFirst({
+    where: { programId: id },
+    orderBy: { createdAt: "desc" },
+    select: { status: true, stage: true, error: true, progress: true, createdAt: true, completedAt: true },
+  });
+
+  const weekCount = await prisma.week.count({ where: { programId: id } });
+
   return NextResponse.json({
     id: program.id,
     slug: program.slug,
@@ -34,6 +42,8 @@ export async function GET(
     published: program.published,
     status: program.status,
     salesUrl: `/p/${program.slug}`,
+    weekCount,
+    latestGeneration: latestJob,
     createdAt: program.createdAt,
     updatedAt: program.updatedAt,
   });

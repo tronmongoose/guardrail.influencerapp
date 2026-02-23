@@ -292,50 +292,52 @@ async function processGenerationJob(jobId: string, programId: string) {
       },
     });
 
-    // Delete existing structure and create new
-    await prisma.week.deleteMany({ where: { programId } });
-
+    // Delete existing structure and create new (atomic — if anything fails, old weeks are preserved)
     let sessionCount = 0;
     let actionCount = 0;
 
-    for (const week of validated.data.weeks) {
-      const createdWeek = await prisma.week.create({
-        data: {
-          programId,
-          title: week.title,
-          summary: week.summary,
-          weekNumber: week.weekNumber,
-        },
-      });
+    await prisma.$transaction(async (tx) => {
+      await tx.week.deleteMany({ where: { programId } });
 
-      for (const session of week.sessions) {
-        sessionCount++;
-        const createdSession = await prisma.session.create({
+      for (const week of validated.data.weeks) {
+        const createdWeek = await tx.week.create({
           data: {
-            weekId: createdWeek.id,
-            title: session.title,
-            summary: session.summary,
-            keyTakeaways: session.keyTakeaways ?? [],
-            orderIndex: session.orderIndex,
+            programId,
+            title: week.title,
+            summary: week.summary,
+            weekNumber: week.weekNumber,
           },
         });
 
-        for (const action of session.actions) {
-          actionCount++;
-          await prisma.action.create({
+        for (const session of week.sessions) {
+          sessionCount++;
+          const createdSession = await tx.session.create({
             data: {
-              sessionId: createdSession.id,
-              title: action.title,
-              type: action.type.toUpperCase() as "WATCH" | "READ" | "DO" | "REFLECT",
-              instructions: action.instructions,
-              reflectionPrompt: action.reflectionPrompt,
-              orderIndex: action.orderIndex,
-              youtubeVideoId: action.youtubeVideoId,
+              weekId: createdWeek.id,
+              title: session.title,
+              summary: session.summary,
+              keyTakeaways: session.keyTakeaways ?? [],
+              orderIndex: session.orderIndex,
             },
           });
+
+          for (const action of session.actions) {
+            actionCount++;
+            await tx.action.create({
+              data: {
+                sessionId: createdSession.id,
+                title: action.title,
+                type: action.type.toUpperCase() as "WATCH" | "READ" | "DO" | "REFLECT",
+                instructions: action.instructions,
+                reflectionPrompt: action.reflectionPrompt,
+                orderIndex: action.orderIndex,
+                youtubeVideoId: action.youtubeVideoId,
+              },
+            });
+          }
         }
       }
-    }
+    });
 
     aiLogger.generationSuccess(programId, timer.elapsed(), {
       weekCount: validated.data.weeks.length,

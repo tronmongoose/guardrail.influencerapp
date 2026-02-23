@@ -121,6 +121,7 @@ export default function ProgramEditPage() {
   const [asyncGenerating, setAsyncGenerating] = useState(false);
   const [asyncStage, setAsyncStage] = useState<string | null>(null);
   const [asyncProgress, setAsyncProgress] = useState(0);
+  const [lastGenError, setLastGenError] = useState<string | null>(null);
 
   const load = useCallback(async (retryCount = 0) => {
     const maxRetries = 3;
@@ -166,6 +167,8 @@ export default function ProgramEditPage() {
           setAsyncGenerating(true);
           setAsyncStage(data.stage);
           setAsyncProgress(data.progress || 0);
+        } else if (data.status === "FAILED" && data.error) {
+          setLastGenError(data.error);
         } else if (data.status === "COMPLETED" && data.completedAt) {
           // Generation finished recently - reload program to pick up persisted weeks.
           // This handles the race where the user is redirected from /new and generation
@@ -210,6 +213,7 @@ export default function ProgramEditPage() {
 
   async function generateStructure() {
     setGenerating(true);
+    setLastGenError(null);
     try {
       // Step 1: auto-structure (embeddings + clustering)
       const s1 = await fetch(`/api/programs/${id}/auto-structure`, { method: "POST" });
@@ -853,12 +857,21 @@ export default function ProgramEditPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
-            <h2 className="text-2xl font-bold text-white mb-3">Ready to generate!</h2>
+            <h2 className="text-2xl font-bold text-white mb-3">
+              {lastGenError ? "Generation failed" : "Ready to generate!"}
+            </h2>
+            {lastGenError && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-4 text-left">
+                <p className="text-xs text-red-300 line-clamp-3">{lastGenError}</p>
+              </div>
+            )}
             <p className="text-gray-400 mb-2">
               You have {program.videos.length} video{program.videos.length !== 1 ? "s" : ""} ready.
             </p>
             <p className="text-gray-500 text-sm mb-6">
-              Let AI analyze your content and create a structured program.
+              {lastGenError
+                ? "Try generating again — the previous attempt will be retried."
+                : "Let AI analyze your content and create a structured program."}
             </p>
             <button
               onClick={generateStructure}
