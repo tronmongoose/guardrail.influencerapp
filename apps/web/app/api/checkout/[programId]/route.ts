@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getOrCreateUser, getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
 import { createMagicLink, getMagicLinkUrl } from "@/lib/magic-link";
@@ -20,8 +20,9 @@ export async function POST(
 ) {
   const { programId } = await params;
 
-  // Get current user (from Clerk or magic link session)
-  let user = await getCurrentUser();
+  // Check Clerk auth first (creators), then fall back to magic link session
+  const clerkUser = await getOrCreateUser();
+  let user = clerkUser ?? await getCurrentUser();
 
   // If no session, require email in request body
   let body: CheckoutRequestBody = {};
@@ -87,17 +88,12 @@ export async function POST(
   });
 
   if (existing?.status === "ACTIVE") {
-    // Already enrolled - redirect directly (no email needed)
-    const { token } = await createMagicLink({
-      email: user.email,
-      programId,
-    });
-    const magicLinkUrl = getMagicLinkUrl(token, programId);
-
-    return NextResponse.json({
-      enrolled: true,
-      redirectUrl: magicLinkUrl,
-    });
+    // Already enrolled — Clerk users go straight to learn page, others get magic link
+    if (clerkUser) {
+      return NextResponse.json({ enrolled: true, redirectUrl: `/learn/${programId}` });
+    }
+    const { token } = await createMagicLink({ email: user.email, programId });
+    return NextResponse.json({ enrolled: true, redirectUrl: getMagicLinkUrl(token, programId) });
   }
 
   // Free program - grant access and redirect directly
@@ -108,22 +104,18 @@ export async function POST(
       update: { status: "ACTIVE" },
     });
 
-    const { token } = await createMagicLink({
-      email: user.email,
-      programId,
-    });
-    const magicLinkUrl = getMagicLinkUrl(token, programId);
-
     logger.info({
       operation: "checkout.free_enrollment",
       userId: user.id,
       programId,
     });
 
-    return NextResponse.json({
-      enrolled: true,
-      redirectUrl: magicLinkUrl,
-    });
+    // Clerk users go straight to learn page, others get magic link
+    if (clerkUser) {
+      return NextResponse.json({ enrolled: true, redirectUrl: `/learn/${programId}` });
+    }
+    const { token } = await createMagicLink({ email: user.email, programId });
+    return NextResponse.json({ enrolled: true, redirectUrl: getMagicLinkUrl(token, programId) });
   }
 
   // Paid program - create Stripe checkout session

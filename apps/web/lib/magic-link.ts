@@ -115,10 +115,12 @@ export async function validateMagicLink(token: string): Promise<{
 }
 
 /**
- * Generates the full magic link URL.
+ * Generates a magic link URL.
+ * Relative by default (for browser redirects). Pass absolute=true for email links.
  */
-export function getMagicLinkUrl(token: string, programId?: string): string {
+export function getMagicLinkUrl(token: string, programId?: string, absolute = false): string {
+  const path = `/auth/magic?token=${token}${programId ? `&programId=${programId}` : ""}`;
+  if (!absolute) return path;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-  const baseUrl = `${appUrl}/auth/magic?token=${token}`;
-  return programId ? `${baseUrl}&programId=${programId}` : baseUrl;
+  return `${appUrl}${path}`;
 }

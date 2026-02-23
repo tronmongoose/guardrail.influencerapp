@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
           email: user.email,
           programId,
         });
-        const magicLinkUrl = getMagicLinkUrl(token, programId);
+        const magicLinkUrl = getMagicLinkUrl(token, programId, true);
 
         await sendMagicLinkEmail(user.email, magicLinkUrl, program.title);
 
