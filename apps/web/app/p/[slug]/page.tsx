@@ -17,7 +17,14 @@ export default async function SalesPage({ params }: { params: Promise<{ slug: st
     },
   });
 
-  if (!program || !program.published) notFound();
+  if (!program) {
+    console.error(`[sales-page] No program found for slug: "${slug}"`);
+    notFound();
+  }
+  if (!program.published) {
+    console.error(`[sales-page] Program found but not published — slug: "${slug}", id: ${program.id}, published: ${program.published}`);
+    notFound();
+  }
 
   const tokens = getSkinTokens(program.skinId);
   const skinCSSVars = getTokenCSSVars(tokens);
