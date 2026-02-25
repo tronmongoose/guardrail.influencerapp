@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SkinButton } from "@/components/skins/SkinButton";
 
 interface EnrollButtonProps {
   programId: string;
@@ -56,7 +57,15 @@ export function EnrollButton({ programId, isFree, priceDisplay }: EnrollButtonPr
     return (
       <div className="space-y-3">
         <div>
-          <label htmlFor="email" className="block text-sm font-medium mb-1">
+          <label
+            htmlFor="email"
+            className="block mb-1"
+            style={{
+              fontSize: "var(--token-text-label-sm-size)",
+              fontWeight: "var(--token-text-label-sm-weight)",
+              color: "var(--token-color-text-primary)",
+            }}
+          >
             Email address
           </label>
           <input
@@ -65,18 +74,28 @@ export function EnrollButton({ programId, isFree, priceDisplay }: EnrollButtonPr
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
-            className="w-full px-4 py-2 rounded-lg focus:outline-none"
+            className="w-full px-4 py-2 focus:outline-none"
             style={{
-              backgroundColor: "var(--skin-bg-secondary)",
-              border: "1px solid var(--skin-border)",
-              color: "var(--skin-text)",
+              borderRadius: "var(--token-radius-md)",
+              backgroundColor: "var(--token-color-bg-elevated)",
+              border: "1px solid var(--token-color-border-subtle)",
+              color: "var(--token-color-text-primary)",
+              fontSize: "var(--token-text-body-sm-size)",
             }}
             required
           />
         </div>
         <div>
-          <label htmlFor="name" className="block text-sm font-medium mb-1">
-            Name <span style={{ color: "var(--skin-text-muted)" }}>(optional)</span>
+          <label
+            htmlFor="name"
+            className="block mb-1"
+            style={{
+              fontSize: "var(--token-text-label-sm-size)",
+              fontWeight: "var(--token-text-label-sm-weight)",
+              color: "var(--token-color-text-primary)",
+            }}
+          >
+            Name <span style={{ color: "var(--token-color-text-secondary)" }}>(optional)</span>
           </label>
           <input
             type="text"
@@ -84,30 +103,42 @@ export function EnrollButton({ programId, isFree, priceDisplay }: EnrollButtonPr
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Your name"
-            className="w-full px-4 py-2 rounded-lg focus:outline-none"
+            className="w-full px-4 py-2 focus:outline-none"
             style={{
-              backgroundColor: "var(--skin-bg-secondary)",
-              border: "1px solid var(--skin-border)",
-              color: "var(--skin-text)",
+              borderRadius: "var(--token-radius-md)",
+              backgroundColor: "var(--token-color-bg-elevated)",
+              border: "1px solid var(--token-color-border-subtle)",
+              color: "var(--token-color-text-primary)",
+              fontSize: "var(--token-text-body-sm-size)",
             }}
           />
         </div>
-        <button
+        <SkinButton
+          variant="primary"
           onClick={handleEnroll}
           disabled={loading || !email}
-          className="w-full py-3 rounded-xl font-medium transition disabled:opacity-50"
-          style={{ backgroundColor: "var(--skin-accent)", color: "var(--skin-bg)" }}
+          className="w-full py-3"
         >
           {loading ? "Processing..." : isFree ? "Get free access" : "Continue to payment"}
-        </button>
+        </SkinButton>
         <button
           onClick={() => setShowEmailForm(false)}
-          className="w-full py-2 text-sm transition"
-          style={{ color: "var(--skin-text-muted)" }}
+          className="w-full py-2 transition"
+          style={{
+            color: "var(--token-color-text-secondary)",
+            fontSize: "var(--token-text-body-sm-size)",
+          }}
         >
           Cancel
         </button>
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        {error && (
+          <p
+            className="text-sm"
+            style={{ color: "var(--token-color-semantic-error)" }}
+          >
+            {error}
+          </p>
+        )}
       </div>
     );
   }
@@ -115,15 +146,22 @@ export function EnrollButton({ programId, isFree, priceDisplay }: EnrollButtonPr
   // Initial button state
   return (
     <div className="space-y-2">
-      <button
+      <SkinButton
+        variant="primary"
         onClick={handleEnroll}
         disabled={loading}
-        className="w-full py-3 rounded-xl font-medium transition disabled:opacity-50"
-        style={{ backgroundColor: "var(--skin-accent)", color: "var(--skin-bg)" }}
+        className="w-full py-3"
       >
         {loading ? "Processing..." : isFree ? "Enroll free" : `Buy for ${priceDisplay}`}
-      </button>
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      </SkinButton>
+      {error && (
+        <p
+          className="text-sm"
+          style={{ color: "var(--token-color-semantic-error)" }}
+        >
+          {error}
+        </p>
+      )}
     </div>
   );
 }

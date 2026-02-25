@@ -357,8 +357,8 @@ export function LearnerTimeline({
                   isUnlocked={isUnlocked}
                 />
                 <h2
-                  className={`text-sm font-semibold ${!isUnlocked ? "text-gray-600" : ""}`}
-                  style={isUnlocked ? { color: "var(--token-color-text-primary)" } : undefined}
+                  className="text-sm font-semibold"
+                  style={{ color: isUnlocked ? "var(--token-color-text-primary)" : "var(--token-color-text-secondary)", opacity: isUnlocked ? 1 : 0.5 }}
                 >
                   {week.title}
                 </h2>
@@ -406,13 +406,14 @@ export function LearnerTimeline({
               {/* Locked state */}
               {!isUnlocked && (
                 <div
-                  className="py-6 text-center rounded-xl mb-4"
+                  className="py-6 text-center mb-4"
                   style={{
+                    borderRadius: "var(--token-radius-lg)",
                     backgroundColor: "color-mix(in srgb, var(--token-color-bg-default), transparent 50%)",
                     border: "1px solid var(--token-color-border-subtle)",
                   }}
                 >
-                  <svg className="w-8 h-8 text-gray-600 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-8 h-8 mx-auto mb-2" style={{ color: "var(--token-color-text-secondary)", opacity: 0.5 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                   </svg>
                   <p
@@ -452,7 +453,7 @@ export function LearnerTimeline({
                         >
                           {session.title}
                         </h3>
-                        <span className="text-[10px] text-gray-600">{sessionDone}/{sessionActions.length}</span>
+                        <span className="text-[10px]" style={{ color: "var(--token-color-text-secondary)" }}>{sessionDone}/{sessionActions.length}</span>
                       </div>
                     )}
 
@@ -490,7 +491,7 @@ export function LearnerTimeline({
                           <div
                             key={action.id}
                             ref={isNext ? nextActionRef : undefined}
-                            className={`rounded-xl border transition-all duration-300 overflow-hidden ${
+                            className={`border transition-all duration-300 overflow-hidden ${
                               isNext && !isExpanded
                                 ? "pulse-ring-border"
                                 : isCompleting
@@ -500,6 +501,7 @@ export function LearnerTimeline({
                                 : ""
                             }`}
                             style={{
+                              borderRadius: "var(--token-radius-lg)",
                               backgroundColor: done
                                 ? "var(--token-color-bg-default)"
                                 : "var(--token-color-bg-elevated)",
@@ -556,8 +558,9 @@ export function LearnerTimeline({
                               {/* Up Next badge */}
                               {isNext && !isExpanded && (
                                 <span
-                                  className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full flex-shrink-0"
+                                  className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 flex-shrink-0"
                                   style={{
+                                    borderRadius: "var(--token-comp-chip-radius)",
                                     backgroundColor: "color-mix(in srgb, var(--token-color-accent), transparent 85%)",
                                     color: "var(--token-color-accent)",
                                     border: "1px solid color-mix(in srgb, var(--token-color-accent), transparent 70%)",
@@ -624,8 +627,9 @@ export function LearnerTimeline({
                                       }
                                       placeholder="Write your reflection..."
                                       rows={3}
-                                      className="w-full px-3 py-2 rounded-lg text-sm placeholder:text-gray-500 focus:outline-none focus:border-current focus:ring-1 focus:ring-current resize-none"
+                                      className="w-full px-3 py-2 text-sm focus:outline-none focus:border-current focus:ring-1 focus:ring-current resize-none"
                                       style={{
+                                        borderRadius: "var(--token-radius-md)",
                                         backgroundColor: "var(--token-color-bg-default)",
                                         border: "1px solid var(--token-color-border-subtle)",
                                         color: "var(--token-color-text-primary)",
@@ -638,8 +642,9 @@ export function LearnerTimeline({
                                 <button
                                   onClick={() => completeAction(action.id, week.weekNumber, reflections[action.id])}
                                   disabled={isSaving}
-                                  className="w-full py-2.5 rounded-lg text-sm font-semibold transition border hover:opacity-80 disabled:opacity-50"
+                                  className="w-full py-2.5 text-sm font-semibold transition border hover:opacity-80 disabled:opacity-50"
                                   style={{
+                                    borderRadius: "var(--token-comp-btn-primary-radius)",
                                     ...getActionTypeBgStyle(action.type),
                                     ...getActionTypeStyle(action.type),
                                   }}
@@ -662,8 +667,9 @@ export function LearnerTimeline({
         {/* Program completion card */}
         {isProgramComplete && (
           <div
-            className="rounded-xl p-6 text-center animate-slide-up"
+            className="p-6 text-center animate-slide-up"
             style={{
+              borderRadius: "var(--token-radius-lg)",
               backgroundColor: "var(--token-color-bg-elevated)",
               border: "1px solid color-mix(in srgb, var(--token-color-accent), transparent 60%)",
             }}
@@ -705,11 +711,12 @@ export function LearnerTimeline({
       {celebration && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
           <div
-            className="relative rounded-2xl p-8 max-w-sm w-full text-center animate-slide-up overflow-hidden"
+            className="relative p-8 max-w-sm w-full text-center animate-slide-up overflow-hidden"
             style={{
+              borderRadius: "var(--token-radius-lg)",
               backgroundColor: "var(--token-color-bg-elevated)",
               border: "1px solid color-mix(in srgb, var(--token-color-accent), transparent 60%)",
-              boxShadow: "0 25px 50px -12px color-mix(in srgb, var(--token-color-accent), transparent 90%)",
+              boxShadow: "var(--token-shadow-sm)",
             }}
           >
             <div className="confetti-burst" aria-hidden="true">
@@ -750,8 +757,9 @@ export function LearnerTimeline({
                     setTimeout(() => scrollToNextAction(), 200);
                   }
                 }}
-                className="px-5 py-2.5 rounded-lg text-sm font-medium transition"
+                className="px-5 py-2.5 text-sm font-medium transition"
                 style={{
+                  borderRadius: "var(--token-comp-btn-secondary-radius)",
                   backgroundColor: "color-mix(in srgb, var(--token-color-accent), transparent 90%)",
                   border: "1px solid color-mix(in srgb, var(--token-color-accent), transparent 60%)",
                   color: "var(--token-color-accent)",
@@ -776,8 +784,9 @@ export function LearnerTimeline({
           >
             <button
               onClick={scrollToNextAction}
-              className="w-full py-2.5 rounded-lg text-sm font-medium transition"
+              className="w-full py-2.5 text-sm font-medium transition"
               style={{
+                borderRadius: "var(--token-comp-btn-secondary-radius)",
                 backgroundColor: "color-mix(in srgb, var(--token-color-accent), transparent 90%)",
                 border: "1px solid color-mix(in srgb, var(--token-color-accent), transparent 70%)",
                 color: "var(--token-color-accent)",
@@ -806,8 +815,9 @@ function WeekBadge({ weekNumber, isWeekComplete, isUnlocked }: WeekBadgeProps): 
   if (isWeekComplete) {
     return (
       <span
-        className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full"
+        className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5"
         style={{
+          borderRadius: "var(--token-comp-chip-radius)",
           backgroundColor: "color-mix(in srgb, var(--token-color-accent), transparent 90%)",
           color: "var(--token-color-accent)",
           border: "1px solid color-mix(in srgb, var(--token-color-accent), transparent 70%)",
@@ -821,8 +831,9 @@ function WeekBadge({ weekNumber, isWeekComplete, isUnlocked }: WeekBadgeProps): 
   if (isUnlocked) {
     return (
       <span
-        className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full"
+        className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5"
         style={{
+          borderRadius: "var(--token-comp-chip-radius)",
           backgroundColor: "var(--token-color-bg-elevated)",
           color: "var(--token-color-text-secondary)",
           border: "1px solid var(--token-color-border-subtle)",
@@ -835,8 +846,8 @@ function WeekBadge({ weekNumber, isWeekComplete, isUnlocked }: WeekBadgeProps): 
 
   return (
     <span
-      className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full text-gray-600"
-      style={{ backgroundColor: "var(--token-color-bg-default)" }}
+      className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5"
+      style={{ borderRadius: "var(--token-comp-chip-radius)", backgroundColor: "var(--token-color-bg-default)", color: "var(--token-color-text-secondary)", opacity: 0.5 }}
     >
       W{weekNumber}
     </span>
@@ -895,7 +906,8 @@ function CompletionCircle({ done, isSaving, onClick }: CompletionCircleProps): R
       type="button"
       aria-label="Mark complete"
       onClick={onClick}
-      className={`${baseClasses} border-gray-600 hover:border-[var(--token-color-accent)]`}
+      className={baseClasses}
+      style={{ borderColor: "var(--token-color-border-subtle)" }}
     />
   );
 }

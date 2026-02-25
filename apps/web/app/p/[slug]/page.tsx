@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { EnrollButton } from "./enroll-button";
 import { getSkinTokens } from "@/lib/skin-bundles/registry";
 import { getTokenCSSVars } from "@/lib/skin-bridge";
+import { Heading, Body, Label } from "@/components/skins/Typography";
 
 export default async function SalesPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -79,19 +80,22 @@ export default async function SalesPage({ params }: { params: Promise<{ slug: st
       data-skin={program.skinId}
       style={{
         ...(skinCSSVars as React.CSSProperties),
-        backgroundColor: "var(--skin-bg)",
-        color: "var(--skin-text)",
+        backgroundColor: "var(--token-color-bg-default)",
+        color: "var(--token-color-text-primary)",
       }}
     >
       {/* Hero */}
       <header className="px-6 pt-16 pb-12 text-center max-w-2xl mx-auto">
         {/* Duration badge */}
         <span
-          className="inline-block text-xs font-medium px-3 py-1 rounded-full mb-6"
+          className="inline-block px-3 py-1 mb-6"
           style={{
-            backgroundColor: "color-mix(in srgb, var(--skin-accent) 15%, transparent)",
-            color: "var(--skin-accent)",
-            border: "1px solid color-mix(in srgb, var(--skin-accent) 30%, transparent)",
+            fontSize: "var(--token-text-label-sm-size)",
+            fontWeight: "var(--token-text-label-sm-weight)",
+            borderRadius: "var(--token-comp-chip-radius)",
+            backgroundColor: "var(--token-comp-chip-bg)",
+            color: "var(--token-comp-chip-text)",
+            border: "1px solid color-mix(in srgb, var(--token-color-accent) 30%, transparent)",
           }}
         >
           {program.durationWeeks}-week program
@@ -100,28 +104,34 @@ export default async function SalesPage({ params }: { params: Promise<{ slug: st
         {/* Transformation headline */}
         {program.targetTransformation ? (
           <>
-            <h1 className="text-3xl sm:text-4xl font-bold leading-tight mb-4">
+            <Heading size="xl" className="mb-4 sm:text-4xl leading-tight">
               {program.targetTransformation}
-            </h1>
-            <p className="text-lg" style={{ color: "var(--skin-text-muted)" }}>
+            </Heading>
+            <Body size="md" style={{ color: "var(--token-color-text-secondary)" }}>
               {program.title}
-            </p>
+            </Body>
           </>
         ) : (
-          <h1 className="text-3xl sm:text-4xl font-bold leading-tight mb-4">
+          <Heading size="xl" className="mb-4 sm:text-4xl leading-tight">
             {program.title}
-          </h1>
+          </Heading>
         )}
 
         {/* Creator */}
         {program.creator.name && (
-          <p className="mt-4 text-sm" style={{ color: "var(--skin-text-muted)" }}>
-            by <span style={{ color: "var(--skin-text)" }}>{program.creator.name}</span>
-          </p>
+          <Body size="sm" className="mt-4" style={{ color: "var(--token-color-text-secondary)" }}>
+            by <span style={{ color: "var(--token-color-text-primary)" }}>{program.creator.name}</span>
+          </Body>
         )}
 
         {/* Quick stats */}
-        <div className="flex items-center justify-center gap-6 mt-8 text-sm" style={{ color: "var(--skin-text-muted)" }}>
+        <div
+          className="flex items-center justify-center gap-6 mt-8"
+          style={{
+            fontSize: "var(--token-text-body-sm-size)",
+            color: "var(--token-color-text-secondary)",
+          }}
+        >
           <span className="flex items-center gap-1.5">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -147,67 +157,81 @@ export default async function SalesPage({ params }: { params: Promise<{ slug: st
         {/* Description */}
         {program.description && (
           <section className="mb-12">
-            <h2 className="text-lg font-semibold mb-3">About this program</h2>
-            <p className="leading-relaxed" style={{ color: "var(--skin-text-muted)" }}>
+            <Heading size="lg" className="mb-3">About this program</Heading>
+            <Body className="leading-relaxed" style={{ color: "var(--token-color-text-secondary)" }}>
               {program.description}
-            </p>
+            </Body>
           </section>
         )}
 
         {/* Outcome statement */}
         {program.outcomeStatement && (
           <section
-            className="mb-12 p-6 rounded-xl text-center"
+            className="mb-12 p-6 text-center"
             style={{
-              backgroundColor: "var(--skin-bg-secondary)",
-              border: "1px solid var(--skin-border)",
+              borderRadius: "var(--token-radius-lg)",
+              backgroundColor: "var(--token-color-bg-elevated)",
+              border: "1px solid var(--token-color-border-subtle)",
+              boxShadow: "var(--token-shadow-sm)",
             }}
           >
-            <p className="text-sm font-medium mb-2" style={{ color: "var(--skin-accent)" }}>
+            <Label className="mb-2 block" style={{ color: "var(--token-color-accent)" }}>
               The Transformation
-            </p>
-            <p className="text-lg font-medium leading-relaxed">
+            </Label>
+            <Body
+              style={{
+                fontSize: "var(--token-text-heading-lg-size)",
+                fontWeight: "var(--token-text-heading-md-weight)",
+                color: "var(--token-color-text-primary)",
+              }}
+            >
               {program.outcomeStatement}
-            </p>
+            </Body>
           </section>
         )}
 
         {/* Curriculum */}
         <section className="mb-12">
-          <h2 className="text-lg font-semibold mb-4">What you&apos;ll learn</h2>
+          <Heading size="lg" className="mb-4">What you&apos;ll learn</Heading>
           <div className="space-y-3">
             {program.weeks.map((week) => (
               <details
                 key={week.id}
-                className="group rounded-xl overflow-hidden"
+                className="group overflow-hidden"
                 style={{
-                  backgroundColor: "var(--skin-bg-secondary)",
-                  border: "1px solid var(--skin-border)",
+                  borderRadius: "var(--token-radius-lg)",
+                  backgroundColor: "var(--token-color-bg-elevated)",
+                  border: "1px solid var(--token-color-border-subtle)",
                 }}
               >
                 <summary className="flex items-center justify-between p-4 cursor-pointer list-none">
                   <div className="flex items-center gap-3">
                     <span
-                      className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
+                      className="w-8 h-8 flex items-center justify-center flex-shrink-0"
                       style={{
-                        backgroundColor: "color-mix(in srgb, var(--skin-accent) 15%, transparent)",
-                        color: "var(--skin-accent)",
+                        borderRadius: "var(--token-radius-md)",
+                        backgroundColor: "var(--token-comp-badge-info-bg)",
+                        color: "var(--token-comp-badge-info-text)",
+                        fontSize: "var(--token-text-label-sm-size)",
+                        fontWeight: "var(--token-text-heading-xl-weight)",
                       }}
                     >
                       {week.weekNumber}
                     </span>
                     <div>
-                      <p className="font-medium text-sm">{week.title}</p>
-                      <p className="text-xs mt-0.5" style={{ color: "var(--skin-text-muted)" }}>
+                      <Body size="sm" as="p" style={{ fontWeight: "500", color: "var(--token-color-text-primary)" }}>
+                        {week.title}
+                      </Body>
+                      <Label as="p" className="mt-0.5">
                         {week.sessions.length} session{week.sessions.length !== 1 ? "s" : ""}
                         {" · "}
                         {week.sessions.reduce((s, sess) => s + sess.actions.length, 0)} actions
-                      </p>
+                      </Label>
                     </div>
                   </div>
                   <svg
                     className="w-4 h-4 transition-transform group-open:rotate-180"
-                    style={{ color: "var(--skin-text-muted)" }}
+                    style={{ color: "var(--token-color-text-secondary)" }}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -219,18 +243,24 @@ export default async function SalesPage({ params }: { params: Promise<{ slug: st
                 <div className="px-4 pb-4 pt-1 space-y-3">
                   {week.sessions.map((session) => (
                     <div key={session.id}>
-                      <p className="text-sm font-medium mb-1.5">{session.title}</p>
+                      <Body size="sm" as="p" className="mb-1.5" style={{ fontWeight: "500", color: "var(--token-color-text-primary)" }}>
+                        {session.title}
+                      </Body>
                       {session.summary && (
-                        <p className="text-xs mb-2" style={{ color: "var(--skin-text-muted)" }}>
+                        <Label as="p" className="mb-2">
                           {session.summary}
-                        </p>
+                        </Label>
                       )}
                       <div className="flex flex-wrap gap-1.5">
                         {session.actions.map((action) => (
                           <span
                             key={action.id}
-                            className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-                            style={getTypeStyle(action.type)}
+                            className="text-[10px] px-2 py-0.5"
+                            style={{
+                              borderRadius: "var(--token-comp-chip-radius)",
+                              fontWeight: "500",
+                              ...getTypeStyle(action.type),
+                            }}
                           >
                             {TYPE_LABELS[action.type] || action.type}: {action.title}
                           </span>
@@ -247,14 +277,15 @@ export default async function SalesPage({ params }: { params: Promise<{ slug: st
         {/* Creator info */}
         {program.creator.name && (
           <section
-            className="mb-12 p-6 rounded-xl text-center"
+            className="mb-12 p-6 text-center"
             style={{
-              backgroundColor: "var(--skin-bg-secondary)",
-              border: "1px solid var(--skin-border)",
+              borderRadius: "var(--token-radius-lg)",
+              backgroundColor: "var(--token-color-bg-elevated)",
+              border: "1px solid var(--token-color-border-subtle)",
             }}
           >
-            <p className="text-sm" style={{ color: "var(--skin-text-muted)" }}>Created by</p>
-            <p className="text-lg font-semibold mt-1">{program.creator.name}</p>
+            <Body size="sm" style={{ color: "var(--token-color-text-secondary)" }}>Created by</Body>
+            <Heading size="lg" className="mt-1">{program.creator.name}</Heading>
           </section>
         )}
       </main>
@@ -263,13 +294,13 @@ export default async function SalesPage({ params }: { params: Promise<{ slug: st
       <div
         className="fixed bottom-0 left-0 right-0 p-4 backdrop-blur-xl z-40"
         style={{
-          backgroundColor: "color-mix(in srgb, var(--skin-bg) 90%, transparent)",
-          borderTop: "1px solid var(--skin-border)",
+          backgroundColor: "color-mix(in srgb, var(--token-color-bg-default) 90%, transparent)",
+          borderTop: "1px solid var(--token-color-border-subtle)",
         }}
       >
         <div className="max-w-md mx-auto flex items-center gap-4">
           <div className="flex-shrink-0">
-            <p className="text-2xl font-bold">{priceDisplay}</p>
+            <Heading size="lg" as="p">{priceDisplay}</Heading>
           </div>
           <div className="flex-1">
             <EnrollButton

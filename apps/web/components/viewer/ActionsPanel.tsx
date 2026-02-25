@@ -146,7 +146,7 @@ export function ActionsPanel({ actions, userId, onActionComplete }: ActionsPanel
                   }}
                 >
                   {isComplete && (
-                    <svg className="h-3 w-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="h-3 w-3" style={{ color: "var(--token-color-bg-default)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                     </svg>
                   )}
