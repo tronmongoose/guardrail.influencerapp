@@ -182,11 +182,23 @@ export default function ProgramEditPage() {
       });
   }, [load, id]);
 
-  // Poll for async generation progress
+  // Poll for async generation progress (max 10 minutes)
   useEffect(() => {
     if (!asyncGenerating) return;
 
+    const MAX_POLL_MS = 10 * 60 * 1000; // 10 minutes
+    const startTime = Date.now();
+
     const interval = setInterval(async () => {
+      // Timeout: stop polling after 10 minutes
+      if (Date.now() - startTime > MAX_POLL_MS) {
+        clearInterval(interval);
+        setAsyncGenerating(false);
+        setLastGenError("Generation timed out. Please try again.");
+        showToast("Generation timed out. Please try again.", "error");
+        return;
+      }
+
       try {
         const res = await fetch(`/api/programs/${id}/generate-async/status`);
         if (!res.ok) return;
@@ -201,6 +213,7 @@ export default function ProgramEditPage() {
           showToast("Program generated!", "success");
         } else if (data.status === "FAILED") {
           setAsyncGenerating(false);
+          setLastGenError(data.error || "Generation failed");
           showToast(data.error || "Generation failed", "error");
         }
       } catch {

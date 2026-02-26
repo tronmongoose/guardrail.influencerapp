@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { AuthNav, AuthCTA } from "./auth-components";
+import { AuthErrorBanner } from "@/components/ui/AuthErrorBanner";
 
 export default function LandingPage() {
   return (
@@ -11,6 +13,11 @@ export default function LandingPage() {
         </span>
         <AuthNav />
       </nav>
+
+      {/* Auth error banner (from magic link failures) */}
+      <Suspense fallback={null}>
+        <AuthErrorBanner />
+      </Suspense>
 
       {/* Hero */}
       <main className="flex-1 flex flex-col items-center justify-center px-6 text-center pt-12 pb-20">

@@ -71,7 +71,7 @@ model Program {
   priceInCents     Int         @default(0)
   currency         String      @default("usd")
   published        Boolean     @default(false)
-  status           ProgramStatus @default(DRAFT)
+  status           ProgramStatus @default(DRAFT)  // Deprecated: use `published` instead. Remove in next migration.
   stripeProductId  String?
   stripePriceId    String?
   createdAt        DateTime    @default(now())

@@ -9,12 +9,12 @@ function SuccessContent() {
   const programId = searchParams.get("programId");
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="max-w-md w-full mx-auto p-8">
-        <div className="bg-white rounded-2xl shadow-lg p-8 text-center">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+    <div className="min-h-screen gradient-bg-radial grid-bg flex items-center justify-center px-6">
+      <div className="max-w-md w-full mx-auto">
+        <div className="bg-surface-card border border-surface-border rounded-2xl p-8 text-center">
+          <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-neon-cyan/10 border border-neon-cyan/30 flex items-center justify-center">
             <svg
-              className="w-8 h-8 text-green-600"
+              className="w-8 h-8 text-neon-cyan"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -28,28 +28,39 @@ function SuccessContent() {
             </svg>
           </div>
 
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">
+          <h1 className="text-2xl font-bold text-white mb-2">
             Payment Successful!
           </h1>
 
-          <p className="text-gray-600 mb-6">
-            Thank you for your purchase. We've sent an access link to your email address.
-            Check your inbox to start learning!
+          <p className="text-gray-400 mb-6">
+            Thank you for your purchase. We&apos;ve sent an access link to your
+            email address. Check your inbox to start learning!
           </p>
 
-          <div className="bg-blue-50 rounded-lg p-4 mb-6">
-            <p className="text-sm text-blue-800">
-              <strong>Next step:</strong> Check your email for a magic link to access your program.
-              The link is valid for 24 hours.
+          <div className="bg-neon-cyan/5 border border-neon-cyan/20 rounded-lg p-4 mb-6">
+            <p className="text-sm text-gray-300">
+              <strong className="text-neon-cyan">Next step:</strong> Check your
+              email for an access link to your program. The link is valid for 24
+              hours.
             </p>
           </div>
 
-          <Link
-            href="/"
-            className="inline-block px-6 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition"
-          >
-            Return Home
-          </Link>
+          <div className="flex gap-3 justify-center">
+            {programId && (
+              <Link
+                href={`/learn/${programId}`}
+                className="px-6 py-3 bg-gradient-to-r from-neon-cyan to-neon-pink text-surface-dark rounded-lg font-medium hover:opacity-90 transition"
+              >
+                Go to Program
+              </Link>
+            )}
+            <Link
+              href="/"
+              className="px-6 py-3 bg-surface-dark border border-surface-border text-gray-300 rounded-lg font-medium hover:border-neon-cyan hover:text-neon-cyan transition"
+            >
+              Return Home
+            </Link>
+          </div>
         </div>
       </div>
     </div>
@@ -60,8 +71,8 @@ export default function CheckoutSuccessPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="animate-pulse">Loading...</div>
+        <div className="min-h-screen gradient-bg-radial grid-bg flex items-center justify-center">
+          <div className="animate-pulse text-gray-400">Loading...</div>
         </div>
       }
     >

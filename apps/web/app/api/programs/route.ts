@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOrCreateUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { ProgramStatus } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,16 +9,18 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Optional status filter via query param
+    // Optional published filter via query param
     const { searchParams } = new URL(req.url);
     const statusParam = searchParams.get("status");
 
-    const where: { creatorId: string; status?: ProgramStatus } = {
+    const where: { creatorId: string; published?: boolean } = {
       creatorId: user.id,
     };
 
-    if (statusParam && Object.values(ProgramStatus).includes(statusParam as ProgramStatus)) {
-      where.status = statusParam as ProgramStatus;
+    if (statusParam === "PUBLISHED") {
+      where.published = true;
+    } else if (statusParam === "DRAFT") {
+      where.published = false;
     }
 
     const programs = await prisma.program.findMany({
@@ -29,7 +30,6 @@ export async function GET(req: NextRequest) {
         id: true,
         title: true,
         slug: true,
-        status: true,
         published: true,
         durationWeeks: true,
         priceInCents: true,

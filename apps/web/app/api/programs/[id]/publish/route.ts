@@ -184,7 +184,6 @@ export async function POST(
     where: { id },
     data: {
       published: true,
-      status: "PUBLISHED",
       slug,
       stripeProductId,
       stripePriceId,
