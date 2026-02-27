@@ -587,7 +587,7 @@ export function LearnerTimeline({
                                 {/* Complete action button */}
                                 <button
                                   onClick={() => completeAction(action.id, week.weekNumber, reflections[action.id])}
-                                  disabled={isSaving}
+                                  disabled={isSaving || !!(action.type === "REFLECT" && action.reflectionPrompt && !reflections[action.id]?.trim())}
                                   className="w-full py-2.5 text-sm font-semibold transition border hover:opacity-80 disabled:opacity-50"
                                   style={{
                                     borderRadius: "var(--token-comp-btn-primary-radius)",
@@ -797,10 +797,8 @@ function CompletionCircle({ done, isSaving, onClick }: CompletionCircleProps): R
 
   if (done) {
     return (
-      <button
-        type="button"
+      <span
         aria-label="Completed"
-        onClick={onClick}
         className={`${baseClasses} action-complete-check`}
         style={{
           backgroundColor: "var(--token-color-accent)",
@@ -815,7 +813,7 @@ function CompletionCircle({ done, isSaving, onClick }: CompletionCircleProps): R
         >
           <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
         </svg>
-      </button>
+      </span>
     );
   }
 

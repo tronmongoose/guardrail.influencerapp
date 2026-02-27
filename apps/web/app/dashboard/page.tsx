@@ -148,27 +148,6 @@ function DashboardContent() {
           </button>
         </div>
 
-        {/* Sample stat cards */}
-        {programs.length > 0 && (
-          <div className="grid grid-cols-3 gap-3 mb-8">
-            <div className="bg-surface-card border border-surface-border rounded-xl p-4 text-center">
-              <p className="text-2xl font-bold text-neon-cyan">47</p>
-              <p className="text-xs text-gray-500 mt-1">Total Learners</p>
-            </div>
-            <div className="bg-surface-card border border-surface-border rounded-xl p-4 text-center">
-              <p className="text-2xl font-bold text-neon-pink">$1,240</p>
-              <p className="text-xs text-gray-500 mt-1">Revenue</p>
-            </div>
-            <div className="bg-surface-card border border-surface-border rounded-xl p-4 text-center">
-              <p className="text-2xl font-bold text-neon-yellow">73%</p>
-              <p className="text-xs text-gray-500 mt-1">Completion Rate</p>
-            </div>
-            <p className="col-span-3 text-[10px] text-gray-600 text-center -mt-1">
-              Sample data — real analytics coming soon
-            </p>
-          </div>
-        )}
-
         {error && (
           <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
             {error}
