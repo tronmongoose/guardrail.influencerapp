@@ -56,6 +56,16 @@ export function EnrollButton({ programId, isFree, priceDisplay, isEnrolled }: En
     setLoading(true);
     setError(null);
 
+    // Validate email client-side with a friendly message
+    if (showEmailForm && email) {
+      const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailPattern.test(email)) {
+        setError("Please enter a valid email address");
+        setLoading(false);
+        return;
+      }
+    }
+
     try {
       const res = await fetch(`/api/checkout/${programId}`, {
         method: "POST",
@@ -95,14 +105,15 @@ export function EnrollButton({ programId, isFree, priceDisplay, isEnrolled }: En
             Email address
           </label>
           <input
-            type="email"
+            type="text"
             id="email"
+            inputMode="email"
+            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
             className="w-full px-4 py-2 focus:outline-none"
             style={inputStyle}
-            required
           />
         </div>
         <div>

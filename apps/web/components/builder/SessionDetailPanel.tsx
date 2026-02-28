@@ -201,6 +201,22 @@ export function SessionDetailPanel({
   const watchAction = session.actions.find((a) => a.type === "WATCH" && a.youtubeVideoId);
   const video = watchAction ? videos.find((v) => v.id === watchAction.youtubeVideoId) : null;
 
+  const clips = session.compositeSession?.clips ?? [];
+  const overlays = session.compositeSession?.overlays ?? [];
+  const hasClips = clips.length > 0;
+
+  const totalClipSeconds = clips.reduce((sum, c) => {
+    const start = c.startSeconds ?? 0;
+    const end = c.endSeconds ?? 0;
+    return sum + Math.max(0, end - start);
+  }, 0);
+
+  function formatTime(seconds: number): string {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  }
+
   return (
     <div className="h-full flex flex-col bg-surface-dark overflow-hidden">
       {/* Header */}
@@ -229,8 +245,54 @@ export function SessionDetailPanel({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
-        {/* Video thumbnail (if available) */}
-        {video && (
+        {/* Scene-based clip summary */}
+        {hasClips ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-neon-cyan">Scene-Based Lesson</span>
+                <span className="text-xs text-gray-500">
+                  {clips.length} clip{clips.length !== 1 ? "s" : ""} &middot; {formatTime(totalClipSeconds)}
+                </span>
+              </div>
+              {overlays.length > 0 && (
+                <span className="text-xs text-gray-500">
+                  {overlays.length} overlay{overlays.length !== 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              {clips.map((clip, i) => {
+                const clipVideo = clip.youtubeVideo ?? videos.find((v) => v.id === clip.youtubeVideoId);
+                return (
+                  <div
+                    key={clip.id}
+                    className="flex items-center gap-3 px-3 py-2 bg-surface-card rounded-lg border border-surface-border"
+                  >
+                    <span className="text-xs text-gray-600 w-5 text-right flex-shrink-0">{i + 1}</span>
+                    {clip.transitionType && clip.transitionType !== "NONE" && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-neon-cyan/10 text-neon-cyan border border-neon-cyan/20 flex-shrink-0">
+                        {clip.transitionType}
+                      </span>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-white truncate">
+                        {clip.chapterTitle || clipVideo?.title || "Untitled clip"}
+                      </p>
+                      {clipVideo?.title && clip.chapterTitle && (
+                        <p className="text-xs text-gray-500 truncate">{clipVideo.title}</p>
+                      )}
+                    </div>
+                    <span className="text-xs text-gray-500 flex-shrink-0">
+                      {formatTime(clip.startSeconds ?? 0)} – {formatTime(clip.endSeconds ?? 0)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : video ? (
+          /* Video thumbnail (if available, non-scene session) */
           <div className="flex items-start gap-4 p-4 bg-surface-card rounded-lg border border-surface-border">
             {video.thumbnailUrl && (
               <img
@@ -246,7 +308,7 @@ export function SessionDetailPanel({
               <p className="text-xs text-gray-500 mt-1">YouTube Video</p>
             </div>
           </div>
-        )}
+        ) : null}
 
         {/* Summary */}
         <div>

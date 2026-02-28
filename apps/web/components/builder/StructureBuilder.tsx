@@ -28,6 +28,30 @@ export interface ActionData {
   orderIndex: number;
 }
 
+export interface ClipData {
+  id: string;
+  youtubeVideoId: string;
+  youtubeVideo?: { id: string; title: string | null; thumbnailUrl: string | null };
+  startSeconds: number | null;
+  endSeconds: number | null;
+  orderIndex: number;
+  transitionType: string;
+  chapterTitle: string | null;
+  chapterDescription: string | null;
+}
+
+export interface OverlayData {
+  id: string;
+  type: string;
+  orderIndex: number;
+}
+
+export interface CompositeSessionData {
+  id: string;
+  clips: ClipData[];
+  overlays: OverlayData[];
+}
+
 export interface SessionData {
   id: string;
   title: string;
@@ -35,6 +59,7 @@ export interface SessionData {
   keyTakeaways?: string[];
   orderIndex: number;
   actions: ActionData[];
+  compositeSession?: CompositeSessionData | null;
 }
 
 export interface WeekData {

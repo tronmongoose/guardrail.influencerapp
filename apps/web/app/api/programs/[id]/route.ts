@@ -26,7 +26,15 @@ export async function GET(
         include: {
           sessions: {
             orderBy: { orderIndex: "asc" },
-            include: { actions: { orderBy: { orderIndex: "asc" } } },
+            include: {
+              actions: { orderBy: { orderIndex: "asc" } },
+              compositeSession: {
+                include: {
+                  clips: { orderBy: { orderIndex: "asc" }, include: { youtubeVideo: true } },
+                  overlays: { orderBy: { orderIndex: "asc" } },
+                },
+              },
+            },
           },
         },
       },
