@@ -28,7 +28,23 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { url } = await req.json();
+  const { url, source, title: uploadedTitle } = await req.json();
+
+  // Handle direct file uploads (from Vercel Blob)
+  if (source === "upload") {
+    const rawName = (uploadedTitle as string | undefined) || url.split("/").pop() || "Uploaded Video";
+    const title = rawName.replace(/\.[^/.]+$/, ""); // strip extension
+    const video = await prisma.youTubeVideo.create({
+      data: {
+        videoId: crypto.randomUUID(),
+        url,
+        title,
+        programId,
+      },
+    });
+    return NextResponse.json(video);
+  }
+
   const videoId = parseYouTubeVideoId(url);
   if (!videoId) {
     videoLogger.ingestionFailure(programId, null, timer.elapsed(), new Error("Invalid YouTube URL"), {

@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
 }
 
 // --- User (linked to Clerk) ---
@@ -82,6 +83,10 @@ model Program {
   targetTransformation String?   @db.Text  // 1-2 sentence transformation goal
   vibePrompt           String?   @db.Text  // AI generation style guidance
   skinId               String    @default("default")
+
+  // AI intent parser output (set during /new flow)
+  videoGroups       Json?    // { clipIndexes: number[], title: string, combinable: boolean }[]
+  sectionBoundaries Json?    // number[] — clip indexes where new sessions begin
 
   creatorId     String
   creator       User        @relation(fields: [creatorId], references: [id])

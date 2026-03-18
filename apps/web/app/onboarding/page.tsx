@@ -164,14 +164,14 @@ export default function OnboardingPage() {
 
   if (!isLoaded || loading) {
     return (
-      <div className="min-h-screen gradient-bg-radial grid-bg flex items-center justify-center">
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <Spinner size="lg" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen gradient-bg-radial grid-bg flex items-center justify-center px-4">
+    <div className="min-h-screen bg-gray-100 flex items-start sm:items-center justify-center px-4 pt-10 sm:pt-0">
       <div className="w-full max-w-md">
         {/* Progress indicator */}
         <div className="flex justify-center gap-2 mb-8">
@@ -189,37 +189,37 @@ export default function OnboardingPage() {
           ))}
         </div>
 
-        <div className="bg-surface-card border border-surface-border rounded-xl p-6">
+        <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
           {/* Step 1: About You */}
           {step === 1 && (
             <div className="space-y-4">
               <div>
-                <h2 className="text-xl font-bold text-white mb-1">Welcome to GuideRail</h2>
-                <p className="text-sm text-gray-400">Let&apos;s set up your creator profile</p>
+                <h2 className="text-xl font-bold text-gray-900 mb-1">Welcome to Journeyline</h2>
+                <p className="text-sm text-gray-500">Let&apos;s set up your creator profile</p>
               </div>
 
               <div>
-                <label className="text-sm text-gray-400">Your name</label>
+                <label className="text-sm text-gray-600">Your name</label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="John Smith"
-                  className="w-full mt-1 px-3 py-2.5 bg-surface-dark border border-surface-border rounded-lg text-white text-sm focus:outline-none focus:border-neon-cyan focus:ring-1 focus:ring-neon-cyan"
+                  className="w-full mt-1 px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-gray-900 text-sm focus:outline-none focus:border-neon-cyan focus:ring-1 focus:ring-neon-cyan"
                 />
               </div>
 
               <div>
-                <label className="text-sm text-gray-400">Short bio (optional)</label>
+                <label className="text-sm text-gray-600">Short bio (optional)</label>
                 <textarea
                   value={bio}
                   onChange={(e) => setBio(e.target.value)}
                   placeholder="Tell learners a bit about yourself..."
                   rows={3}
                   maxLength={500}
-                  className="w-full mt-1 px-3 py-2.5 bg-surface-dark border border-surface-border rounded-lg text-white text-sm focus:outline-none focus:border-neon-cyan focus:ring-1 focus:ring-neon-cyan resize-none"
+                  className="w-full mt-1 px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-gray-900 text-sm focus:outline-none focus:border-neon-cyan focus:ring-1 focus:ring-neon-cyan resize-none"
                 />
-                <p className="text-xs text-gray-500 mt-1">{bio.length}/500</p>
+                <p className="text-xs text-gray-400 mt-1">{bio.length}/500</p>
               </div>
             </div>
           )}
@@ -228,8 +228,8 @@ export default function OnboardingPage() {
           {step === 2 && (
             <div className="space-y-4">
               <div>
-                <h2 className="text-xl font-bold text-white mb-1">Your Niche</h2>
-                <p className="text-sm text-gray-400">What area do you teach?</p>
+                <h2 className="text-xl font-bold text-gray-900 mb-1">Your Niche</h2>
+                <p className="text-sm text-gray-500">What area do you teach?</p>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -244,7 +244,7 @@ export default function OnboardingPage() {
                     className={`px-3 py-2 rounded-lg text-sm text-left transition ${
                       niche === option
                         ? "bg-neon-cyan/20 border-neon-cyan text-neon-cyan border"
-                        : "bg-surface-dark border border-surface-border text-gray-300 hover:border-gray-500"
+                        : "bg-gray-50 border border-gray-200 text-gray-700 hover:border-gray-400"
                     }`}
                   >
                     {option}
@@ -254,13 +254,13 @@ export default function OnboardingPage() {
 
               {niche === "Other" && (
                 <div>
-                  <label className="text-sm text-gray-400">Your niche</label>
+                  <label className="text-sm text-gray-600">Your niche</label>
                   <input
                     type="text"
                     value={customNiche}
                     onChange={(e) => setCustomNiche(e.target.value)}
                     placeholder="e.g., Pottery, Chess, Gardening..."
-                    className="w-full mt-1 px-3 py-2.5 bg-surface-dark border border-surface-border rounded-lg text-white text-sm focus:outline-none focus:border-neon-cyan focus:ring-1 focus:ring-neon-cyan"
+                    className="w-full mt-1 px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-gray-900 text-sm focus:outline-none focus:border-neon-cyan focus:ring-1 focus:ring-neon-cyan"
                   />
                 </div>
               )}
@@ -271,19 +271,19 @@ export default function OnboardingPage() {
           {step === 3 && (
             <div className="space-y-4">
               <div>
-                <h2 className="text-xl font-bold text-white mb-1">The Transformation</h2>
-                <p className="text-sm text-gray-400">What outcome do you help learners achieve?</p>
+                <h2 className="text-xl font-bold text-gray-900 mb-1">The Transformation</h2>
+                <p className="text-sm text-gray-500">What outcome do you help learners achieve?</p>
               </div>
 
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-sm text-gray-400">Outcome statement</label>
+                  <label className="text-sm text-gray-600">Outcome statement</label>
                   {originalOutcome ? (
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
                         onClick={handleRevert}
-                        className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg bg-surface-dark text-gray-400 border border-surface-border hover:text-white hover:border-gray-500 transition"
+                        className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg bg-gray-100 text-gray-500 border border-gray-200 hover:text-gray-900 hover:border-gray-400 transition"
                       >
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
@@ -334,43 +334,43 @@ export default function OnboardingPage() {
                   placeholder="I help people go from [current state] to [desired outcome]..."
                   rows={4}
                   maxLength={500}
-                  className={`w-full px-3 py-2.5 bg-surface-dark border rounded-lg text-white text-sm focus:outline-none focus:border-neon-cyan focus:ring-1 focus:ring-neon-cyan resize-none ${
-                    originalOutcome ? "border-neon-pink/50" : "border-surface-border"
+                  className={`w-full px-3 py-2.5 bg-white border rounded-lg text-gray-900 text-sm focus:outline-none focus:border-neon-cyan focus:ring-1 focus:ring-neon-cyan resize-none ${
+                    originalOutcome ? "border-neon-pink/50" : "border-gray-300"
                   }`}
                 />
                 <div className="flex items-center justify-between mt-1">
-                  <p className="text-xs text-gray-500">{outcomeTarget.length}/500</p>
+                  <p className="text-xs text-gray-400">{outcomeTarget.length}/500</p>
                   {originalOutcome && (
                     <p className="text-xs text-neon-pink">AI enhanced - review and keep or revert</p>
                   )}
                 </div>
               </div>
 
-              <div className="bg-surface-dark border border-surface-border rounded-lg p-3">
-                <p className="text-xs text-gray-400">
-                  <span className="text-neon-cyan">Tip:</span> Be specific! Instead of &quot;I help people get fit,&quot;
+              <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                <p className="text-xs text-gray-600">
+                  <span className="text-neon-cyan font-medium">Tip:</span> Be specific! Instead of &quot;I help people get fit,&quot;
                   try &quot;I help busy professionals build a sustainable workout habit in just 20 minutes a day.&quot;
                 </p>
               </div>
 
               {/* Example outcome stats card */}
-              <div className="bg-gradient-to-r from-neon-cyan/5 via-neon-pink/5 to-neon-yellow/5 border border-surface-border rounded-lg p-4">
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                 <div className="flex items-center justify-center gap-2 mb-3">
-                  <p className="text-xs text-gray-400">What you could achieve</p>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-dark text-gray-500 border border-surface-border">Example</span>
+                  <p className="text-xs text-gray-500">What you could achieve</p>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-white text-gray-400 border border-gray-200">Example</span>
                 </div>
                 <div className="grid grid-cols-3 gap-2 sm:gap-3 text-center">
                   <div>
                     <p className="text-base sm:text-lg font-bold text-neon-cyan">{PLATFORM_STATS.totalLearners}</p>
-                    <p className="text-[10px] sm:text-xs text-gray-500">Learners</p>
+                    <p className="text-[10px] sm:text-xs text-gray-400">Learners</p>
                   </div>
                   <div>
                     <p className="text-base sm:text-lg font-bold text-neon-pink">{PLATFORM_STATS.totalRevenue}</p>
-                    <p className="text-[10px] sm:text-xs text-gray-500">Revenue</p>
+                    <p className="text-[10px] sm:text-xs text-gray-400">Revenue</p>
                   </div>
                   <div>
                     <p className="text-base sm:text-lg font-bold text-neon-yellow">{PLATFORM_STATS.avgCompletion}</p>
-                    <p className="text-[10px] sm:text-xs text-gray-500">Completion</p>
+                    <p className="text-[10px] sm:text-xs text-gray-400">Completion</p>
                   </div>
                 </div>
               </div>
@@ -389,7 +389,7 @@ export default function OnboardingPage() {
             {step > 1 ? (
               <button
                 onClick={handleBack}
-                className="px-4 py-2 text-sm text-gray-400 hover:text-white transition"
+                className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 transition"
               >
                 ← Back
               </button>

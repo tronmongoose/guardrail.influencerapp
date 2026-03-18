@@ -21,6 +21,12 @@ import { Spinner } from "@/components/ui/spinner";
 import { AiAssistButton } from "@/components/ui/AiAssistButton";
 import type { SessionData, YouTubeVideoData, WeekData } from "./StructureBuilder";
 
+interface VideoSuggestions {
+  description: string;
+  keyTakeaways: string[];
+  actions: Array<{ type: "DO" | "REFLECT"; title: string }>;
+}
+
 interface SessionDetailPanelProps {
   session: SessionData & { keyTakeaways?: string[] };
   week: WeekData;
@@ -41,6 +47,10 @@ export function SessionDetailPanel({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [addingAction, setAddingAction] = useState(false);
+  const [suggestions, setSuggestions] = useState<VideoSuggestions | null>(null);
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
+  const [analyzingVideo, setAnalyzingVideo] = useState(false);
 
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -197,6 +207,89 @@ export function SessionDetailPanel({
     }
   }
 
+  async function fetchSuggestions() {
+    setSuggestLoading(true);
+    setSuggestError(null);
+    try {
+      const res = await fetch(
+        `/api/programs/${programId}/sessions/${session.id}/ai-suggest`,
+        { method: "POST" }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Request failed");
+      setSuggestions(data.suggestions as VideoSuggestions);
+    } catch (err) {
+      setSuggestError(err instanceof Error ? err.message : "Failed to get suggestions");
+    } finally {
+      setSuggestLoading(false);
+    }
+  }
+
+  async function analyzeVideo() {
+    if (!video) return;
+    setAnalyzingVideo(true);
+    setSuggestError(null);
+    try {
+      const res = await fetch(
+        `/api/programs/${programId}/videos/${video.id}/analyze`,
+        { method: "POST" }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Analysis failed");
+      // Analysis complete — automatically fetch suggestions
+      await fetchSuggestions();
+    } catch (err) {
+      setSuggestError(err instanceof Error ? err.message : "Analysis failed");
+    } finally {
+      setAnalyzingVideo(false);
+    }
+  }
+
+  async function acceptSuggestedDescription() {
+    if (!suggestions) return;
+    setSummary(suggestions.description);
+  }
+
+  async function acceptSuggestedTakeaways() {
+    if (!suggestions) return;
+    await handleSaveTakeaways(suggestions.keyTakeaways);
+    onUpdate();
+  }
+
+  async function acceptSuggestedAction(action: { type: "DO" | "REFLECT"; title: string }) {
+    setAddingAction(true);
+    try {
+      const nextOrderIndex =
+        session.actions.length > 0
+          ? Math.max(...session.actions.map((a) => a.orderIndex)) + 1
+          : 0;
+      const res = await fetch(
+        `/api/programs/${programId}/sessions/${session.id}/actions`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: action.title, type: action.type, orderIndex: nextOrderIndex }),
+        }
+      );
+      if (!res.ok) throw new Error("Failed to add action");
+      onUpdate();
+    } catch (err) {
+      console.error("Failed to add suggested action:", err);
+    } finally {
+      setAddingAction(false);
+    }
+  }
+
+  async function acceptAllSuggestions() {
+    if (!suggestions) return;
+    setSummary(suggestions.description);
+    await handleSaveTakeaways(suggestions.keyTakeaways);
+    for (const action of suggestions.actions) {
+      await acceptSuggestedAction(action);
+    }
+    setSuggestions(null);
+  }
+
   // Find the first WATCH action to display video info
   const watchAction = session.actions.find((a) => a.type === "WATCH" && a.youtubeVideoId);
   const video = watchAction ? videos.find((v) => v.id === watchAction.youtubeVideoId) : null;
@@ -218,17 +311,17 @@ export function SessionDetailPanel({
   }
 
   return (
-    <div className="h-full flex flex-col bg-surface-dark overflow-hidden">
+    <div className="h-full flex flex-col bg-white overflow-hidden">
       {/* Header */}
-      <div className="p-4 border-b border-surface-border">
+      <div className="p-4 border-b border-gray-100">
         <div className="flex items-center justify-between mb-1">
-          <span className="text-xs text-gray-500">{week.title}</span>
+          <span className="text-xs text-gray-400">{week.title}</span>
           <div className="flex items-center gap-2">
             {saving && <Spinner size="sm" />}
             <button
               onClick={handleDelete}
               disabled={deleting}
-              className="text-xs text-gray-500 hover:text-neon-pink transition disabled:opacity-50"
+              className="text-xs text-gray-400 hover:text-red-500 transition disabled:opacity-50"
             >
               {deleting ? "Deleting..." : "Delete Session"}
             </button>
@@ -238,7 +331,7 @@ export function SessionDetailPanel({
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          className="w-full text-xl font-semibold bg-transparent text-white focus:outline-none placeholder:text-gray-600"
+          className="w-full text-xl font-semibold bg-transparent text-gray-900 focus:outline-none placeholder:text-gray-300"
           placeholder="Session title"
         />
       </div>
@@ -250,13 +343,13 @@ export function SessionDetailPanel({
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-neon-cyan">Scene-Based Lesson</span>
-                <span className="text-xs text-gray-500">
+                <span className="text-xs font-medium text-teal-600">Scene-Based Lesson</span>
+                <span className="text-xs text-gray-400">
                   {clips.length} clip{clips.length !== 1 ? "s" : ""} &middot; {formatTime(totalClipSeconds)}
                 </span>
               </div>
               {overlays.length > 0 && (
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-gray-400">
                   {overlays.length} overlay{overlays.length !== 1 ? "s" : ""}
                 </span>
               )}
@@ -267,23 +360,23 @@ export function SessionDetailPanel({
                 return (
                   <div
                     key={clip.id}
-                    className="flex items-center gap-3 px-3 py-2 bg-surface-card rounded-lg border border-surface-border"
+                    className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-lg border border-gray-100"
                   >
-                    <span className="text-xs text-gray-600 w-5 text-right flex-shrink-0">{i + 1}</span>
+                    <span className="text-xs text-gray-400 w-5 text-right flex-shrink-0">{i + 1}</span>
                     {clip.transitionType && clip.transitionType !== "NONE" && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-neon-cyan/10 text-neon-cyan border border-neon-cyan/20 flex-shrink-0">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-200 flex-shrink-0">
                         {clip.transitionType}
                       </span>
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-white truncate">
+                      <p className="text-sm text-gray-900 truncate">
                         {clip.chapterTitle || clipVideo?.title || "Untitled clip"}
                       </p>
                       {clipVideo?.title && clip.chapterTitle && (
-                        <p className="text-xs text-gray-500 truncate">{clipVideo.title}</p>
+                        <p className="text-xs text-gray-400 truncate">{clipVideo.title}</p>
                       )}
                     </div>
-                    <span className="text-xs text-gray-500 flex-shrink-0">
+                    <span className="text-xs text-gray-400 flex-shrink-0">
                       {formatTime(clip.startSeconds ?? 0)} – {formatTime(clip.endSeconds ?? 0)}
                     </span>
                   </div>
@@ -292,28 +385,164 @@ export function SessionDetailPanel({
             </div>
           </div>
         ) : video ? (
-          /* Video thumbnail (if available, non-scene session) */
-          <div className="flex items-start gap-4 p-4 bg-surface-card rounded-lg border border-surface-border">
-            {video.thumbnailUrl && (
+          /* Video card */
+          <div className="flex items-center gap-4 p-4 bg-white border border-gray-100 rounded-xl">
+            {video.thumbnailUrl ? (
               <img
                 src={video.thumbnailUrl}
                 alt=""
-                className="w-32 h-20 rounded object-cover flex-shrink-0"
+                className="w-28 h-16 rounded-lg object-cover flex-shrink-0"
               />
+            ) : (
+              <div className="w-28 h-16 rounded-lg bg-gray-100 flex-shrink-0 flex items-center justify-center">
+                <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </div>
             )}
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">
+              <p className="text-sm font-semibold text-gray-900 truncate">
                 {video.title || "Untitled Video"}
               </p>
-              <p className="text-xs text-gray-500 mt-1">YouTube Video</p>
+              <span className="inline-block mt-1.5 text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
+                YouTube Video
+              </span>
             </div>
           </div>
         ) : null}
 
+        {/* AI suggestions panel */}
+        {(video || hasClips) && (
+          <div className="rounded-xl border border-teal-100 bg-teal-50/60 overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-teal-100">
+              <span className="text-xs font-medium text-teal-700">✨ Suggest from video</span>
+              <div className="flex items-center gap-2">
+                {suggestions && (
+                  <button
+                    onClick={() => setSuggestions(null)}
+                    className="text-xs text-teal-500 hover:text-teal-700 transition"
+                  >
+                    Dismiss
+                  </button>
+                )}
+                <button
+                  onClick={suggestions ? acceptAllSuggestions : fetchSuggestions}
+                  disabled={suggestLoading || analyzingVideo}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-teal-600 text-white hover:bg-teal-700 transition disabled:opacity-50"
+                >
+                  {suggestLoading ? (
+                    <>
+                      <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Generating…
+                    </>
+                  ) : suggestions ? (
+                    "Accept all"
+                  ) : (
+                    "Generate"
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {(suggestError || analyzingVideo) && (
+              <div className="px-4 py-3 space-y-2">
+                {analyzingVideo ? (
+                  <div className="flex items-center gap-2 text-xs text-teal-700">
+                    <svg className="w-3 h-3 animate-spin flex-shrink-0" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Analyzing video with Gemini… this may take up to a minute
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-xs text-red-500">{suggestError}</p>
+                    {suggestError?.includes("No video analysis available") && video && (
+                      <button
+                        onClick={analyzeVideo}
+                        className="flex items-center gap-1.5 text-xs font-medium text-teal-700 hover:text-teal-900 transition"
+                      >
+                        <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        Analyze video now
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {suggestions && (
+              <div className="divide-y divide-teal-100">
+                {/* Suggested description */}
+                <div className="px-4 py-3 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-teal-600">Description</span>
+                    <button
+                      onClick={acceptSuggestedDescription}
+                      className="text-[10px] font-medium text-teal-600 hover:text-teal-800 underline transition"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-700 leading-relaxed">{suggestions.description}</p>
+                </div>
+
+                {/* Suggested takeaways */}
+                <div className="px-4 py-3 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-teal-600">Key Takeaways</span>
+                    <button
+                      onClick={acceptSuggestedTakeaways}
+                      className="text-[10px] font-medium text-teal-600 hover:text-teal-800 underline transition"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                  <ul className="space-y-1">
+                    {suggestions.keyTakeaways.map((t, i) => (
+                      <li key={i} className="flex items-start gap-1.5 text-xs text-gray-700">
+                        <span className="text-teal-400 mt-0.5 flex-shrink-0">•</span>
+                        {t}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Suggested actions */}
+                <div className="px-4 py-3 space-y-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-teal-600">Actions</span>
+                  {suggestions.actions.map((action, i) => (
+                    <div key={i} className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={`text-[10px] font-bold uppercase flex-shrink-0 ${action.type === "DO" ? "text-amber-600" : "text-purple-600"}`}>
+                          {action.type === "DO" ? "Practice" : "Reflect"}
+                        </span>
+                        <span className="text-xs text-gray-700 truncate">{action.title}</span>
+                      </div>
+                      <button
+                        onClick={() => acceptSuggestedAction(action)}
+                        disabled={addingAction}
+                        className="text-[10px] font-medium text-teal-600 hover:text-teal-800 underline transition flex-shrink-0 disabled:opacity-50"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Summary */}
         <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-sm font-medium text-gray-300">
+          <div className="flex items-center justify-between pb-2 mb-3 border-b border-gray-100">
+            <label className="text-sm font-medium text-gray-900">
               Description
             </label>
             <AiAssistButton
@@ -328,7 +557,7 @@ export function SessionDetailPanel({
             onChange={(e) => setSummary(e.target.value)}
             rows={3}
             placeholder="What will learners accomplish in this session?"
-            className="w-full px-4 py-3 bg-surface-card border border-surface-border rounded-lg text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-neon-cyan focus:ring-1 focus:ring-neon-cyan resize-none"
+            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 resize-none"
           />
         </div>
 
@@ -340,9 +569,9 @@ export function SessionDetailPanel({
 
         {/* Actions */}
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <label className="text-sm font-medium text-gray-300">Actions</label>
-            <span className="text-xs text-gray-500">{session.actions.length} items</span>
+          <div className="flex items-center justify-between pb-2 mb-3 border-b border-gray-100">
+            <label className="text-sm font-medium text-gray-900">Actions</label>
+            <span className="text-xs text-gray-400">{session.actions.length} items</span>
           </div>
 
           {session.actions.length > 0 && (
@@ -379,15 +608,15 @@ export function SessionDetailPanel({
                 disabled={addingAction}
                 className={`py-2 text-xs rounded-lg border transition disabled:opacity-50 ${
                   type === "WATCH"
-                    ? "border-neon-cyan/30 text-neon-cyan hover:bg-neon-cyan/10 hover:border-neon-cyan"
+                    ? "border-blue-100 text-blue-600 hover:bg-blue-50 hover:border-blue-300"
                     : type === "REFLECT"
-                    ? "border-neon-pink/30 text-neon-pink hover:bg-neon-pink/10 hover:border-neon-pink"
+                    ? "border-purple-100 text-purple-600 hover:bg-purple-50 hover:border-purple-300"
                     : type === "DO"
-                    ? "border-neon-yellow/30 text-neon-yellow hover:bg-neon-yellow/10 hover:border-neon-yellow"
-                    : "border-gray-600 text-gray-400 hover:bg-gray-600/10 hover:border-gray-500"
+                    ? "border-amber-100 text-amber-600 hover:bg-amber-50 hover:border-amber-300"
+                    : "border-gray-200 text-gray-500 hover:bg-gray-50 hover:border-gray-400"
                 }`}
               >
-                + {type.charAt(0) + type.slice(1).toLowerCase()}
+                + {type === "DO" ? "Practice" : type.charAt(0) + type.slice(1).toLowerCase()}
               </button>
             ))}
           </div>

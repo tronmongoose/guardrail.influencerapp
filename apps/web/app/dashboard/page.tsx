@@ -17,6 +17,18 @@ interface ProgramWithGeneration extends ProgramListItem {
   generationJob?: GenerationJob | null;
 }
 
+interface Metrics {
+  totalEnrollments: number;
+  totalRevenueCents: number;
+  programViews: number;
+}
+
+function getGreeting(firstName: string | null | undefined): string {
+  const hour = new Date().getHours();
+  const time = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
+  const name = firstName?.trim() ? `, ${firstName.trim()}` : "";
+  return `Good ${time}${name}`;
+}
 
 function getTimeAgo(date: Date): string {
   const now = new Date();
@@ -32,6 +44,15 @@ function getTimeAgo(date: Date): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+function formatRevenue(cents: number): string {
+  if (cents === 0) return "$0";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(cents / 100);
+}
+
 function formatPrice(cents: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -41,11 +62,13 @@ function formatPrice(cents: number): string {
 
 export default function DashboardPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen gradient-bg-radial grid-bg flex items-center justify-center">
-        <div className="text-gray-400">Loading...</div>
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-gray-400">Loading...</div>
+        </div>
+      }
+    >
       <DashboardContent />
     </Suspense>
   );
@@ -57,15 +80,14 @@ function DashboardContent() {
   const { user: clerkUser, isLoaded } = useUser();
   const { showToast } = useToast();
   const [programs, setPrograms] = useState<ProgramWithGeneration[]>([]);
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Acknowledge Stripe Connect return
   useEffect(() => {
     if (searchParams.get("stripe") === "success") {
       showToast("Stripe connected! You can now set prices for your programs.", "success");
-      // Clean up the URL param
       const url = new URL(window.location.href);
       url.searchParams.delete("stripe");
       window.history.replaceState({}, "", url.pathname);
@@ -79,19 +101,21 @@ function DashboardContent() {
       return;
     }
 
-    // Fetch programs and user data in parallel
     Promise.all([
-      fetch("/api/programs").then(r => r.json()),
-      fetch("/api/user/onboarding").then(r => r.json()),
+      fetch("/api/programs").then((r) => r.json()),
+      fetch("/api/user/onboarding").then((r) => r.json()),
+      fetch("/api/user/metrics").then((r) => (r.ok ? r.json() : null)),
     ])
-      .then(([programsData, userData]) => {
-        // If no programs and onboarding not complete, redirect to /new
-        if ((!Array.isArray(programsData) || programsData.length === 0) && !userData.onboardingComplete) {
+      .then(([programsData, userData, metricsData]) => {
+        if (
+          (!Array.isArray(programsData) || programsData.length === 0) &&
+          !userData.onboardingComplete
+        ) {
           router.push("/new");
           return;
         }
-
         setPrograms(Array.isArray(programsData) ? programsData : []);
+        if (metricsData) setMetrics(metricsData);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -116,98 +140,178 @@ function DashboardContent() {
 
   if (!isLoaded || loading) {
     return (
-      <div className="min-h-screen gradient-bg-radial grid-bg flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-gray-400">Loading...</div>
       </div>
     );
   }
 
+  const metricPills = [
+    {
+      label: "Enrollments",
+      value: metrics ? String(metrics.totalEnrollments) : "—",
+    },
+    {
+      label: "Revenue",
+      value: metrics ? formatRevenue(metrics.totalRevenueCents) : "—",
+    },
+    {
+      label: "Program views",
+      value: metrics ? String(metrics.programViews) : "—",
+    },
+  ];
+
   return (
-    <div className="min-h-screen gradient-bg-radial grid-bg">
-      <nav className="flex items-center justify-between px-6 py-4 border-b border-surface-border/50 backdrop-blur-sm">
-        <Link href="/" className="text-xl font-bold tracking-tight neon-text-cyan text-neon-cyan">
-          GuideRail
+    <>
+    <style>{`body { background-color: #ffffff !important; }`}</style>
+    <div className="min-h-screen bg-white">
+      {/* Nav */}
+      <nav className="flex items-center justify-between px-5 py-4 border-b border-gray-200 bg-white">
+        <Link
+          href="/"
+          className="text-xl font-bold tracking-tight text-neon-cyan neon-text-cyan"
+        >
+          Journeyline
         </Link>
-        <div className="flex items-center gap-3 sm:gap-4">
-          <span className="hidden sm:block text-sm text-gray-400 truncate max-w-[150px]">
-            {clerkUser?.fullName ?? clerkUser?.primaryEmailAddress?.emailAddress}
-          </span>
-          <UserButton />
-        </div>
+        <UserButton />
       </nav>
 
-      <main className="max-w-2xl mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-white">Your Programs</h1>
-          <button
-            onClick={handleCreateProgram}
-            disabled={creating}
-            className="btn-neon px-5 py-2.5 rounded-xl text-surface-dark text-sm font-semibold disabled:opacity-50"
-          >
-            {creating ? "Creating..." : "+ New Program"}
-          </button>
-        </div>
-
+      <main className="max-w-2xl mx-auto px-4 py-8 space-y-8">
         {error && (
-          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
+          <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
             {error}
           </div>
         )}
 
-        {programs.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-neon-cyan/10 border border-neon-cyan/30 flex items-center justify-center">
-              <svg className="w-10 h-10 text-neon-cyan" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-              </svg>
-            </div>
-            <h2 className="text-xl font-semibold text-white mb-2">Create your first program</h2>
-            <p className="text-gray-400 mb-6 max-w-sm mx-auto">
-              Transform your video content into a structured learning experience with AI-powered curriculum design.
-            </p>
-            <button
-              onClick={handleCreateProgram}
-              disabled={creating}
-              className="btn-neon px-8 py-3 rounded-xl text-surface-dark font-semibold disabled:opacity-50"
-            >
-              {creating ? "Creating..." : "Get Started"}
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {programs.map((p) => {
-              const timeAgo = getTimeAgo(new Date(p.updatedAt));
-              const isGenerating = p.generationJob?.status === "PENDING" || p.generationJob?.status === "PROCESSING";
-              const generationFailed = p.generationJob?.status === "FAILED";
+        {/* ── Header: greeting + metrics + New Program button ── */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1 min-w-0 space-y-4">
+            <h1 className="text-[28px] font-semibold text-gray-900 leading-tight">
+              {getGreeting(clerkUser?.firstName)}
+            </h1>
 
-              return (
-                <Link
-                  key={p.id}
-                  href={`/programs/${p.id}/edit`}
-                  className="block bg-surface-card border border-surface-border rounded-xl p-5 hover:border-neon-cyan/40 transition-all hover:-translate-y-0.5 group"
+            {/* Metric pills */}
+            <div className="flex gap-3">
+              {metricPills.map((pill) => (
+                <div
+                  key={pill.label}
+                  className="flex-1 min-w-[100px] bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm"
                 >
-                  <div className="flex items-start justify-between gap-4">
+                  <p className="text-lg font-semibold text-neon-cyan leading-none mb-1">
+                    {pill.value}
+                  </p>
+                  <p className="text-xs text-gray-500 whitespace-nowrap">{pill.label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* New Program */}
+          <button
+            onClick={handleCreateProgram}
+            disabled={creating}
+            className="flex-shrink-0 btn-neon px-4 py-2.5 rounded-xl text-surface-dark text-sm font-semibold disabled:opacity-50 whitespace-nowrap"
+          >
+            {creating ? "Creating…" : "+ New Program"}
+          </button>
+        </div>
+
+        {/* ── Programs ── */}
+        <div className="space-y-3">
+          {programs.length === 0 ? (
+            /* Empty state */
+            <div className="border-2 border-dashed border-gray-200 rounded-2xl p-10 text-center bg-white">
+              <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
+                <svg
+                  className="w-7 h-7 text-gray-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+                  />
+                </svg>
+              </div>
+              <h3 className="text-base font-semibold text-gray-900 mb-1">
+                Build your first program
+              </h3>
+              <p className="text-sm text-gray-500 mb-6 max-w-xs mx-auto">
+                Turn your videos into a structured learning experience with AI-powered curriculum design.
+              </p>
+              <button
+                onClick={handleCreateProgram}
+                disabled={creating}
+                className="btn-neon px-6 py-2.5 rounded-xl text-surface-dark text-sm font-semibold disabled:opacity-50"
+              >
+                {creating ? "Creating…" : "+ New Program"}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {programs.map((p) => {
+                const timeAgo = getTimeAgo(new Date(p.updatedAt));
+                const isGenerating =
+                  p.generationJob?.status === "PENDING" ||
+                  p.generationJob?.status === "PROCESSING";
+                const generationFailed = p.generationJob?.status === "FAILED";
+                const initial = p.title.trim()[0]?.toUpperCase() ?? "P";
+
+                return (
+                  <Link
+                    key={p.id}
+                    href={`/programs/${p.id}/edit`}
+                    className="flex items-center gap-4 bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:border-neon-cyan/40 hover:shadow-md transition-all hover:-translate-y-0.5 group"
+                  >
+                    {/* Thumbnail placeholder */}
+                    <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-gray-200 flex items-center justify-center">
+                      <span className="text-lg font-bold text-gray-600 select-none">
+                        {initial}
+                      </span>
+                    </div>
+
+                    {/* Content */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h2 className="font-semibold text-white truncate">{p.title}</h2>
+                      <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                        <h2 className="text-[17px] font-medium text-gray-900 truncate leading-snug">
+                          {p.title}
+                        </h2>
                         {isGenerating ? (
                           <span className="flex-shrink-0 text-xs px-2 py-0.5 rounded-full font-medium bg-neon-pink/10 text-neon-pink border border-neon-pink/30 flex items-center gap-1">
-                            <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            <svg
+                              className="w-3 h-3 animate-spin"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                            >
+                              <circle
+                                className="opacity-25"
+                                cx="12"
+                                cy="12"
+                                r="10"
+                                stroke="currentColor"
+                                strokeWidth="4"
+                              />
+                              <path
+                                className="opacity-75"
+                                fill="currentColor"
+                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                              />
                             </svg>
-                            Generating {p.generationJob?.progress}%
+                            {p.generationJob?.progress}%
                           </span>
                         ) : generationFailed ? (
                           <span className="flex-shrink-0 text-xs px-2 py-0.5 rounded-full font-medium bg-red-500/10 text-red-400 border border-red-500/30">
-                            Generation Failed
+                            Failed
                           </span>
                         ) : (
                           <span
                             className={`flex-shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${
                               p.published
                                 ? "bg-neon-cyan/10 text-neon-cyan border border-neon-cyan/30"
-                                : "bg-gray-500/10 text-gray-400 border border-gray-500/30"
+                                : "bg-gray-100 text-gray-500 border border-gray-200"
                             }`}
                           >
                             {p.published ? "Published" : "Draft"}
@@ -219,45 +323,37 @@ function DashboardContent() {
                           </span>
                         )}
                       </div>
+
                       {isGenerating && (
-                        <div className="mb-2 h-1 bg-surface-dark rounded-full overflow-hidden">
+                        <div className="mb-1.5 h-1 bg-gray-100 rounded-full overflow-hidden">
                           <div
                             className="h-full bg-gradient-to-r from-neon-cyan to-neon-pink transition-all"
                             style={{ width: `${p.generationJob?.progress || 0}%` }}
                           />
                         </div>
                       )}
-                      <div className="flex items-center gap-3 text-sm text-gray-500">
-                        <span className="flex items-center gap-1">
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                          {p.durationWeeks} weeks
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                          </svg>
-                          {p._count.videos} video{p._count.videos !== 1 ? "s" : ""}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                          </svg>
-                          {p._count.weeks} week{p._count.weeks !== 1 ? "s" : ""} built
-                        </span>
-                        <span className="text-gray-600">·</span>
-                        <span>{timeAgo}</span>
-                      </div>
+
+                      <p className="text-xs text-gray-400">
+                        {p._count.weeks} week{p._count.weeks !== 1 ? "s" : ""}
+                        {" · "}
+                        {p._count.videos} video{p._count.videos !== 1 ? "s" : ""}
+                        {" · "}
+                        {timeAgo}
+                      </p>
                     </div>
-                    <span className="text-gray-600 group-hover:text-neon-cyan transition">→</span>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        )}
+
+                    {/* Arrow */}
+                    <span className="flex-shrink-0 text-gray-300 group-hover:text-neon-cyan transition text-lg leading-none">
+                      →
+                    </span>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </main>
     </div>
+    </>
   );
 }

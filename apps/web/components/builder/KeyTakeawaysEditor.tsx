@@ -81,9 +81,9 @@ export function KeyTakeawaysEditor({
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <label className="text-sm font-medium text-gray-300">Key Takeaways</label>
-        <span className="text-xs text-gray-500">
+      <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+        <label className="text-sm font-medium text-gray-900">Key Takeaways</label>
+        <span className="text-xs text-gray-400">
           {localTakeaways.filter((t) => t.value.trim()).length}/{maxItems}
         </span>
       </div>
@@ -91,7 +91,7 @@ export function KeyTakeawaysEditor({
       <div className="space-y-2">
         {localTakeaways.map((takeaway, index) => (
           <div key={takeaway.key} className="flex items-start gap-2 group">
-            <span className="text-neon-cyan mt-2.5 text-sm">•</span>
+            <span className="text-teal-500 mt-2.5 text-sm">•</span>
             <input
               type="text"
               data-takeaway-input
@@ -101,7 +101,7 @@ export function KeyTakeawaysEditor({
               onKeyDown={(e) => handleKeyDown(e, index)}
               placeholder="What will learners take away from this session?"
               maxLength={200}
-              className="flex-1 px-3 py-2 bg-surface-dark border border-surface-border rounded-lg text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-neon-cyan focus:ring-1 focus:ring-neon-cyan"
+              className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500"
             />
             <span className="mt-1.5">
               <AiAssistButton
@@ -115,7 +115,7 @@ export function KeyTakeawaysEditor({
             </span>
             <button
               onClick={() => handleRemove(index)}
-              className="mt-2 p-1 text-gray-600 hover:text-neon-pink transition opacity-0 group-hover:opacity-100"
+              className="mt-2 p-1 text-gray-300 hover:text-red-400 transition opacity-0 group-hover:opacity-100"
               title="Remove takeaway"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -129,7 +129,7 @@ export function KeyTakeawaysEditor({
       {localTakeaways.length < maxItems && (
         <button
           onClick={handleAdd}
-          className="w-full py-2 text-xs text-gray-500 hover:text-neon-cyan border border-dashed border-surface-border hover:border-neon-cyan/50 rounded-lg transition flex items-center justify-center gap-1"
+          className="w-full py-2 text-xs text-gray-400 hover:text-teal-600 border border-dashed border-gray-200 hover:border-teal-400 rounded-lg transition flex items-center justify-center gap-1"
         >
           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -138,7 +138,7 @@ export function KeyTakeawaysEditor({
         </button>
       )}
 
-      <p className="text-xs text-gray-600">
+      <p className="text-xs text-gray-400">
         2-3 concise points summarizing what learners will gain from this session.
       </p>
     </div>

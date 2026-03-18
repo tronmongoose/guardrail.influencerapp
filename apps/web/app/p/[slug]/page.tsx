@@ -30,16 +30,16 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const description =
     program.description ||
     program.targetTransformation ||
-    `A guided learning program by ${program.creator.name || "GuideRail"}`;
+    `A guided learning program by ${program.creator.name || "Journeyline"}`;
 
   return {
-    title: `${title} | GuideRail`,
+    title: `${title} | Journeyline`,
     description,
     openGraph: {
       title,
       description,
       type: "website",
-      siteName: "GuideRail",
+      siteName: "Journeyline",
     },
     twitter: {
       card: "summary_large_image",

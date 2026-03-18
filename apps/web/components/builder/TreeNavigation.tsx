@@ -79,8 +79,8 @@ function TreeSessionItem({
       className={`
         flex items-center gap-2 pl-6 pr-2 py-1.5 cursor-pointer transition-all
         ${isSelected
-          ? "bg-neon-cyan/10 border-l-2 border-neon-cyan"
-          : "hover:bg-surface-dark/50 border-l-2 border-transparent"
+          ? "bg-teal-50 border-l-2 border-teal-500"
+          : "hover:bg-gray-50 border-l-2 border-transparent"
         }
       `}
       onClick={onSelect}
@@ -88,7 +88,7 @@ function TreeSessionItem({
       <button
         {...attributes}
         {...listeners}
-        className="cursor-grab text-gray-600 hover:text-gray-400 touch-none"
+        className="cursor-grab text-gray-300 hover:text-gray-500 touch-none"
         onClick={(e) => e.stopPropagation()}
       >
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -103,18 +103,18 @@ function TreeSessionItem({
           className="w-8 h-5 object-cover rounded flex-shrink-0"
         />
       ) : (
-        <div className="w-8 h-5 bg-surface-dark rounded flex-shrink-0 flex items-center justify-center">
-          <svg className="w-3 h-3 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="w-8 h-5 bg-gray-100 rounded flex-shrink-0 flex items-center justify-center">
+          <svg className="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
           </svg>
         </div>
       )}
 
-      <span className={`text-xs truncate flex-1 ${isSelected ? "text-white" : "text-gray-400"}`}>
+      <span className={`text-xs truncate flex-1 ${isSelected ? "text-gray-900 font-medium" : "text-gray-600"}`}>
         {session.title}
       </span>
 
-      <span className="text-xs text-gray-600">{session.actions.length}</span>
+      <span className="text-xs text-gray-400">{session.actions.length}</span>
     </div>
   );
 }
@@ -204,11 +204,11 @@ function TreeWeekItem({
   return (
     <div ref={setNodeRef} style={style}>
       {/* Week header */}
-      <div className="flex items-center gap-2 px-2 py-2 hover:bg-surface-dark/30 transition">
+      <div className="flex items-center gap-2 px-2 py-2 hover:bg-gray-50 transition">
         <button
           {...attributes}
           {...listeners}
-          className="cursor-grab text-gray-600 hover:text-gray-400 touch-none"
+          className="cursor-grab text-gray-300 hover:text-gray-500 touch-none"
         >
           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
@@ -217,7 +217,7 @@ function TreeWeekItem({
 
         <button
           onClick={() => setExpanded(!expanded)}
-          className="text-gray-500 hover:text-white"
+          className="text-gray-400 hover:text-gray-700"
         >
           <svg
             className={`w-3 h-3 transition-transform ${expanded ? "rotate-90" : ""}`}
@@ -229,11 +229,11 @@ function TreeWeekItem({
           </svg>
         </button>
 
-        <span className="text-sm font-medium text-white flex-1 truncate">
+        <span className="text-sm font-medium text-gray-900 flex-1 truncate">
           {week.title}
         </span>
 
-        <span className="text-xs text-gray-500">{week.sessions.length}</span>
+        <span className="text-xs text-gray-400">{week.sessions.length}</span>
       </div>
 
       {/* Sessions */}
@@ -263,7 +263,7 @@ function TreeWeekItem({
               </SortableContext>
             </DndContext>
           ) : (
-            <div className="pl-8 pr-2 py-2 text-xs text-gray-600 italic">
+            <div className="pl-8 pr-2 py-2 text-xs text-gray-400 italic">
               No sessions yet
             </div>
           )}
@@ -271,7 +271,7 @@ function TreeWeekItem({
           <button
             onClick={handleAddSession}
             disabled={addingSession}
-            className="w-full pl-8 pr-2 py-1.5 text-left text-xs text-gray-500 hover:text-neon-cyan transition disabled:opacity-50 flex items-center gap-1"
+            className="w-full pl-8 pr-2 py-1.5 text-left text-xs text-gray-400 hover:text-teal-600 transition disabled:opacity-50 flex items-center gap-1"
           >
             {addingSession ? (
               <>
@@ -360,19 +360,19 @@ export function TreeNavigation({
   }
 
   return (
-    <div className="h-full flex flex-col bg-surface-card border-r border-surface-border">
-      <div className="p-3 border-b border-surface-border">
-        <h3 className="text-sm font-semibold text-white">Program Structure</h3>
+    <div className="h-full flex flex-col bg-white border-r border-gray-100">
+      <div className="p-3 border-b border-gray-100">
+        <h3 className="text-sm font-semibold text-gray-900">Program Structure</h3>
       </div>
 
       <div className="flex-1 overflow-y-auto">
         {weeks.length === 0 ? (
           <div className="p-4 text-center">
-            <p className="text-sm text-gray-500 mb-3">No weeks yet</p>
+            <p className="text-sm text-gray-400 mb-3">No weeks yet</p>
             <button
               onClick={handleAddWeek}
               disabled={addingWeek}
-              className="text-sm text-neon-cyan hover:text-neon-cyan/80 transition disabled:opacity-50"
+              className="text-sm text-teal-600 hover:text-teal-700 transition disabled:opacity-50"
             >
               {addingWeek ? "Adding..." : "+ Add first week"}
             </button>
@@ -404,11 +404,11 @@ export function TreeNavigation({
       </div>
 
       {weeks.length > 0 && (
-        <div className="p-3 border-t border-surface-border">
+        <div className="p-3 border-t border-gray-100">
           <button
             onClick={handleAddWeek}
             disabled={addingWeek}
-            className="w-full py-2 text-xs text-gray-500 hover:text-neon-cyan border border-dashed border-surface-border hover:border-neon-cyan/50 rounded-lg transition disabled:opacity-50 flex items-center justify-center gap-1"
+            className="w-full py-2 text-xs text-gray-400 hover:text-teal-600 border border-dashed border-gray-200 hover:border-teal-400 rounded-lg transition disabled:opacity-50 flex items-center justify-center gap-1"
           >
             {addingWeek ? (
               <>

@@ -551,7 +551,7 @@ export function LearnerTimeline({
                                     }}
                                   >
                                     <iframe
-                                      src={`https://www.youtube.com/embed/${action.youtubeVideo.videoId}`}
+                                      src={`https://www.youtube.com/embed/${action.youtubeVideo.videoId}?rel=0&modestbranding=1&iv_load_policy=3`}
                                       title={action.youtubeVideo.title || action.title}
                                       className="w-full h-full"
                                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"

@@ -64,8 +64,8 @@ function GenerationProgress({ stage, progress, onCancel }: { stage: string | nul
   return (
     <div className="max-w-lg mx-auto mt-16 text-center">
       {/* Animated icon */}
-      <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-neon-pink/10 border border-neon-pink/30 flex items-center justify-center generation-icon-glow">
-        <svg className="w-10 h-10 text-neon-pink animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-pink-50 border border-pink-200 flex items-center justify-center generation-icon-glow">
+        <svg className="w-10 h-10 text-pink-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
       </div>
@@ -75,7 +75,7 @@ function GenerationProgress({ stage, progress, onCancel }: { stage: string | nul
         {AMBIENT_HEADERS[headerIndex]}
       </p>
 
-      <h2 className="text-2xl font-bold text-white mb-3">Building your program...</h2>
+      <h2 className="text-2xl font-bold text-gray-900 mb-3">Building your program...</h2>
       <p className="text-gray-400 mb-8">
         AI is carefully analyzing your content and crafting a structured curriculum
       </p>
@@ -125,6 +125,7 @@ export default function ProgramEditPage() {
   const [showStripePrompt, setShowStripePrompt] = useState(false);
   const [showMetaEditor, setShowMetaEditor] = useState(false);
   const [connectingStripe, setConnectingStripe] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   // Async generation tracking
   const [asyncGenerating, setAsyncGenerating] = useState(false);
@@ -376,7 +377,7 @@ export default function ProgramEditPage() {
   // Loading state
   if (loading) {
     return (
-      <div className="min-h-screen gradient-bg-radial grid-bg flex items-center justify-center">
+      <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <Spinner size="lg" />
           <p className="text-sm text-gray-400">Loading program...</p>
@@ -388,18 +389,18 @@ export default function ProgramEditPage() {
   // Error state
   if (loadError || !program) {
     return (
-      <div className="min-h-screen gradient-bg-radial grid-bg flex items-center justify-center">
+      <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-neon-pink/10 border border-neon-pink/30 flex items-center justify-center">
-            <svg className="w-8 h-8 text-neon-pink" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-pink-50 border border-pink-200 flex items-center justify-center">
+            <svg className="w-8 h-8 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
           </div>
-          <p className="text-lg text-white mb-2">Failed to load program</p>
+          <p className="text-lg text-gray-900 mb-2">Failed to load program</p>
           <p className="text-sm text-gray-500 mb-4">{loadError || "Program not found"}</p>
           <button
             onClick={() => router.push("/dashboard")}
-            className="px-4 py-2 bg-surface-card border border-surface-border rounded-lg text-sm text-gray-300 hover:border-neon-cyan transition"
+            className="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-600 hover:border-teal-400 transition"
           >
             Back to Dashboard
           </button>
@@ -451,52 +452,108 @@ export default function ProgramEditPage() {
       program={program}
     />
 
+    {/* Mobile-only: SkinPicker modal (desktop uses inline popover) */}
+    {showSkinPicker && (
+      <div className="fixed inset-0 z-50 flex items-end justify-center md:hidden">
+        <div className="absolute inset-0 bg-black/60" onClick={() => setShowSkinPicker(false)} />
+        <div className="relative w-full bg-white border-t border-gray-200 rounded-t-2xl p-4 pb-8">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-medium text-gray-900">Choose Theme</p>
+            <button onClick={() => setShowSkinPicker(false)} className="text-gray-400 hover:text-gray-900 transition">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <SkinPicker
+            value={program.skinId}
+            onChange={(skinId) => {
+              handleSkinChange(skinId);
+              setShowSkinPicker(false);
+            }}
+          />
+        </div>
+      </div>
+    )}
+
+    {/* Mobile-only: PricePicker modal (desktop uses inline popover) */}
+    {showPricePicker && (
+      <div className="fixed inset-0 z-50 flex items-end justify-center md:hidden">
+        <div className="absolute inset-0 bg-black/60" onClick={() => setShowPricePicker(false)} />
+        <div className="relative w-full bg-white border-t border-gray-200 rounded-t-2xl p-4 pb-8">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-medium text-gray-900">Set Price</p>
+            <button onClick={() => setShowPricePicker(false)} className="text-gray-400 hover:text-gray-900 transition">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div className="space-y-1">
+            {[0, 1900, 2900, 4900, 9900, 14900, 19900].map((price) => (
+              <button
+                key={price}
+                onClick={() => { handlePriceChange(price); setShowPricePicker(false); }}
+                className={`w-full text-left px-4 py-3 text-sm rounded-lg transition ${
+                  program.priceInCents === price
+                    ? "bg-pink-50 text-pink-600"
+                    : "text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                {formatPrice(price)}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    )}
+
     {/* Publish Confirmation Modal */}
     {showPublishConfirm && program && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-        <div className="bg-surface-card border border-surface-border rounded-2xl p-8 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
-          <h2 className="text-xl font-bold text-white mb-1 text-center">
+        <div className="bg-white border border-gray-200 rounded-2xl p-8 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+          <h2 className="text-xl font-bold text-gray-900 mb-1 text-center">
             You&apos;re about to publish your Journeyline!
           </h2>
           <p className="text-sm text-gray-400 mb-6 text-center">{program.title}</p>
 
           {/* Program summary */}
-          <div className="flex items-center gap-4 text-sm text-gray-300 mb-6 justify-center flex-wrap">
-            <span><span className="text-white font-medium">{program.weeks.length}</span> week{program.weeks.length !== 1 ? "s" : ""}</span>
-            <span className="text-surface-border">|</span>
-            <span><span className="text-white font-medium">{program.weeks.reduce((sum, w) => sum + w.sessions.length, 0)}</span> sessions</span>
-            <span className="text-surface-border">|</span>
-            <span><span className="text-white font-medium">{program.priceInCents > 0 ? `$${(program.priceInCents / 100).toFixed(2)}` : "Free"}</span></span>
-            <span className="text-surface-border">|</span>
-            <code className="text-neon-cyan text-xs">/p/{program.slug}</code>
+          <div className="flex items-center gap-4 text-sm text-gray-500 mb-6 justify-center flex-wrap">
+            <span><span className="text-gray-900 font-medium">{program.weeks.length}</span> week{program.weeks.length !== 1 ? "s" : ""}</span>
+            <span className="text-gray-200">|</span>
+            <span><span className="text-gray-900 font-medium">{program.weeks.reduce((sum, w) => sum + w.sessions.length, 0)}</span> sessions</span>
+            <span className="text-gray-200">|</span>
+            <span><span className="text-gray-900 font-medium">{program.priceInCents > 0 ? `$${(program.priceInCents / 100).toFixed(2)}` : "Free"}</span></span>
+            <span className="text-gray-200">|</span>
+            <code className="text-teal-600 text-xs">/p/{program.slug}</code>
           </div>
 
           {/* How learners will experience it */}
-          <div className="bg-surface-dark rounded-lg p-4 mb-4 text-sm">
-            <p className="text-white font-medium mb-3">How your learners will experience it</p>
+          <div className="bg-gray-50 rounded-lg p-4 mb-4 text-sm">
+            <p className="text-gray-900 font-medium mb-3">How your learners will experience it</p>
             <div className="space-y-2.5">
               <div className="flex items-start gap-3">
-                <span className="w-5 h-5 rounded-full bg-neon-cyan/10 border border-neon-cyan/30 flex items-center justify-center text-[10px] font-bold text-neon-cyan flex-shrink-0 mt-0.5">1</span>
+                <span className="w-5 h-5 rounded-full bg-teal-50 border border-teal-200 flex items-center justify-center text-[10px] font-bold text-teal-600 flex-shrink-0 mt-0.5">1</span>
                 <p className="text-gray-400">They visit your public link and see your sales page</p>
               </div>
               <div className="flex items-start gap-3">
-                <span className="w-5 h-5 rounded-full bg-neon-cyan/10 border border-neon-cyan/30 flex items-center justify-center text-[10px] font-bold text-neon-cyan flex-shrink-0 mt-0.5">2</span>
+                <span className="w-5 h-5 rounded-full bg-teal-50 border border-teal-200 flex items-center justify-center text-[10px] font-bold text-teal-600 flex-shrink-0 mt-0.5">2</span>
                 <p className="text-gray-400">{program.priceInCents > 0 ? "They complete payment via Stripe checkout" : "They enroll for free with their email"}</p>
               </div>
               <div className="flex items-start gap-3">
-                <span className="w-5 h-5 rounded-full bg-neon-cyan/10 border border-neon-cyan/30 flex items-center justify-center text-[10px] font-bold text-neon-cyan flex-shrink-0 mt-0.5">3</span>
+                <span className="w-5 h-5 rounded-full bg-teal-50 border border-teal-200 flex items-center justify-center text-[10px] font-bold text-teal-600 flex-shrink-0 mt-0.5">3</span>
                 <p className="text-gray-400">They receive an access link by email</p>
               </div>
               <div className="flex items-start gap-3">
-                <span className="w-5 h-5 rounded-full bg-neon-cyan/10 border border-neon-cyan/30 flex items-center justify-center text-[10px] font-bold text-neon-cyan flex-shrink-0 mt-0.5">4</span>
+                <span className="w-5 h-5 rounded-full bg-teal-50 border border-teal-200 flex items-center justify-center text-[10px] font-bold text-teal-600 flex-shrink-0 mt-0.5">4</span>
                 <p className="text-gray-400">They log in with an email code and start their journey</p>
               </div>
             </div>
           </div>
 
           {/* After publishing */}
-          <div className="bg-surface-dark rounded-lg p-4 mb-6 text-sm">
-            <p className="text-white font-medium mb-2">After publishing</p>
+          <div className="bg-gray-50 rounded-lg p-4 mb-6 text-sm">
+            <p className="text-gray-900 font-medium mb-2">After publishing</p>
             <p className="text-gray-400 mb-2">Your program remains fully editable. You can update titles, descriptions, instructions, and add new content at any time.</p>
             <p className="text-gray-500 text-xs">Just be careful removing weeks or sessions that learners may have already started.</p>
           </div>
@@ -504,7 +561,7 @@ export default function ProgramEditPage() {
           <div className="flex gap-3">
             <button
               onClick={() => setShowPublishConfirm(false)}
-              className="flex-1 px-4 py-2.5 bg-surface-dark border border-surface-border rounded-lg text-gray-300 hover:border-gray-500 transition text-sm"
+              className="flex-1 px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-gray-300 hover:border-gray-500 transition text-sm"
             >
               Go Back
             </button>
@@ -514,7 +571,7 @@ export default function ProgramEditPage() {
                 publishProgram();
               }}
               disabled={publishing}
-              className="flex-1 px-4 py-2.5 bg-gradient-to-r from-neon-cyan to-neon-pink text-surface-dark font-semibold rounded-lg hover:opacity-90 transition text-sm disabled:opacity-50"
+              className="flex-1 px-4 py-2.5 bg-gradient-to-r from-teal-500 to-pink-500 text-gray-900 font-semibold rounded-lg hover:opacity-90 transition text-sm disabled:opacity-50"
             >
               {publishing ? "Publishing..." : "Publish Now"}
             </button>
@@ -526,19 +583,19 @@ export default function ProgramEditPage() {
     {/* Publish Success Modal */}
     {publishedUrl && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-        <div className="bg-surface-card border border-surface-border rounded-2xl p-8 max-w-md w-full mx-4 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-neon-cyan/10 border border-neon-cyan/30 flex items-center justify-center">
-            <svg className="w-8 h-8 text-neon-cyan" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="bg-white border border-gray-200 rounded-2xl p-8 max-w-md w-full mx-4 text-center">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-teal-50 border border-teal-200 flex items-center justify-center">
+            <svg className="w-8 h-8 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h2 className="text-2xl font-bold text-white mb-2">Your Journeyline is Live!</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Your Journeyline is Live!</h2>
           <p className="text-gray-400 mb-6">Congrats! Share the link below so learners can find your program.</p>
 
-          <div className="bg-surface-dark rounded-lg p-3 mb-6">
+          <div className="bg-gray-50 rounded-lg p-3 mb-6">
             <p className="text-xs text-gray-500 mb-1">Share URL</p>
             <div className="flex items-center gap-2">
-              <code className="flex-1 text-neon-cyan text-sm truncate">
+              <code className="flex-1 text-teal-600 text-sm truncate">
                 {typeof window !== "undefined" ? window.location.origin : ""}{publishedUrl}
               </code>
               <button
@@ -546,7 +603,7 @@ export default function ProgramEditPage() {
                   navigator.clipboard.writeText(`${window.location.origin}${publishedUrl}`);
                   showToast("URL copied!", "success");
                 }}
-                className="p-2 bg-surface-card border border-surface-border rounded-lg hover:border-neon-cyan transition"
+                className="p-2 bg-white border border-gray-200 rounded-lg hover:border-teal-400 transition"
               >
                 <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -558,7 +615,7 @@ export default function ProgramEditPage() {
           <div className="flex gap-3">
             <button
               onClick={() => setPublishedUrl(null)}
-              className="flex-1 px-4 py-2 bg-surface-dark border border-surface-border rounded-lg text-gray-300 hover:border-neon-cyan transition"
+              className="flex-1 px-4 py-2 bg-white border border-gray-200 rounded-lg text-gray-600 hover:border-teal-400 transition"
             >
               Continue Editing
             </button>
@@ -566,7 +623,7 @@ export default function ProgramEditPage() {
               href={publishedUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex-1 px-4 py-2 bg-gradient-to-r from-neon-cyan to-neon-pink text-surface-dark font-medium rounded-lg hover:opacity-90 transition text-center"
+              className="flex-1 px-4 py-2 bg-gradient-to-r from-teal-500 to-pink-500 text-gray-900 font-medium rounded-lg hover:opacity-90 transition text-center"
             >
               View Live →
             </a>
@@ -578,19 +635,19 @@ export default function ProgramEditPage() {
     {/* Publish Validation Errors Modal */}
     {publishErrors && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-        <div className="bg-surface-card border border-surface-border rounded-2xl p-8 max-w-md w-full mx-4">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-neon-pink/10 border border-neon-pink/30 flex items-center justify-center">
-            <svg className="w-8 h-8 text-neon-pink" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="bg-white border border-gray-200 rounded-2xl p-8 max-w-md w-full mx-4">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-pink-50 border border-pink-200 flex items-center justify-center">
+            <svg className="w-8 h-8 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
           </div>
-          <h2 className="text-xl font-bold text-white mb-2 text-center">Not Ready to Publish</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-2 text-center">Not Ready to Publish</h2>
           <p className="text-gray-400 mb-4 text-center text-sm">Please fix these issues first:</p>
 
           <ul className="space-y-2 mb-6">
             {publishErrors.map((err, i) => (
               <li key={i} className="flex items-start gap-2 text-sm">
-                <span className="text-neon-pink mt-0.5">•</span>
+                <span className="text-pink-600 mt-0.5">•</span>
                 <span className="text-gray-300">{err.message}</span>
               </li>
             ))}
@@ -598,7 +655,7 @@ export default function ProgramEditPage() {
 
           <button
             onClick={() => setPublishErrors(null)}
-            className="w-full px-4 py-2 bg-surface-dark border border-surface-border rounded-lg text-gray-300 hover:border-neon-cyan transition"
+            className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg text-gray-600 hover:border-teal-400 transition"
           >
             Got it
           </button>
@@ -609,34 +666,34 @@ export default function ProgramEditPage() {
     {/* Stripe Connect Prompt Modal */}
     {showStripePrompt && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-        <div className="bg-surface-card border border-surface-border rounded-2xl p-8 max-w-md w-full mx-4 text-center">
+        <div className="bg-white border border-gray-200 rounded-2xl p-8 max-w-md w-full mx-4 text-center">
           <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[#635BFF]/10 border border-[#635BFF]/30 flex items-center justify-center">
             <svg className="w-8 h-8 text-[#635BFF]" viewBox="0 0 24 24" fill="currentColor">
               <path d="M13.976 9.15c-2.172-.806-3.356-1.426-3.356-2.409 0-.831.683-1.305 1.901-1.305 2.227 0 4.515.858 6.09 1.631l.89-5.494C18.252.975 15.697 0 12.165 0 9.667 0 7.589.654 6.104 1.872 4.56 3.147 3.757 4.992 3.757 7.218c0 4.039 2.467 5.76 6.476 7.219 2.585.92 3.445 1.574 3.445 2.583 0 .98-.84 1.545-2.354 1.545-1.875 0-4.965-.921-6.99-2.109l-.9 5.555C5.175 22.99 8.385 24 11.714 24c2.641 0 4.843-.624 6.328-1.813 1.664-1.305 2.525-3.236 2.525-5.732 0-4.128-2.524-5.851-6.591-7.305z" />
             </svg>
           </div>
-          <h2 className="text-xl font-bold text-white mb-2">Connect Stripe to Get Paid</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Connect Stripe to Get Paid</h2>
           <p className="text-gray-400 mb-6 text-sm">
             To sell your program, you&apos;ll need to connect a Stripe account. This takes just a few minutes and lets you receive payments directly.
           </p>
 
-          <div className="bg-surface-dark rounded-lg p-4 mb-6 text-left">
-            <h3 className="text-sm font-medium text-white mb-2">What happens next:</h3>
+          <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
+            <h3 className="text-sm font-medium text-gray-900 mb-2">What happens next:</h3>
             <ul className="space-y-2 text-sm text-gray-400">
               <li className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-neon-cyan flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 text-teal-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
                 Quick setup through Stripe (2-3 min)
               </li>
               <li className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-neon-cyan flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 text-teal-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
                 Receive payments directly to your bank
               </li>
               <li className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-neon-cyan flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 text-teal-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
                 Return here to publish your program
@@ -647,7 +704,7 @@ export default function ProgramEditPage() {
           <div className="flex gap-3">
             <button
               onClick={() => setShowStripePrompt(false)}
-              className="flex-1 px-4 py-2.5 bg-surface-dark border border-surface-border rounded-lg text-gray-300 hover:border-neon-cyan transition"
+              className="flex-1 px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-gray-600 hover:border-teal-400 transition"
             >
               Maybe later
             </button>
@@ -673,8 +730,8 @@ export default function ProgramEditPage() {
     {/* Program Metadata Editor Modal */}
     {showMetaEditor && program && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-        <div className="bg-surface-card border border-surface-border rounded-2xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
-          <h2 className="text-lg font-bold text-white mb-4">Edit Program Details</h2>
+        <div className="bg-white border border-gray-200 rounded-2xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+          <h2 className="text-lg font-bold text-gray-900 mb-4">Edit Program Details</h2>
           <form
             onSubmit={async (e) => {
               e.preventDefault();
@@ -707,7 +764,7 @@ export default function ProgramEditPage() {
               <input
                 name="title"
                 defaultValue={program.title}
-                className="w-full px-3 py-2 bg-surface-dark border border-surface-border rounded-lg text-white text-sm focus:outline-none focus:border-neon-cyan"
+                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-900 text-sm focus:outline-none focus:border-teal-500"
               />
             </div>
             <div>
@@ -716,7 +773,7 @@ export default function ProgramEditPage() {
                 name="description"
                 defaultValue={program.description || ""}
                 rows={3}
-                className="w-full px-3 py-2 bg-surface-dark border border-surface-border rounded-lg text-white text-sm focus:outline-none focus:border-neon-cyan resize-none"
+                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-900 text-sm focus:outline-none focus:border-teal-500 resize-none"
               />
             </div>
             <div>
@@ -725,7 +782,7 @@ export default function ProgramEditPage() {
                 name="targetAudience"
                 defaultValue={program.targetAudience || ""}
                 placeholder="Who is this program for?"
-                className="w-full px-3 py-2 bg-surface-dark border border-surface-border rounded-lg text-white text-sm focus:outline-none focus:border-neon-cyan"
+                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-900 text-sm focus:outline-none focus:border-teal-500"
               />
             </div>
             <div>
@@ -734,7 +791,7 @@ export default function ProgramEditPage() {
                 name="targetTransformation"
                 defaultValue={program.targetTransformation || ""}
                 placeholder="What will learners achieve?"
-                className="w-full px-3 py-2 bg-surface-dark border border-surface-border rounded-lg text-white text-sm focus:outline-none focus:border-neon-cyan"
+                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-900 text-sm focus:outline-none focus:border-teal-500"
               />
             </div>
             <div>
@@ -744,25 +801,25 @@ export default function ProgramEditPage() {
                 defaultValue={program.vibePrompt || ""}
                 rows={2}
                 placeholder="How should the AI write? (only affects re-generation)"
-                className="w-full px-3 py-2 bg-surface-dark border border-surface-border rounded-lg text-white text-sm focus:outline-none focus:border-neon-cyan resize-none"
+                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-900 text-sm focus:outline-none focus:border-teal-500 resize-none"
               />
             </div>
             {program.published && (
               <p className="text-xs text-gray-500">
-                Slug: <code className="text-neon-cyan">/p/{program.slug}</code> — frozen after publish
+                Slug: <code className="text-teal-600">/p/{program.slug}</code> — frozen after publish
               </p>
             )}
             <div className="flex gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => setShowMetaEditor(false)}
-                className="flex-1 px-4 py-2 bg-surface-dark border border-surface-border rounded-lg text-gray-300 hover:border-gray-500 transition text-sm"
+                className="flex-1 px-4 py-2 bg-white border border-gray-200 rounded-lg text-gray-300 hover:border-gray-500 transition text-sm"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="flex-1 px-4 py-2 bg-gradient-to-r from-neon-cyan to-neon-pink text-surface-dark font-semibold rounded-lg hover:opacity-90 transition text-sm"
+                className="flex-1 px-4 py-2 bg-gradient-to-r from-teal-500 to-pink-500 text-gray-900 font-semibold rounded-lg hover:opacity-90 transition text-sm"
               >
                 Save Changes
               </button>
@@ -772,36 +829,38 @@ export default function ProgramEditPage() {
       </div>
     )}
 
-    <div className="min-h-screen gradient-bg-radial grid-bg">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <nav className="flex items-center justify-between px-6 py-3 border-b border-surface-border/50 backdrop-blur-sm">
+      <nav className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-100">
         <div className="flex items-center gap-4">
           <button
             onClick={() => router.push("/dashboard")}
-            className="text-xl font-bold tracking-tight text-neon-cyan neon-text-cyan hover:opacity-80 transition"
+            className="text-xl font-bold tracking-tight text-gray-900 hover:text-teal-600 transition"
           >
-            ← GuideRail
+            ← Journeyline
           </button>
-          <div className="h-6 w-px bg-surface-border" />
+          <div className="h-6 w-px bg-gray-200" />
           <button
             onClick={() => setShowMetaEditor(true)}
-            className="text-lg font-semibold text-white truncate max-w-[300px] hover:text-neon-cyan transition cursor-pointer text-left"
+            className="text-base font-semibold text-gray-900 truncate max-w-[300px] hover:text-teal-600 transition cursor-pointer text-left"
             title="Click to edit program details"
           >
             {program.title}
           </button>
           <span
-            className={`text-xs px-2 py-1 rounded font-medium ${
+            className={`text-xs px-2 py-1 rounded-full font-medium ${
               program.published
-                ? "bg-neon-cyan/10 text-neon-cyan"
-                : "bg-surface-card text-gray-400"
+                ? "bg-teal-50 text-teal-700"
+                : "bg-gray-100 text-gray-500"
             }`}
           >
             {program.published ? "Published" : "Draft"}
           </span>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 md:gap-3">
+          {/* === Desktop-only action buttons === */}
+
           {/* AI Generation button */}
           {program.videos.length > 0 && (
             <button
@@ -814,7 +873,7 @@ export default function ProgramEditPage() {
                 generateStructure();
               }}
               disabled={generating}
-              className="text-xs px-3 py-1.5 rounded-lg font-medium bg-neon-pink/10 text-neon-pink border border-neon-pink/30 hover:bg-neon-pink/20 transition disabled:opacity-50 flex items-center gap-2"
+              className="hidden md:flex text-xs px-3 py-1.5 rounded-lg font-medium bg-pink-50 text-pink-600 border border-pink-200 hover:bg-pink-100 transition disabled:opacity-50 items-center gap-2"
             >
               {generating ? (
                 <>
@@ -834,10 +893,10 @@ export default function ProgramEditPage() {
 
           {/* Theme picker */}
           {program.weeks.length > 0 && (
-            <div className="relative">
+            <div className="hidden md:block relative">
               <button
                 onClick={() => setShowSkinPicker(!showSkinPicker)}
-                className="text-xs px-3 py-1.5 rounded-lg font-medium bg-surface-card text-gray-300 border border-surface-border hover:border-neon-cyan hover:text-neon-cyan transition flex items-center gap-1.5"
+                className="text-xs px-3 py-1.5 rounded-lg font-medium bg-white text-gray-600 border border-gray-200 hover:border-teal-400 hover:text-teal-600 transition flex items-center gap-1.5"
               >
                 <div
                   className="w-3 h-3 rounded-full"
@@ -854,7 +913,7 @@ export default function ProgramEditPage() {
                     className="fixed inset-0 z-10"
                     onClick={() => setShowSkinPicker(false)}
                   />
-                  <div className="absolute right-0 mt-2 w-[500px] p-4 bg-surface-card border border-surface-border rounded-xl shadow-xl z-20">
+                  <div className="absolute right-0 mt-2 w-[500px] p-4 bg-white border border-gray-200 rounded-xl shadow-lg z-20">
                     <SkinPicker
                       value={program.skinId}
                       onChange={(skinId) => {
@@ -872,7 +931,7 @@ export default function ProgramEditPage() {
           {program.weeks.length > 0 && (
             <button
               onClick={() => setShowPreview(true)}
-              className="text-xs px-3 py-1.5 rounded-lg font-medium bg-surface-card text-gray-300 border border-surface-border hover:border-neon-cyan hover:text-neon-cyan transition flex items-center gap-1.5"
+              className="hidden md:flex text-xs px-3 py-1.5 rounded-lg font-medium bg-white text-gray-600 border border-gray-200 hover:border-teal-400 hover:text-teal-600 transition items-center gap-1.5"
             >
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -884,10 +943,10 @@ export default function ProgramEditPage() {
 
           {/* Price picker */}
           {program.weeks.length > 0 && (
-            <div className="relative">
+            <div className="hidden md:block relative">
               <button
                 onClick={() => setShowPricePicker(!showPricePicker)}
-                className="text-xs px-3 py-1.5 rounded-lg font-medium bg-surface-card text-gray-300 border border-surface-border hover:border-neon-pink hover:text-neon-pink transition flex items-center gap-1.5"
+                className="text-xs px-3 py-1.5 rounded-lg font-medium bg-white text-gray-600 border border-gray-200 hover:border-pink-400 hover:text-pink-600 transition flex items-center gap-1.5"
               >
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -903,7 +962,7 @@ export default function ProgramEditPage() {
                     className="fixed inset-0 z-10"
                     onClick={() => setShowPricePicker(false)}
                   />
-                  <div className="absolute right-0 mt-2 w-48 p-2 bg-surface-card border border-surface-border rounded-xl shadow-xl z-20">
+                  <div className="absolute right-0 mt-2 w-48 p-2 bg-white border border-gray-200 rounded-xl shadow-lg z-20">
                     <p className="text-xs text-gray-400 px-2 py-1 mb-1">Set price</p>
                     {[0, 1900, 2900, 4900, 9900, 14900, 19900].map((price) => (
                       <button
@@ -914,8 +973,8 @@ export default function ProgramEditPage() {
                         }}
                         className={`w-full text-left px-3 py-2 text-sm rounded-lg transition ${
                           program.priceInCents === price
-                            ? "bg-neon-pink/10 text-neon-pink"
-                            : "text-gray-300 hover:bg-surface-dark"
+                            ? "bg-pink-50 text-pink-600"
+                            : "text-gray-600 hover:bg-gray-50"
                         }`}
                       >
                         {formatPrice(price)}
@@ -929,17 +988,113 @@ export default function ProgramEditPage() {
 
           <button
             onClick={() => setShowWizard(true)}
-            className="text-xs px-3 py-1.5 rounded-lg font-medium bg-surface-card text-gray-300 border border-surface-border hover:border-neon-cyan hover:text-neon-cyan transition"
+            className="hidden md:inline-flex text-xs px-3 py-1.5 rounded-lg font-medium bg-white text-gray-600 border border-gray-200 hover:border-teal-400 hover:text-teal-600 transition"
           >
             Wizard
           </button>
+
+          {/* === Mobile "..." overflow menu === */}
+          <div className="md:hidden relative">
+            <button
+              onClick={() => setShowMobileMenu(!showMobileMenu)}
+              className="text-xs px-2.5 py-1.5 rounded-lg font-medium bg-white text-gray-600 border border-gray-200 hover:border-teal-400 hover:text-teal-600 transition"
+              aria-label="More actions"
+            >
+              •••
+            </button>
+            {showMobileMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => setShowMobileMenu(false)}
+                />
+                <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-100 rounded-xl shadow-lg z-20 py-1 overflow-hidden">
+                  {program.videos.length > 0 && (
+                    <button
+                      onClick={() => {
+                        setShowMobileMenu(false);
+                        if (program.weeks.length > 0) {
+                          if (!confirm("This will replace your current structure. Continue?")) return;
+                        }
+                        generateStructure();
+                      }}
+                      disabled={generating}
+                      className="w-full text-left px-4 py-2.5 text-sm text-pink-600 hover:bg-gray-50 transition disabled:opacity-50 flex items-center gap-2"
+                    >
+                      <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      {program.weeks.length > 0 ? "Regenerate" : "Generate with AI"}
+                    </button>
+                  )}
+                  {program.weeks.length > 0 && (
+                    <>
+                      <button
+                        onClick={() => { setShowMobileMenu(false); setShowSkinPicker(true); }}
+                        className="w-full text-left px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-50 transition flex items-center gap-2"
+                      >
+                        <div className="w-3.5 h-3.5 rounded-full flex-shrink-0" style={{ backgroundColor: getSkin(program.skinId).colors.accent }} />
+                        Theme
+                      </button>
+                      <button
+                        onClick={() => { setShowMobileMenu(false); setShowPreview(true); }}
+                        className="w-full text-left px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-50 transition flex items-center gap-2"
+                      >
+                        <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                        Preview
+                      </button>
+                      <button
+                        onClick={() => { setShowMobileMenu(false); setShowPricePicker(true); }}
+                        className="w-full text-left px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-50 transition flex items-center gap-2"
+                      >
+                        <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        {formatPrice(program.priceInCents)}
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => { setShowMobileMenu(false); setShowWizard(true); }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition"
+                  >
+                    Wizard
+                  </button>
+                  {program.published && (
+                    <button
+                      onClick={async () => {
+                        setShowMobileMenu(false);
+                        if (!confirm("Unpublish this program? Learners will no longer be able to access it via the public link.")) return;
+                        try {
+                          const res = await fetch(`/api/programs/${id}/unpublish`, { method: "POST" });
+                          if (!res.ok) throw new Error("Failed to unpublish");
+                          await load();
+                          showToast("Program unpublished", "success");
+                        } catch {
+                          showToast("Failed to unpublish", "error");
+                        }
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-gray-50 transition border-t border-gray-100"
+                    >
+                      Unpublish
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* === Always-visible: Publish / View Live === */}
 
           {/* Publish button */}
           {!program.published && program.weeks.length > 0 && (
             <button
               onClick={() => setShowPublishConfirm(true)}
               disabled={publishing}
-              className="text-xs px-4 py-1.5 rounded-lg font-medium bg-gradient-to-r from-neon-cyan to-neon-pink text-surface-dark hover:opacity-90 transition disabled:opacity-50 flex items-center gap-2"
+              className="text-xs px-4 py-1.5 rounded-lg font-medium bg-gradient-to-r from-teal-500 to-pink-500 text-gray-900 hover:opacity-90 transition disabled:opacity-50 flex items-center gap-2"
             >
               {publishing ? (
                 <>
@@ -966,7 +1121,7 @@ export default function ProgramEditPage() {
                     showToast("Failed to unpublish", "error");
                   }
                 }}
-                className="text-xs px-3 py-1.5 rounded-lg font-medium bg-surface-card text-gray-400 border border-surface-border hover:border-neon-pink hover:text-neon-pink transition"
+                className="hidden md:inline-flex text-xs px-3 py-1.5 rounded-lg font-medium bg-white text-gray-500 border border-gray-200 hover:border-pink-400 hover:text-pink-600 transition"
               >
                 Unpublish
               </button>
@@ -974,7 +1129,7 @@ export default function ProgramEditPage() {
                 href={`/p/${program.slug}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs px-3 py-1.5 rounded-lg font-medium bg-neon-cyan/10 text-neon-cyan border border-neon-cyan/30 hover:bg-neon-cyan/20 transition"
+                className="text-xs px-3 py-1.5 rounded-lg font-medium bg-teal-50 text-teal-600 border border-teal-200 hover:bg-teal-100 transition"
               >
                 View Live →
               </a>
@@ -988,18 +1143,18 @@ export default function ProgramEditPage() {
         {program.weeks.length === 0 && program.videos.length === 0 ? (
           // Empty state - encourage using wizard
           <div className="max-w-lg mx-auto mt-16 text-center">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-neon-cyan/10 border border-neon-cyan/30 flex items-center justify-center">
-              <svg className="w-10 h-10 text-neon-cyan" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-teal-50 border border-teal-200 flex items-center justify-center">
+              <svg className="w-10 h-10 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
               </svg>
             </div>
-            <h2 className="text-2xl font-bold text-white mb-3">Let&apos;s build your program</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-3">Let&apos;s build your program</h2>
             <p className="text-gray-400 mb-6">
               Start by adding videos and content, then let AI help you create a structured learning experience.
             </p>
             <button
               onClick={() => setShowWizard(true)}
-              className="btn-neon px-8 py-3 rounded-xl text-surface-dark font-semibold"
+              className="px-8 py-3 rounded-xl bg-gradient-to-r from-teal-500 to-pink-500 text-white font-semibold hover:opacity-90 transition"
             >
               Open Program Wizard
             </button>
@@ -1010,17 +1165,17 @@ export default function ProgramEditPage() {
         ) : program.weeks.length === 0 ? (
           // Has videos but no structure yet (and no async generation running)
           <div className="max-w-lg mx-auto mt-16 text-center">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-neon-pink/10 border border-neon-pink/30 flex items-center justify-center">
-              <svg className="w-10 h-10 text-neon-pink" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-pink-50 border border-pink-200 flex items-center justify-center">
+              <svg className="w-10 h-10 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
-            <h2 className="text-2xl font-bold text-white mb-3">
+            <h2 className="text-2xl font-bold text-gray-900 mb-3">
               {lastGenError ? "Generation failed" : "Ready to generate!"}
             </h2>
             {lastGenError && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-4 text-left">
-                <p className="text-xs text-red-300 line-clamp-3">{lastGenError}</p>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-left">
+                <p className="text-xs text-red-600 line-clamp-3">{lastGenError}</p>
               </div>
             )}
             <p className="text-gray-400 mb-2">
@@ -1034,7 +1189,7 @@ export default function ProgramEditPage() {
             <button
               onClick={generateStructure}
               disabled={generating}
-              className="btn-neon-pink px-8 py-3 rounded-xl text-white font-semibold disabled:opacity-50 flex items-center gap-2 mx-auto"
+              className="px-8 py-3 rounded-xl bg-pink-500 text-white font-semibold hover:bg-pink-600 transition disabled:opacity-50 flex items-center gap-2 mx-auto"
             >
               {generating ? (
                 <>

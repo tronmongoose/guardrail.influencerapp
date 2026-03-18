@@ -1,6 +1,5 @@
 import Link from "next/link";
 import {
-  SignInButton,
   SignedIn,
   SignedOut,
   UserButton,
@@ -10,11 +9,12 @@ export function AuthNav() {
   return (
     <div className="flex items-center gap-3 sm:gap-4">
       <SignedOut>
-        <SignInButton mode="modal">
-          <button className="px-3 sm:px-4 py-2 rounded-lg bg-neon-cyan/10 border border-neon-cyan/30 text-neon-cyan text-sm font-medium hover:bg-neon-cyan/20 transition-all">
-            Sign in
-          </button>
-        </SignInButton>
+        <Link
+          href="/sign-in"
+          className="px-3 sm:px-4 py-2 rounded-lg bg-neon-cyan/10 border border-neon-cyan/30 text-neon-cyan text-sm font-medium hover:bg-neon-cyan/20 transition-all"
+        >
+          Sign in
+        </Link>
       </SignedOut>
       <SignedIn>
         <Link href="/dashboard" className="text-sm text-neon-cyan font-medium hover:neon-text-cyan transition-all">
@@ -30,11 +30,12 @@ export function AuthCTA() {
   return (
     <div className="flex flex-col sm:flex-row gap-4 justify-center">
       <SignedOut>
-        <SignInButton mode="modal">
-          <button className="btn-neon px-8 py-4 rounded-xl text-surface-dark font-bold">
-            Start building
-          </button>
-        </SignInButton>
+        <Link
+          href="/sign-in"
+          className="btn-neon px-8 py-4 rounded-xl text-surface-dark font-bold text-center"
+        >
+          Start building
+        </Link>
       </SignedOut>
       <SignedIn>
         {/* Dashboard will redirect to /new if they have no programs */}

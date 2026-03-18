@@ -5,7 +5,7 @@ import { ToastProvider } from "@/components/ui/toast";
 import { GenerationProvider } from "@/components/generation";
 
 export const metadata: Metadata = {
-  title: "GuideRail — Guided Learning Programs",
+  title: "Journeyline — Guided Learning Programs",
   description: "Premium instructor-led programs built from your content.",
 };
 

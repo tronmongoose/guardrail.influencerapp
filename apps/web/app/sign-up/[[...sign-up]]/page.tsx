@@ -7,7 +7,7 @@ export default function SignUpPage() {
       {/* Nav */}
       <nav className="flex items-center justify-between px-6 py-5 border-b border-surface-border/50">
         <Link href="/" className="text-xl font-bold tracking-tight neon-text-cyan text-neon-cyan">
-          GuideRail
+          Journeyline
         </Link>
       </nav>
 

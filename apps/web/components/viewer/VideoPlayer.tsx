@@ -134,6 +134,7 @@ export function VideoPlayer({
           controls: 1,
           modestbranding: 1,
           rel: 0,
+          iv_load_policy: 3,
           start: startSeconds ? Math.floor(startSeconds) : undefined,
           end: endSeconds ? Math.ceil(endSeconds) : undefined,
         },

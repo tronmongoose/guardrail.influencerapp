@@ -19,6 +19,8 @@ export interface ActionsPanelProps {
   onActionComplete?: (actionId: string) => void;
 }
 
+const REFLECT_MIN_CHARS = 20;
+
 export function ActionsPanel({ actions, userId, onActionComplete }: ActionsPanelProps) {
   const [completedSet, setCompletedSet] = useState<Set<string>>(
     () => new Set(actions.filter((a) => a.completed).map((a) => a.id))
@@ -30,6 +32,8 @@ export function ActionsPanel({ actions, userId, onActionComplete }: ActionsPanel
     }
     return map;
   });
+  // Draft text for in-progress REFLECT actions (separate from saved reflections)
+  const [reflectDraft, setReflectDraft] = useState<Record<string, string>>({});
   const [savingAction, setSavingAction] = useState<string | null>(null);
   const [expandedAction, setExpandedAction] = useState<string | null>(null);
 
@@ -49,6 +53,9 @@ export function ActionsPanel({ actions, userId, onActionComplete }: ActionsPanel
         });
         if (res.ok) {
           setCompletedSet((prev) => new Set(prev).add(actionId));
+          if (reflectionText) {
+            setReflections((prev) => ({ ...prev, [actionId]: reflectionText }));
+          }
           onActionComplete?.(actionId);
         }
       } finally {
@@ -73,6 +80,10 @@ export function ActionsPanel({ actions, userId, onActionComplete }: ActionsPanel
           const isComplete = completedSet.has(action.id);
           const isSaving = savingAction === action.id;
           const isExpanded = expandedAction === action.id;
+          const isReflect = action.type === "REFLECT";
+          const draft = reflectDraft[action.id] ?? "";
+          const charCount = draft.trim().length;
+          const canSubmit = charCount >= REFLECT_MIN_CHARS;
 
           return (
             <div
@@ -80,9 +91,10 @@ export function ActionsPanel({ actions, userId, onActionComplete }: ActionsPanel
               className="rounded-lg border p-3 transition-colors"
               style={{
                 ...getActionTypeBgWithBorder(action.type),
-                opacity: isComplete ? 0.6 : 1,
+                opacity: isComplete ? 0.65 : 1,
               }}
             >
+              {/* Row header — always visible */}
               <button
                 onClick={() => setExpandedAction(isExpanded ? null : action.id)}
                 className="flex w-full items-center gap-3 text-left"
@@ -134,8 +146,10 @@ export function ActionsPanel({ actions, userId, onActionComplete }: ActionsPanel
                 </svg>
               </button>
 
+              {/* Expanded panel */}
               {isExpanded && (
                 <div className="mt-3 pl-8 space-y-3">
+                  {/* Instructions / description */}
                   {action.instructions && (
                     <p
                       className="text-sm leading-relaxed"
@@ -145,59 +159,121 @@ export function ActionsPanel({ actions, userId, onActionComplete }: ActionsPanel
                     </p>
                   )}
 
-                  {action.type === "REFLECT" && action.reflectionPrompt && (
-                    <div className="space-y-2">
-                      <p
-                        className="text-sm italic"
-                        style={{ color: "var(--token-color-text-secondary)" }}
-                      >
-                        {action.reflectionPrompt}
-                      </p>
-                      {!isComplete && (
-                        <textarea
-                          value={reflections[action.id] || ""}
-                          onChange={(e) =>
-                            setReflections((prev) => ({
-                              ...prev,
-                              [action.id]: e.target.value,
-                            }))
-                          }
-                          placeholder="Write your reflection..."
-                          className="w-full rounded-md border px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1"
+                  {isReflect ? (
+                    isComplete ? (
+                      /* ── Saved confirmation state ── */
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-1.5">
+                          <svg
+                            className="h-4 w-4 flex-shrink-0"
+                            style={{ color: "var(--token-color-semantic-success)" }}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                          </svg>
+                          <span
+                            className="text-sm"
+                            style={{ color: "var(--token-color-text-secondary)" }}
+                          >
+                            Reflection saved
+                          </span>
+                        </div>
+                        {reflections[action.id] && (
+                          <p
+                            className="text-sm leading-relaxed rounded-xl px-4 py-3"
+                            style={{
+                              backgroundColor: "rgba(0,0,0,0.04)",
+                              color: "var(--token-color-text-primary)",
+                            }}
+                          >
+                            {reflections[action.id]}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      /* ── Active reflection input ── */
+                      <div className="space-y-3">
+                        {action.reflectionPrompt && (
+                          <p
+                            className="text-sm italic"
+                            style={{ color: "var(--token-color-text-secondary)" }}
+                          >
+                            {action.reflectionPrompt}
+                          </p>
+                        )}
+
+                        {/* Textarea + char count */}
+                        <div className="space-y-1">
+                          <textarea
+                            value={draft}
+                            onChange={(e) =>
+                              setReflectDraft((prev) => ({
+                                ...prev,
+                                [action.id]: e.target.value,
+                              }))
+                            }
+                            placeholder="What did this bring up for you? There's no wrong answer."
+                            rows={4}
+                            className="w-full rounded-xl px-4 py-3 text-sm leading-relaxed resize-none focus:outline-none"
+                            style={{
+                              backgroundColor: "rgba(0,0,0,0.04)",
+                              border: "none",
+                              color: "var(--token-color-text-primary)",
+                              minHeight: "7rem",
+                            }}
+                          />
+                          <div className="flex justify-end pr-1">
+                            <span
+                              className="text-xs tabular-nums transition-colors"
+                              style={{
+                                color: canSubmit
+                                  ? "var(--token-color-text-secondary)"
+                                  : "var(--token-color-text-tertiary, #9ca3af)",
+                              }}
+                            >
+                              {charCount} / {REFLECT_MIN_CHARS} min
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Full-width submit */}
+                        <button
+                          onClick={() => markComplete(action.id, draft.trim())}
+                          disabled={!canSubmit || isSaving}
+                          className="w-full rounded-xl py-3 text-sm font-semibold transition-all"
                           style={{
-                            backgroundColor: "var(--token-color-bg-default)",
-                            borderColor: "var(--token-color-border-subtle)",
-                            color: "var(--token-color-text-primary)",
-                          }}
-                          rows={3}
-                        />
-                      )}
-                      {isComplete && reflections[action.id] && (
-                        <p
-                          className="text-sm rounded-md p-2"
-                          style={{
-                            backgroundColor: "var(--token-color-bg-default)",
-                            color: "var(--token-color-text-primary)",
+                            backgroundColor:
+                              canSubmit && !isSaving
+                                ? "var(--token-color-accent)"
+                                : "rgba(0,0,0,0.08)",
+                            color:
+                              canSubmit && !isSaving
+                                ? "var(--token-comp-viewer-overlay-text)"
+                                : "var(--token-color-text-secondary)",
+                            cursor: canSubmit && !isSaving ? "pointer" : "default",
                           }}
                         >
-                          {reflections[action.id]}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {!isComplete && (
-                    <button
-                      onClick={() => markComplete(action.id, reflections[action.id])}
-                      disabled={isSaving}
-                      className="rounded-md px-3 py-1.5 text-xs font-medium transition-opacity disabled:opacity-50"
-                      style={{
-                        backgroundColor: "var(--token-color-accent)",
-                        color: "var(--token-comp-viewer-overlay-text)",
-                      }}
-                    >
-                      {isSaving ? "Saving..." : "Mark Complete"}
-                    </button>
+                          {isSaving ? "Saving…" : "Save reflection & complete"}
+                        </button>
+                      </div>
+                    )
+                  ) : (
+                    /* ── Non-REFLECT: plain Mark Complete ── */
+                    !isComplete && (
+                      <button
+                        onClick={() => markComplete(action.id)}
+                        disabled={isSaving}
+                        className="rounded-md px-3 py-1.5 text-xs font-medium transition-opacity disabled:opacity-50"
+                        style={{
+                          backgroundColor: "var(--token-color-accent)",
+                          color: "var(--token-comp-viewer-overlay-text)",
+                        }}
+                      >
+                        {isSaving ? "Saving…" : "Mark Complete"}
+                      </button>
+                    )
                   )}
                 </div>
               )}

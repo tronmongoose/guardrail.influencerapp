@@ -204,7 +204,7 @@ export function ProgramOverviewPreview({
         style={{ borderTop: `1px solid ${skin.colors.border}` }}
       >
         <p className="text-sm" style={{ color: skin.colors.textMuted }}>
-          Powered by GuideRail
+          Powered by Journeyline
         </p>
       </div>
     </div>
