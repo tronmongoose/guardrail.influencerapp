@@ -29,6 +29,10 @@ export interface ColorTokens {
     default: string;
     /** Cards, headers, secondary surfaces */
     elevated: string;
+    /** Program page hero section background */
+    hero: string;
+    /** Subtle card/section background */
+    surface: string;
   };
   border: {
     /** Default borders, dividers */
@@ -40,8 +44,12 @@ export interface ColorTokens {
     /** Captions, helper text */
     secondary: string;
   };
-  /** Brand accent (CTA, links, active states) */
-  accent: string;
+  accent: {
+    /** Primary brand accent (CTA, links, active states) */
+    primary: string;
+    /** Secondary accent for gradients and highlights */
+    secondary: string;
+  };
   /** Accent on hover/press */
   accentHover: string;
   /** Semantic colors for status and action types */
@@ -73,6 +81,8 @@ export interface TypographyStyle {
 
 export interface TypographyTokens {
   heading: {
+    /** Large display headline (e.g. "Timeline" title that varies per skin) */
+    display: TypographyStyle;
     xl: TypographyStyle;
     lg: TypographyStyle;
     md: TypographyStyle;
@@ -103,6 +113,19 @@ export interface ShadowTokens {
   sm: string;
   md: string;
   lg: string;
+}
+
+// ---------------------------------------------------------------------------
+// Motion Tokens
+// ---------------------------------------------------------------------------
+
+export interface MotionTokens {
+  transition: {
+    /** CSS transition duration, e.g. "150ms", "300ms" */
+    duration: string;
+    /** CSS transition easing, e.g. "ease-out", "spring" */
+    easing: string;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -175,11 +198,18 @@ export interface ViewerTokens {
   controlsTint: string;
 }
 
+export interface CardTokens {
+  radius: string;
+  shadow: string;
+  border: string;
+}
+
 export interface ComponentTokens {
   button: {
     primary: ButtonTokens;
     secondary: ButtonTokens;
   };
+  card: CardTokens;
   chip: ChipTokens;
   badge: BadgeTokens;
   progress: ProgressTokens;
@@ -209,6 +239,7 @@ export interface SkinTokens {
   text: TypographyTokens;
   radius: RadiusTokens;
   shadow: ShadowTokens;
+  motion: MotionTokens;
   component: ComponentTokens;
 }
 
@@ -234,6 +265,8 @@ export const SkinTokensSchema = z.object({
     background: z.object({
       default: z.string(),
       elevated: z.string(),
+      hero: z.string(),
+      surface: z.string(),
     }),
     border: z.object({
       subtle: z.string(),
@@ -242,7 +275,10 @@ export const SkinTokensSchema = z.object({
       primary: z.string(),
       secondary: z.string(),
     }),
-    accent: z.string(),
+    accent: z.object({
+      primary: z.string(),
+      secondary: z.string(),
+    }),
     accentHover: z.string(),
     semantic: z.object({
       success: z.string(),
@@ -255,6 +291,7 @@ export const SkinTokensSchema = z.object({
 
   text: z.object({
     heading: z.object({
+      display: TypographyStyleSchema,
       xl: TypographyStyleSchema,
       lg: TypographyStyleSchema,
       md: TypographyStyleSchema,
@@ -280,6 +317,13 @@ export const SkinTokensSchema = z.object({
     lg: z.string(),
   }),
 
+  motion: z.object({
+    transition: z.object({
+      duration: z.string(),
+      easing: z.string(),
+    }),
+  }),
+
   component: z.object({
     button: z.object({
       primary: z.object({
@@ -290,6 +334,11 @@ export const SkinTokensSchema = z.object({
         variant: ButtonVariantSchema,
         radius: z.string(),
       }),
+    }),
+    card: z.object({
+      radius: z.string(),
+      shadow: z.string(),
+      border: z.string(),
     }),
     chip: z.object({
       background: z.string(),
