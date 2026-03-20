@@ -8,11 +8,13 @@ import {
   ProgramBuilderSplit,
   type WeekData,
   type YouTubeVideoData,
+  type SessionData,
 } from "@/components/builder";
 import { ProgramWizard } from "@/components/wizard/ProgramWizard";
 import { SkinPicker } from "@/components/skins/SkinPicker";
-import { PreviewModal } from "@/components/preview/PreviewModal";
-import { getSkin } from "@/lib/skins";
+import { getSkin, getSkinCSSVars } from "@/lib/skins";
+import { ProgramOverviewPreview } from "@/components/preview/ProgramOverviewPreview";
+import { SessionPreview } from "@/components/preview/SessionPreview";
 import { useGenerationSteps } from "@/components/generation/useGenerationSteps";
 import { GenerationSteps } from "@/components/generation/GenerationSteps";
 
@@ -112,20 +114,19 @@ export default function ProgramEditPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showWizard, setShowWizard] = useState(searchParams.get("wizard") === "true");
+  const [activeTab, setActiveTab] = useState<"curriculum" | "settings" | "pricing" | "preview">("curriculum");
+  const [previewView, setPreviewView] = useState<"overview" | "session">("overview");
+  const [previewDeviceMode, setPreviewDeviceMode] = useState<"desktop" | "mobile">("desktop");
+  const [previewSelectedSessionId, setPreviewSelectedSessionId] = useState<string | null>(null);
 
   const [generating, setGenerating] = useState(false);
   const [publishing, setPublishing] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-  const [showSkinPicker, setShowSkinPicker] = useState(false);
-  const [showPricePicker, setShowPricePicker] = useState(false);
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
   const [publishErrors, setPublishErrors] = useState<{ field: string; message: string }[] | null>(null);
   const [showPublishConfirm, setShowPublishConfirm] = useState(false);
   const [stripeStatus, setStripeStatus] = useState<StripeConnectStatus | null>(null);
   const [showStripePrompt, setShowStripePrompt] = useState(false);
-  const [showMetaEditor, setShowMetaEditor] = useState(false);
   const [connectingStripe, setConnectingStripe] = useState(false);
-  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   // Async generation tracking
   const [asyncGenerating, setAsyncGenerating] = useState(false);
@@ -331,7 +332,6 @@ export default function ProgramEditPage() {
   async function handlePriceChange(priceInCents: number) {
     // If setting a paid price and Stripe not connected, show the prompt
     if (priceInCents > 0 && !stripeStatus?.onboardingComplete) {
-      setShowPricePicker(false);
       setShowStripePrompt(true);
       return;
     }
@@ -443,71 +443,14 @@ export default function ProgramEditPage() {
     );
   }
 
+  const previewSkin = getSkin(program.skinId);
+  const previewCssVars = getSkinCSSVars(previewSkin);
+  const previewSelectedSession = previewSelectedSessionId
+    ? program.weeks.flatMap((w) => w.sessions).find((s) => s.id === previewSelectedSessionId)
+    : null;
+
   return (
     <>
-    {/* Preview Modal */}
-    <PreviewModal
-      isOpen={showPreview}
-      onClose={() => setShowPreview(false)}
-      program={program}
-    />
-
-    {/* Mobile-only: SkinPicker modal (desktop uses inline popover) */}
-    {showSkinPicker && (
-      <div className="fixed inset-0 z-50 flex items-end justify-center md:hidden">
-        <div className="absolute inset-0 bg-black/60" onClick={() => setShowSkinPicker(false)} />
-        <div className="relative w-full bg-white border-t border-gray-200 rounded-t-2xl p-4 pb-8">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-medium text-gray-900">Choose Theme</p>
-            <button onClick={() => setShowSkinPicker(false)} className="text-gray-400 hover:text-gray-900 transition">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          <SkinPicker
-            value={program.skinId}
-            onChange={(skinId) => {
-              handleSkinChange(skinId);
-              setShowSkinPicker(false);
-            }}
-          />
-        </div>
-      </div>
-    )}
-
-    {/* Mobile-only: PricePicker modal (desktop uses inline popover) */}
-    {showPricePicker && (
-      <div className="fixed inset-0 z-50 flex items-end justify-center md:hidden">
-        <div className="absolute inset-0 bg-black/60" onClick={() => setShowPricePicker(false)} />
-        <div className="relative w-full bg-white border-t border-gray-200 rounded-t-2xl p-4 pb-8">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-medium text-gray-900">Set Price</p>
-            <button onClick={() => setShowPricePicker(false)} className="text-gray-400 hover:text-gray-900 transition">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          <div className="space-y-1">
-            {[0, 1900, 2900, 4900, 9900, 14900, 19900].map((price) => (
-              <button
-                key={price}
-                onClick={() => { handlePriceChange(price); setShowPricePicker(false); }}
-                className={`w-full text-left px-4 py-3 text-sm rounded-lg transition ${
-                  program.priceInCents === price
-                    ? "bg-pink-50 text-pink-600"
-                    : "text-gray-600 hover:bg-gray-50"
-                }`}
-              >
-                {formatPrice(price)}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-    )}
-
     {/* Publish Confirmation Modal */}
     {showPublishConfirm && program && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
@@ -727,128 +670,26 @@ export default function ProgramEditPage() {
       </div>
     )}
 
-    {/* Program Metadata Editor Modal */}
-    {showMetaEditor && program && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-        <div className="bg-white border border-gray-200 rounded-2xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">Edit Program Details</h2>
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              const form = e.currentTarget;
-              const formData = new FormData(form);
-              try {
-                const res = await fetch(`/api/programs/${id}`, {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    title: formData.get("title"),
-                    description: formData.get("description") || null,
-                    targetAudience: formData.get("targetAudience") || null,
-                    targetTransformation: formData.get("targetTransformation") || null,
-                    vibePrompt: formData.get("vibePrompt") || null,
-                  }),
-                });
-                if (!res.ok) throw new Error("Failed to save");
-                await load();
-                setShowMetaEditor(false);
-                showToast("Program details updated", "success");
-              } catch {
-                showToast("Failed to update details", "error");
-              }
-            }}
-            className="space-y-4"
-          >
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">Title</label>
-              <input
-                name="title"
-                defaultValue={program.title}
-                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-900 text-sm focus:outline-none focus:border-teal-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">Description</label>
-              <textarea
-                name="description"
-                defaultValue={program.description || ""}
-                rows={3}
-                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-900 text-sm focus:outline-none focus:border-teal-500 resize-none"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">Target Audience</label>
-              <input
-                name="targetAudience"
-                defaultValue={program.targetAudience || ""}
-                placeholder="Who is this program for?"
-                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-900 text-sm focus:outline-none focus:border-teal-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">Target Transformation</label>
-              <input
-                name="targetTransformation"
-                defaultValue={program.targetTransformation || ""}
-                placeholder="What will learners achieve?"
-                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-900 text-sm focus:outline-none focus:border-teal-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">AI Vibe Prompt</label>
-              <textarea
-                name="vibePrompt"
-                defaultValue={program.vibePrompt || ""}
-                rows={2}
-                placeholder="How should the AI write? (only affects re-generation)"
-                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-900 text-sm focus:outline-none focus:border-teal-500 resize-none"
-              />
-            </div>
-            {program.published && (
-              <p className="text-xs text-gray-500">
-                Slug: <code className="text-teal-600">/p/{program.slug}</code> — frozen after publish
-              </p>
-            )}
-            <div className="flex gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowMetaEditor(false)}
-                className="flex-1 px-4 py-2 bg-white border border-gray-200 rounded-lg text-gray-300 hover:border-gray-500 transition text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="flex-1 px-4 py-2 bg-gradient-to-r from-teal-500 to-pink-500 text-gray-900 font-semibold rounded-lg hover:opacity-90 transition text-sm"
-              >
-                Save Changes
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    )}
-
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <nav className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-100">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={() => router.push("/dashboard")}
-            className="text-xl font-bold tracking-tight text-gray-900 hover:text-teal-600 transition"
+            className="text-xl font-bold tracking-tight text-gray-900 hover:text-teal-600 transition flex-shrink-0"
           >
-            ← Journeyline
+            ←
           </button>
-          <div className="h-6 w-px bg-gray-200" />
+          <div className="h-6 w-px bg-gray-200 flex-shrink-0" />
           <button
-            onClick={() => setShowMetaEditor(true)}
-            className="text-base font-semibold text-gray-900 truncate max-w-[300px] hover:text-teal-600 transition cursor-pointer text-left"
+            onClick={() => setActiveTab("settings")}
+            className="text-base font-semibold text-gray-900 truncate hover:text-teal-600 transition cursor-pointer text-left"
             title="Click to edit program details"
           >
             {program.title}
           </button>
           <span
-            className={`text-xs px-2 py-1 rounded-full font-medium ${
+            className={`flex-shrink-0 text-xs px-2 py-1 rounded-full font-medium ${
               program.published
                 ? "bg-teal-50 text-teal-700"
                 : "bg-gray-100 text-gray-500"
@@ -858,238 +699,8 @@ export default function ProgramEditPage() {
           </span>
         </div>
 
-        <div className="flex items-center gap-2 md:gap-3">
-          {/* === Desktop-only action buttons === */}
-
-          {/* AI Generation button */}
-          {program.videos.length > 0 && (
-            <button
-              onClick={() => {
-                if (program.weeks.length > 0) {
-                  if (!confirm("This will replace your current structure. Continue?")) {
-                    return;
-                  }
-                }
-                generateStructure();
-              }}
-              disabled={generating}
-              className="hidden md:flex text-xs px-3 py-1.5 rounded-lg font-medium bg-pink-50 text-pink-600 border border-pink-200 hover:bg-pink-100 transition disabled:opacity-50 items-center gap-2"
-            >
-              {generating ? (
-                <>
-                  <Spinner size="sm" />
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                  {program.weeks.length > 0 ? "Regenerate" : "Generate with AI"}
-                </>
-              )}
-            </button>
-          )}
-
-          {/* Theme picker */}
-          {program.weeks.length > 0 && (
-            <div className="hidden md:block relative">
-              <button
-                onClick={() => setShowSkinPicker(!showSkinPicker)}
-                className="text-xs px-3 py-1.5 rounded-lg font-medium bg-white text-gray-600 border border-gray-200 hover:border-teal-400 hover:text-teal-600 transition flex items-center gap-1.5"
-              >
-                <div
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: getSkin(program.skinId).colors.accent }}
-                />
-                Theme
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              {showSkinPicker && (
-                <>
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setShowSkinPicker(false)}
-                  />
-                  <div className="absolute right-0 mt-2 w-[500px] p-4 bg-white border border-gray-200 rounded-xl shadow-lg z-20">
-                    <SkinPicker
-                      value={program.skinId}
-                      onChange={(skinId) => {
-                        handleSkinChange(skinId);
-                        setShowSkinPicker(false);
-                      }}
-                    />
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Preview button */}
-          {program.weeks.length > 0 && (
-            <button
-              onClick={() => setShowPreview(true)}
-              className="hidden md:flex text-xs px-3 py-1.5 rounded-lg font-medium bg-white text-gray-600 border border-gray-200 hover:border-teal-400 hover:text-teal-600 transition items-center gap-1.5"
-            >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-              Preview
-            </button>
-          )}
-
-          {/* Price picker */}
-          {program.weeks.length > 0 && (
-            <div className="hidden md:block relative">
-              <button
-                onClick={() => setShowPricePicker(!showPricePicker)}
-                className="text-xs px-3 py-1.5 rounded-lg font-medium bg-white text-gray-600 border border-gray-200 hover:border-pink-400 hover:text-pink-600 transition flex items-center gap-1.5"
-              >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                {formatPrice(program.priceInCents)}
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              {showPricePicker && (
-                <>
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setShowPricePicker(false)}
-                  />
-                  <div className="absolute right-0 mt-2 w-48 p-2 bg-white border border-gray-200 rounded-xl shadow-lg z-20">
-                    <p className="text-xs text-gray-400 px-2 py-1 mb-1">Set price</p>
-                    {[0, 1900, 2900, 4900, 9900, 14900, 19900].map((price) => (
-                      <button
-                        key={price}
-                        onClick={() => {
-                          handlePriceChange(price);
-                          setShowPricePicker(false);
-                        }}
-                        className={`w-full text-left px-3 py-2 text-sm rounded-lg transition ${
-                          program.priceInCents === price
-                            ? "bg-pink-50 text-pink-600"
-                            : "text-gray-600 hover:bg-gray-50"
-                        }`}
-                      >
-                        {formatPrice(price)}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          <button
-            onClick={() => setShowWizard(true)}
-            className="hidden md:inline-flex text-xs px-3 py-1.5 rounded-lg font-medium bg-white text-gray-600 border border-gray-200 hover:border-teal-400 hover:text-teal-600 transition"
-          >
-            Wizard
-          </button>
-
-          {/* === Mobile "..." overflow menu === */}
-          <div className="md:hidden relative">
-            <button
-              onClick={() => setShowMobileMenu(!showMobileMenu)}
-              className="text-xs px-2.5 py-1.5 rounded-lg font-medium bg-white text-gray-600 border border-gray-200 hover:border-teal-400 hover:text-teal-600 transition"
-              aria-label="More actions"
-            >
-              •••
-            </button>
-            {showMobileMenu && (
-              <>
-                <div
-                  className="fixed inset-0 z-10"
-                  onClick={() => setShowMobileMenu(false)}
-                />
-                <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-100 rounded-xl shadow-lg z-20 py-1 overflow-hidden">
-                  {program.videos.length > 0 && (
-                    <button
-                      onClick={() => {
-                        setShowMobileMenu(false);
-                        if (program.weeks.length > 0) {
-                          if (!confirm("This will replace your current structure. Continue?")) return;
-                        }
-                        generateStructure();
-                      }}
-                      disabled={generating}
-                      className="w-full text-left px-4 py-2.5 text-sm text-pink-600 hover:bg-gray-50 transition disabled:opacity-50 flex items-center gap-2"
-                    >
-                      <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                      </svg>
-                      {program.weeks.length > 0 ? "Regenerate" : "Generate with AI"}
-                    </button>
-                  )}
-                  {program.weeks.length > 0 && (
-                    <>
-                      <button
-                        onClick={() => { setShowMobileMenu(false); setShowSkinPicker(true); }}
-                        className="w-full text-left px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-50 transition flex items-center gap-2"
-                      >
-                        <div className="w-3.5 h-3.5 rounded-full flex-shrink-0" style={{ backgroundColor: getSkin(program.skinId).colors.accent }} />
-                        Theme
-                      </button>
-                      <button
-                        onClick={() => { setShowMobileMenu(false); setShowPreview(true); }}
-                        className="w-full text-left px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-50 transition flex items-center gap-2"
-                      >
-                        <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                        </svg>
-                        Preview
-                      </button>
-                      <button
-                        onClick={() => { setShowMobileMenu(false); setShowPricePicker(true); }}
-                        className="w-full text-left px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-50 transition flex items-center gap-2"
-                      >
-                        <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        {formatPrice(program.priceInCents)}
-                      </button>
-                    </>
-                  )}
-                  <button
-                    onClick={() => { setShowMobileMenu(false); setShowWizard(true); }}
-                    className="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition"
-                  >
-                    Wizard
-                  </button>
-                  {program.published && (
-                    <button
-                      onClick={async () => {
-                        setShowMobileMenu(false);
-                        if (!confirm("Unpublish this program? Learners will no longer be able to access it via the public link.")) return;
-                        try {
-                          const res = await fetch(`/api/programs/${id}/unpublish`, { method: "POST" });
-                          if (!res.ok) throw new Error("Failed to unpublish");
-                          await load();
-                          showToast("Program unpublished", "success");
-                        } catch {
-                          showToast("Failed to unpublish", "error");
-                        }
-                      }}
-                      className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-gray-50 transition border-t border-gray-100"
-                    >
-                      Unpublish
-                    </button>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* === Always-visible: Publish / View Live === */}
-
-          {/* Publish button */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Publish / Unpublish / View Live */}
           {!program.published && program.weeks.length > 0 && (
             <button
               onClick={() => setShowPublishConfirm(true)}
@@ -1121,7 +732,7 @@ export default function ProgramEditPage() {
                     showToast("Failed to unpublish", "error");
                   }
                 }}
-                className="hidden md:inline-flex text-xs px-3 py-1.5 rounded-lg font-medium bg-white text-gray-500 border border-gray-200 hover:border-pink-400 hover:text-pink-600 transition"
+                className="text-xs px-3 py-1.5 rounded-lg font-medium bg-white text-gray-500 border border-gray-200 hover:border-pink-400 hover:text-pink-600 transition"
               >
                 Unpublish
               </button>
@@ -1138,84 +749,395 @@ export default function ProgramEditPage() {
         </div>
       </nav>
 
-      {/* Main content - Split View Builder */}
-      <main className="p-4">
-        {program.weeks.length === 0 && program.videos.length === 0 ? (
-          // Empty state - encourage using wizard
-          <div className="max-w-lg mx-auto mt-16 text-center">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-teal-50 border border-teal-200 flex items-center justify-center">
-              <svg className="w-10 h-10 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-            </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-3">Let&apos;s build your program</h2>
-            <p className="text-gray-400 mb-6">
-              Start by adding videos and content, then let AI help you create a structured learning experience.
-            </p>
+      {/* Tab Bar */}
+      <div className="bg-white border-b border-gray-100">
+        <div className="flex overflow-x-auto px-6">
+          {(["curriculum", "settings", "pricing", "preview"] as const).map((tab) => (
             <button
-              onClick={() => setShowWizard(true)}
-              className="px-8 py-3 rounded-xl bg-gradient-to-r from-teal-500 to-pink-500 text-white font-semibold hover:opacity-90 transition"
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-4 py-3 text-sm font-medium whitespace-nowrap capitalize transition border-b-2 ${
+                activeTab === tab
+                  ? "text-gray-900 border-teal-500"
+                  : "text-gray-400 border-transparent hover:text-gray-600"
+              }`}
             >
-              Open Program Wizard
+              {tab === "curriculum" ? "Curriculum" : tab === "settings" ? "Settings" : tab === "pricing" ? "Pricing" : "Preview"}
             </button>
-          </div>
-        ) : program.weeks.length === 0 && asyncGenerating ? (
-          // Async generation in progress - show rich staged progress
-          <GenerationProgress stage={asyncStage} progress={asyncProgress} onCancel={cancelGeneration} />
-        ) : program.weeks.length === 0 ? (
-          // Has videos but no structure yet (and no async generation running)
-          <div className="max-w-lg mx-auto mt-16 text-center">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-pink-50 border border-pink-200 flex items-center justify-center">
-              <svg className="w-10 h-10 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
+          ))}
+        </div>
+      </div>
+
+      {/* === Curriculum Tab === */}
+      {activeTab === "curriculum" && (
+        <main className="p-4">
+          {program.weeks.length === 0 && program.videos.length === 0 ? (
+            <div className="max-w-lg mx-auto mt-16 text-center">
+              <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-teal-50 border border-teal-200 flex items-center justify-center">
+                <svg className="w-10 h-10 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-3">Let&apos;s build your program</h2>
+              <p className="text-gray-400 mb-6">
+                Start by adding videos and content, then let AI help you create a structured learning experience.
+              </p>
+              <button
+                onClick={() => setShowWizard(true)}
+                className="px-8 py-3 rounded-xl bg-gradient-to-r from-teal-500 to-pink-500 text-white font-semibold hover:opacity-90 transition"
+              >
+                Open Program Wizard
+              </button>
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-3">
-              {lastGenError ? "Generation failed" : "Ready to generate!"}
-            </h2>
-            {lastGenError && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-left">
-                <p className="text-xs text-red-600 line-clamp-3">{lastGenError}</p>
+          ) : program.weeks.length === 0 && asyncGenerating ? (
+            <GenerationProgress stage={asyncStage} progress={asyncProgress} onCancel={cancelGeneration} />
+          ) : program.weeks.length === 0 ? (
+            <div className="max-w-lg mx-auto mt-16 text-center">
+              <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-pink-50 border border-pink-200 flex items-center justify-center">
+                <svg className="w-10 h-10 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-3">
+                {lastGenError ? "Generation failed" : "Ready to generate!"}
+              </h2>
+              {lastGenError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-left">
+                  <p className="text-xs text-red-600 line-clamp-3">{lastGenError}</p>
+                </div>
+              )}
+              <p className="text-gray-400 mb-2">
+                You have {program.videos.length} video{program.videos.length !== 1 ? "s" : ""} ready.
+              </p>
+              <p className="text-gray-500 text-sm mb-6">
+                {lastGenError
+                  ? "Try generating again — the previous attempt will be retried."
+                  : "Let AI analyze your content and create a structured program."}
+              </p>
+              <button
+                onClick={generateStructure}
+                disabled={generating}
+                className="px-8 py-3 rounded-xl bg-pink-500 text-white font-semibold hover:bg-pink-600 transition disabled:opacity-50 flex items-center gap-2 mx-auto"
+              >
+                {generating ? (
+                  <>
+                    <Spinner size="sm" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    Generate Program Structure
+                  </>
+                )}
+              </button>
+            </div>
+          ) : (
+            <ProgramBuilderSplit
+              programId={program.id}
+              weeks={program.weeks}
+              videos={program.videos}
+              onUpdate={load}
+            />
+          )}
+        </main>
+      )}
+
+      {/* === Settings Tab === */}
+      {activeTab === "settings" && (
+        <div className="max-w-2xl mx-auto py-8 px-4">
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              try {
+                const res = await fetch(`/api/programs/${id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    title: formData.get("title"),
+                    description: formData.get("description") || null,
+                    targetAudience: formData.get("targetAudience") || null,
+                    targetTransformation: formData.get("targetTransformation") || null,
+                    vibePrompt: formData.get("vibePrompt") || null,
+                  }),
+                });
+                if (!res.ok) throw new Error("Failed to save");
+                await load();
+                showToast("Program details updated", "success");
+              } catch {
+                showToast("Failed to update details", "error");
+              }
+            }}
+            className="space-y-8"
+          >
+            <div className="space-y-4">
+              <h2 className="text-base font-semibold text-gray-900">Program Details</h2>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Title</label>
+                <input
+                  name="title"
+                  defaultValue={program.title}
+                  className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-900 text-sm focus:outline-none focus:border-teal-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Description</label>
+                <textarea
+                  name="description"
+                  defaultValue={program.description || ""}
+                  rows={3}
+                  className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-900 text-sm focus:outline-none focus:border-teal-500 resize-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Target Audience</label>
+                <input
+                  name="targetAudience"
+                  defaultValue={program.targetAudience || ""}
+                  placeholder="Who is this program for?"
+                  className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-900 text-sm focus:outline-none focus:border-teal-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Target Transformation</label>
+                <input
+                  name="targetTransformation"
+                  defaultValue={program.targetTransformation || ""}
+                  placeholder="What will learners achieve?"
+                  className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-900 text-sm focus:outline-none focus:border-teal-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">AI Vibe Prompt</label>
+                <textarea
+                  name="vibePrompt"
+                  defaultValue={program.vibePrompt || ""}
+                  rows={2}
+                  placeholder="How should the AI write? (only affects re-generation)"
+                  className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-900 text-sm focus:outline-none focus:border-teal-500 resize-none"
+                />
+              </div>
+              {program.published && (
+                <p className="text-xs text-gray-500">
+                  Slug: <code className="text-teal-600">/p/{program.slug}</code> — frozen after publish
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <h2 className="text-base font-semibold text-gray-900">Theme</h2>
+              <SkinPicker value={program.skinId} onChange={handleSkinChange} />
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+              {program.videos.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (program.weeks.length > 0) {
+                      if (!confirm("This will replace your current structure. Continue?")) return;
+                    }
+                    generateStructure();
+                    setActiveTab("curriculum");
+                  }}
+                  disabled={generating}
+                  className="flex items-center gap-2 text-sm px-4 py-2 rounded-lg font-medium bg-pink-50 text-pink-600 border border-pink-200 hover:bg-pink-100 transition disabled:opacity-50"
+                >
+                  {generating ? (
+                    <>
+                      <Spinner size="sm" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      {program.weeks.length > 0 ? "Regenerate Program" : "Generate with AI"}
+                    </>
+                  )}
+                </button>
+              )}
+              <button
+                type="submit"
+                className="ml-auto px-5 py-2 bg-gradient-to-r from-teal-500 to-pink-500 text-gray-900 font-semibold rounded-lg hover:opacity-90 transition text-sm"
+              >
+                Save Changes
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* === Pricing Tab === */}
+      {activeTab === "pricing" && (
+        <div className="max-w-2xl mx-auto py-8 px-4 space-y-8">
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-base font-semibold text-gray-900 mb-1">Price</h2>
+              <p className="text-sm text-gray-400 mb-4">Choose how much to charge for your program</p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[0, 1900, 2900, 4900, 9900, 14900, 19900].map((price) => (
+                <button
+                  key={price}
+                  onClick={() => handlePriceChange(price)}
+                  className={`px-4 py-3 rounded-xl border-2 text-sm font-medium transition ${
+                    program.priceInCents === price
+                      ? "border-teal-500 bg-teal-50 text-teal-700"
+                      : "border-gray-200 text-gray-600 hover:border-gray-300 bg-white"
+                  }`}
+                >
+                  {formatPrice(price)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <h2 className="text-base font-semibold text-gray-900">Payments</h2>
+            <p className="text-sm text-gray-400">Connect Stripe to receive payments for paid programs</p>
+            {stripeStatus?.onboardingComplete ? (
+              <div className="flex items-center gap-3 px-4 py-3 bg-teal-50 border border-teal-200 rounded-xl">
+                <svg className="w-5 h-5 text-teal-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="text-sm text-teal-700 font-medium">Stripe connected</span>
+              </div>
+            ) : (
+              <div className="bg-[#635BFF]/5 border border-[#635BFF]/20 rounded-xl p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-full bg-[#635BFF]/10 border border-[#635BFF]/30 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-[#635BFF]" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M13.976 9.15c-2.172-.806-3.356-1.426-3.356-2.409 0-.831.683-1.305 1.901-1.305 2.227 0 4.515.858 6.09 1.631l.89-5.494C18.252.975 15.697 0 12.165 0 9.667 0 7.589.654 6.104 1.872 4.56 3.147 3.757 4.992 3.757 7.218c0 4.039 2.467 5.76 6.476 7.219 2.585.92 3.445 1.574 3.445 2.583 0 .98-.84 1.545-2.354 1.545-1.875 0-4.965-.921-6.99-2.109l-.9 5.555C5.175 22.99 8.385 24 11.714 24c2.641 0 4.843-.624 6.328-1.813 1.664-1.305 2.525-3.236 2.525-5.732 0-4.128-2.524-5.851-6.591-7.305z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Connect Stripe</p>
+                    <p className="text-xs text-gray-400">Required to sell paid programs</p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleConnectStripe}
+                  disabled={connectingStripe}
+                  className="w-full px-4 py-2.5 bg-[#635BFF] text-white font-medium rounded-lg hover:bg-[#5851ea] transition disabled:opacity-50 flex items-center justify-center gap-2 text-sm"
+                >
+                  {connectingStripe ? (
+                    <>
+                      <Spinner size="sm" />
+                      Connecting...
+                    </>
+                  ) : (
+                    "Connect Stripe →"
+                  )}
+                </button>
               </div>
             )}
-            <p className="text-gray-400 mb-2">
-              You have {program.videos.length} video{program.videos.length !== 1 ? "s" : ""} ready.
-            </p>
-            <p className="text-gray-500 text-sm mb-6">
-              {lastGenError
-                ? "Try generating again — the previous attempt will be retried."
-                : "Let AI analyze your content and create a structured program."}
-            </p>
-            <button
-              onClick={generateStructure}
-              disabled={generating}
-              className="px-8 py-3 rounded-xl bg-pink-500 text-white font-semibold hover:bg-pink-600 transition disabled:opacity-50 flex items-center gap-2 mx-auto"
-            >
-              {generating ? (
-                <>
-                  <Spinner size="sm" />
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                  Generate Program Structure
-                </>
-              )}
-            </button>
+          </div>
+        </div>
+      )}
+
+      {/* === Preview Tab === */}
+      {activeTab === "preview" && (
+        program.weeks.length > 0 ? (
+          <div className="flex flex-col" style={{ height: "calc(100vh - 112px)" }}>
+            {/* Preview toolbar */}
+            <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-700">
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-gray-400">Preview</span>
+                <span className="text-xs px-2 py-0.5 bg-gray-800 rounded text-gray-500">
+                  {previewSkin.name}
+                </span>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-1 bg-gray-800 rounded-lg p-0.5">
+                  <button
+                    onClick={() => setPreviewView("overview")}
+                    className={`px-3 py-1 text-xs rounded transition ${
+                      previewView === "overview" ? "bg-white text-gray-900" : "text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    Overview
+                  </button>
+                  <button
+                    onClick={() => setPreviewView("session")}
+                    disabled={!previewSelectedSessionId}
+                    className={`px-3 py-1 text-xs rounded transition ${
+                      previewView === "session" ? "bg-white text-gray-900" : "text-gray-400 hover:text-white disabled:opacity-50"
+                    }`}
+                  >
+                    Session
+                  </button>
+                </div>
+                <div className="flex items-center gap-1 bg-gray-800 rounded-lg p-0.5">
+                  <button
+                    onClick={() => setPreviewDeviceMode("desktop")}
+                    className={`p-1.5 rounded transition ${previewDeviceMode === "desktop" ? "bg-white text-gray-900" : "text-gray-400 hover:text-white"}`}
+                    title="Desktop view"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => setPreviewDeviceMode("mobile")}
+                    className={`p-1.5 rounded transition ${previewDeviceMode === "mobile" ? "bg-white text-gray-900" : "text-gray-400 hover:text-white"}`}
+                    title="Mobile view"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+            {/* Preview frame */}
+            <div className="flex-1 flex items-center justify-center p-4 overflow-auto bg-gray-900">
+              <div
+                className={`h-full overflow-auto transition-all ${previewDeviceMode === "desktop" ? "w-full max-w-5xl" : "w-[375px]"}`}
+                style={{
+                  ...previewCssVars,
+                  backgroundColor: previewSkin.colors.bg,
+                  borderRadius: previewDeviceMode === "mobile" ? "24px" : "8px",
+                  boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
+                }}
+              >
+                {previewView === "overview" ? (
+                  <ProgramOverviewPreview
+                    program={program}
+                    skin={previewSkin}
+                    onSelectSession={(sessionId) => {
+                      setPreviewSelectedSessionId(sessionId);
+                      setPreviewView("session");
+                    }}
+                  />
+                ) : previewSelectedSession ? (
+                  <SessionPreview
+                    session={previewSelectedSession as SessionData & { keyTakeaways?: string[] }}
+                    skin={previewSkin}
+                    onBack={() => {
+                      setPreviewView("overview");
+                      setPreviewSelectedSessionId(null);
+                    }}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-64">
+                    <p style={{ color: previewSkin.colors.textMuted }}>Select a session from the overview</p>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         ) : (
-          // Has structure - show split builder
-          <ProgramBuilderSplit
-            programId={program.id}
-            weeks={program.weeks}
-            videos={program.videos}
-            onUpdate={load}
-          />
-        )}
-      </main>
+          <div className="max-w-lg mx-auto mt-16 text-center">
+            <p className="text-gray-400">Build your curriculum first to preview your program.</p>
+          </div>
+        )
+      )}
+
     </div>
     </>
   );

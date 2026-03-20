@@ -122,6 +122,48 @@ body {
   animation: pulse-ring 2s ease-out infinite;
 }
 
+/* Week complete — animated SVG checkmark */
+@keyframes draw-circle {
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes draw-check {
+  to { stroke-dashoffset: 0; }
+}
+
+.animate-draw-circle {
+  animation: draw-circle 0.5s ease-out forwards;
+}
+
+.animate-draw-check {
+  animation: draw-check 0.3s ease-out 0.45s forwards;
+}
+
+/* Program complete — large arc filling to 100% */
+.animate-arc-complete {
+  animation: draw-circle 1.2s cubic-bezier(0.4, 0, 0.2, 1) 0.3s forwards;
+}
+
+/* Program complete overlay card entrance */
+@keyframes overlay-pop {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0); }
+}
+
+.animate-overlay-pop {
+  animation: overlay-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s both;
+}
+
+/* Number count-up shimmer for the arc center label */
+@keyframes label-fade-in {
+  from { opacity: 0; transform: scale(0.7); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.animate-label-pop {
+  animation: label-fade-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 1.2s both;
+}
+
 /* Confetti burst for milestone celebrations */
 .confetti-burst {
   position: absolute;

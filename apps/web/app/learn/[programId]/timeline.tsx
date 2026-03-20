@@ -82,13 +82,15 @@ export function LearnerTimeline({
   // Track which action is expanded (for mobile detail view)
   const [expandedAction, setExpandedAction] = useState<string | null>(null);
 
-  // Celebration overlay state
+  // Celebration overlay state (week milestones only — not final week)
   const [celebration, setCelebration] = useState<{
     weekNumber: number;
     weekTitle: string;
     actionCount: number;
-    isLastWeek: boolean;
   } | null>(null);
+
+  // Program complete full-screen overlay
+  const [showProgramComplete, setShowProgramComplete] = useState(false);
 
   // Ref for auto-scrolling to next action
   const nextActionRef = useRef<HTMLDivElement>(null);
@@ -178,14 +180,16 @@ export function LearnerTimeline({
         const weekActionCount = week?.sessions.flatMap((s) => s.actions).length ?? 0;
         const isLastWeek = weekNumber === program.weeks.length;
 
-        setCelebration({
-          weekNumber,
-          weekTitle: week?.title ?? `Week ${weekNumber}`,
-          actionCount: weekActionCount,
-          isLastWeek,
-        });
-
-        setTimeout(() => setCelebration(null), 6000);
+        if (isLastWeek) {
+          setShowProgramComplete(true);
+        } else {
+          setCelebration({
+            weekNumber,
+            weekTitle: week?.title ?? `Week ${weekNumber}`,
+            actionCount: weekActionCount,
+          });
+          setTimeout(() => setCelebration(null), 6000);
+        }
       }
 
       if (data.nextWeekUnlocked && data.newCurrentWeek) {
@@ -296,17 +300,12 @@ export function LearnerTimeline({
           return (
             <section key={week.id}>
               {/* Week header */}
-              <div className="flex items-center gap-3 mb-3">
-                <WeekBadge
-                  weekNumber={week.weekNumber}
-                  isWeekComplete={isWeekComplete}
-                  isUnlocked={isUnlocked}
-                />
+              <div className="flex items-center mb-3" style={{ opacity: isUnlocked ? 1 : 0.5 }}>
                 <h2
-                  className="text-sm font-semibold"
-                  style={{ color: isUnlocked ? "var(--token-color-text-primary)" : "var(--token-color-text-secondary)", opacity: isUnlocked ? 1 : 0.5 }}
+                  className="text-sm font-medium"
+                  style={{ color: isUnlocked ? "var(--token-color-text-primary)" : "var(--token-color-text-secondary)" }}
                 >
-                  {week.title}
+                  Week {week.weekNumber}: {week.title}
                 </h2>
                 {isUnlocked && weekActions.length > 0 && (
                   <span
@@ -332,8 +331,9 @@ export function LearnerTimeline({
               {/* Week progress bar */}
               {isUnlocked && weekActions.length > 0 && (
                 <div
-                  className="h-1 overflow-hidden mb-3"
+                  className="overflow-hidden mb-3"
                   style={{
+                    height: "2px",
                     backgroundColor: "var(--token-comp-progress-track)",
                     borderRadius: "var(--token-comp-progress-radius)",
                   }}
@@ -359,12 +359,12 @@ export function LearnerTimeline({
                     border: "1px solid var(--token-color-border-subtle)",
                   }}
                 >
-                  <svg className="w-8 h-8 mx-auto mb-2" style={{ color: "var(--token-color-text-secondary)", opacity: 0.5 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 mx-auto mb-2" style={{ color: "var(--token-color-text-secondary)", opacity: 0.5 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                   </svg>
                   <p
-                    className="text-xs"
-                    style={{ color: "var(--token-color-text-secondary)" }}
+                    className="text-[13px]"
+                    style={{ color: "var(--token-color-text-secondary)", opacity: 0.6 }}
                   >
                     {pacingMode === "UNLOCK_ON_COMPLETE" ? (
                       <>Complete Week {week.weekNumber - 1} to unlock</>
@@ -467,7 +467,7 @@ export function LearnerTimeline({
                                   if (!done) setExpandedAction(isExpanded ? null : action.id);
                                 }
                               }}
-                              className="w-full flex items-center gap-3 p-3 text-left cursor-pointer"
+                              className="w-full flex items-center gap-3 py-3 px-4 text-left cursor-pointer"
                             >
                               {/* Completion circle */}
                               <CompletionCircle
@@ -657,65 +657,89 @@ export function LearnerTimeline({
       {celebration && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
           <div
-            className="relative p-8 max-w-sm w-full text-center animate-slide-up overflow-hidden"
+            className="p-8 w-full text-center animate-slide-up"
             style={{
+              maxWidth: "calc(100% - 32px)",
               borderRadius: "var(--token-radius-lg)",
               backgroundColor: "var(--token-color-bg-elevated)",
-              border: "1px solid color-mix(in srgb, var(--token-color-accent), transparent 60%)",
-              boxShadow: "var(--token-shadow-sm)",
+              border: "1px solid rgba(0, 255, 240, 0.3)",
+              boxShadow: "0 0 24px rgba(0, 255, 240, 0.08)",
             }}
           >
-            <div className="confetti-burst" aria-hidden="true">
-              <span className="confetti-dot" style={{ "--dot-color": "var(--token-color-accent)", "--dot-angle": "0deg", "--dot-distance": "80px" } as React.CSSProperties} />
-              <span className="confetti-dot" style={{ "--dot-color": "var(--token-color-semantic-action-reflect)", "--dot-angle": "45deg", "--dot-distance": "70px" } as React.CSSProperties} />
-              <span className="confetti-dot" style={{ "--dot-color": "var(--token-color-semantic-action-do)", "--dot-angle": "90deg", "--dot-distance": "85px" } as React.CSSProperties} />
-              <span className="confetti-dot" style={{ "--dot-color": "var(--token-color-accent)", "--dot-angle": "135deg", "--dot-distance": "75px" } as React.CSSProperties} />
-              <span className="confetti-dot" style={{ "--dot-color": "var(--token-color-semantic-action-reflect)", "--dot-angle": "180deg", "--dot-distance": "80px" } as React.CSSProperties} />
-              <span className="confetti-dot" style={{ "--dot-color": "var(--token-color-semantic-action-do)", "--dot-angle": "225deg", "--dot-distance": "70px" } as React.CSSProperties} />
-              <span className="confetti-dot" style={{ "--dot-color": "var(--token-color-accent)", "--dot-angle": "270deg", "--dot-distance": "85px" } as React.CSSProperties} />
-              <span className="confetti-dot" style={{ "--dot-color": "var(--token-color-semantic-action-reflect)", "--dot-angle": "315deg", "--dot-distance": "75px" } as React.CSSProperties} />
+            {/* Animated checkmark */}
+            <div className="flex justify-center mb-4" aria-hidden="true">
+              <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
+                <circle
+                  cx="28" cy="28" r="24"
+                  stroke="var(--token-color-accent)"
+                  strokeWidth="2.5"
+                  strokeDasharray="150.8"
+                  strokeDashoffset="150.8"
+                  strokeLinecap="round"
+                  className="animate-draw-circle"
+                />
+                <polyline
+                  points="17,28 24,35 39,20"
+                  stroke="var(--token-color-accent)"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeDasharray="35"
+                  strokeDashoffset="35"
+                  className="animate-draw-check"
+                />
+              </svg>
             </div>
 
-            <div className="relative z-10">
-              <div className="text-4xl mb-3">&#127881;</div>
-              <h3
-                className="text-xl font-bold mb-1"
-                style={{ color: "var(--token-color-text-primary)" }}
-              >
-                {celebration.isLastWeek ? "Program Complete!" : `Week ${celebration.weekNumber} Complete!`}
-              </h3>
-              <p
-                className="text-sm mb-1"
-                style={{ color: "var(--token-color-text-secondary)" }}
-              >
-                {celebration.weekTitle}
-              </p>
-              <p
-                className="text-xs mb-5"
-                style={{ color: "var(--token-color-text-secondary)" }}
-              >
-                You completed {celebration.actionCount} actions
-              </p>
-              <button
-                onClick={() => {
-                  setCelebration(null);
-                  if (!celebration.isLastWeek) {
-                    setTimeout(() => scrollToNextAction(), 200);
-                  }
-                }}
-                className="px-5 py-2.5 text-sm font-medium transition"
-                style={{
-                  borderRadius: "var(--token-comp-btn-secondary-radius)",
-                  backgroundColor: "color-mix(in srgb, var(--token-color-accent), transparent 90%)",
-                  border: "1px solid color-mix(in srgb, var(--token-color-accent), transparent 60%)",
-                  color: "var(--token-color-accent)",
-                }}
-              >
-                {celebration.isLastWeek ? "View Your Journey" : `Continue to Week ${celebration.weekNumber + 1} \u2192`}
-              </button>
-            </div>
+            <h3
+              className="text-xl font-bold mb-2"
+              style={{ color: "var(--token-color-text-primary)" }}
+            >
+              {`Week ${celebration.weekNumber} Complete!`}
+            </h3>
+            <p
+              className="text-sm mb-1"
+              style={{ color: "var(--token-color-text-secondary)" }}
+            >
+              Week {celebration.weekNumber}: {celebration.weekTitle}
+            </p>
+            <p
+              className="text-sm mb-6"
+              style={{ color: "var(--token-color-text-secondary)" }}
+            >
+              {celebration.weekNumber === 1
+                ? "You started. That's the hardest part."
+                : celebration.weekNumber === 2
+                  ? "Two weeks in. You're building momentum."
+                  : "Halfway there. Keep going."}
+            </p>
+            <button
+              onClick={() => {
+                setCelebration(null);
+                setTimeout(() => scrollToNextAction(), 200);
+              }}
+              className="px-6 py-2.5 text-sm font-semibold transition"
+              style={{
+                borderRadius: "var(--token-comp-btn-primary-radius)",
+                background: "linear-gradient(135deg, #00fff0 0%, #a855f7 100%)",
+                color: "#0a0a0a",
+                border: "none",
+              }}
+            >
+              {`Continue to Week ${celebration.weekNumber + 1} \u2192`}
+            </button>
           </div>
         </div>
+      )}
+
+      {/* Program complete full-screen overlay */}
+      {showProgramComplete && (
+        <ProgramCompleteOverlay
+          programTitle={program.title}
+          weekCount={program.weeks.length}
+          actionCount={totalActions}
+          onClose={() => setShowProgramComplete(false)}
+        />
       )}
 
       {/* Floating continue button (mobile) */}
@@ -748,43 +772,142 @@ export function LearnerTimeline({
 }
 
 /* ------------------------------------------------------------------ */
+/*  Program complete full-screen overlay                              */
+/* ------------------------------------------------------------------ */
+
+interface ProgramCompleteOverlayProps {
+  programTitle: string;
+  weekCount: number;
+  actionCount: number;
+  onClose: () => void;
+}
+
+function ProgramCompleteOverlay({
+  programTitle,
+  weekCount,
+  actionCount,
+  onClose,
+}: ProgramCompleteOverlayProps): React.ReactElement {
+  const r = 58;
+  const circ = 2 * Math.PI * r;
+
+  return (
+    <div
+      className="fixed inset-0 flex flex-col items-center justify-center p-6 bg-black/85 backdrop-blur-md"
+      style={{ zIndex: 60 }}
+    >
+      {/* Animated arc */}
+      <div className="relative mb-[-28px]" style={{ zIndex: 1 }}>
+        <svg
+          width="136"
+          height="136"
+          viewBox="0 0 136 136"
+          className="-rotate-90"
+          aria-hidden="true"
+        >
+          {/* Track */}
+          <circle
+            cx="68" cy="68" r={r}
+            fill="none"
+            stroke="rgba(0,255,240,0.1)"
+            strokeWidth="3"
+          />
+          {/* Gradient fill arc */}
+          <circle
+            cx="68" cy="68" r={r}
+            fill="none"
+            stroke="url(#pcArcGrad)"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeDasharray={circ}
+            strokeDashoffset={circ}
+            className="animate-arc-complete"
+          />
+          <defs>
+            <linearGradient id="pcArcGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#00fff0" />
+              <stop offset="100%" stopColor="#a855f7" />
+            </linearGradient>
+          </defs>
+        </svg>
+        {/* Center label */}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span
+            className="animate-label-pop text-sm font-bold"
+            style={{ color: "#00fff0" }}
+          >
+            100%
+          </span>
+        </div>
+      </div>
+
+      {/* Card */}
+      <div
+        className="w-full max-w-sm animate-overlay-pop"
+        style={{
+          borderRadius: "var(--token-radius-lg)",
+          backgroundColor: "var(--token-color-bg-elevated)",
+          border: "1px solid rgba(0,255,240,0.3)",
+          boxShadow: "0 0 40px rgba(0,255,240,0.12), 0 0 80px rgba(0,255,240,0.06)",
+          padding: "44px 28px 28px",
+        }}
+      >
+        <h2
+          className="text-center font-semibold mb-2"
+          style={{ fontSize: 28, color: "#fff" }}
+        >
+          Program Complete
+        </h2>
+        <p
+          className="text-center text-sm mb-1"
+          style={{ color: "rgba(0,255,240,0.65)" }}
+        >
+          {programTitle}
+        </p>
+        <p
+          className="text-center text-[13px] mb-5"
+          style={{ color: "#9ca3af" }}
+        >
+          You completed all {weekCount} weeks and {actionCount} actions
+        </p>
+
+        <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.08)", marginBottom: "20px" }} />
+
+        <p
+          className="text-center text-[13px] italic mb-6"
+          style={{ color: "var(--token-color-text-secondary)" }}
+        >
+          You finished every week. That&apos;s rare.
+        </p>
+
+        <Link
+          href="/"
+          onClick={onClose}
+          className="block w-full text-center py-2.5 text-sm font-semibold transition hover:opacity-90"
+          style={{
+            borderRadius: "var(--token-comp-btn-primary-radius)",
+            background: "linear-gradient(135deg, #00fff0 0%, #a855f7 100%)",
+            color: "#0a0a0a",
+          }}
+        >
+          Back to Dashboard
+        </Link>
+        <button
+          onClick={onClose}
+          className="block w-full text-center mt-3 py-2 text-sm transition hover:opacity-80"
+          style={{ color: "var(--token-color-text-secondary)", background: "none", border: "none" }}
+        >
+          View my progress
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Small extracted sub-components for clarity                        */
 /* ------------------------------------------------------------------ */
 
-interface WeekBadgeProps {
-  weekNumber: number;
-  isWeekComplete: boolean;
-  isUnlocked: boolean;
-}
-
-function WeekBadge({ weekNumber, isWeekComplete, isUnlocked }: WeekBadgeProps): React.ReactElement {
-  const stateStyle: React.CSSProperties = isWeekComplete
-    ? {
-        backgroundColor: "color-mix(in srgb, var(--token-color-accent), transparent 90%)",
-        color: "var(--token-color-accent)",
-        border: "1px solid color-mix(in srgb, var(--token-color-accent), transparent 70%)",
-      }
-    : isUnlocked
-    ? {
-        backgroundColor: "var(--token-color-bg-elevated)",
-        color: "var(--token-color-text-secondary)",
-        border: "1px solid var(--token-color-border-subtle)",
-      }
-    : {
-        backgroundColor: "var(--token-color-bg-default)",
-        color: "var(--token-color-text-secondary)",
-        opacity: 0.5,
-      };
-
-  return (
-    <span
-      className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5"
-      style={{ borderRadius: "var(--token-comp-chip-radius)", ...stateStyle }}
-    >
-      W{weekNumber}
-    </span>
-  );
-}
 
 interface CompletionCircleProps {
   done: boolean;
