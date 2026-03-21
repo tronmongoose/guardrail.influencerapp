@@ -1,6 +1,5 @@
 "use client";
 
-import type { Skin } from "@/lib/skins";
 import type { WeekData } from "@/components/builder";
 
 interface ProgramOverviewPreviewProps {
@@ -9,204 +8,314 @@ interface ProgramOverviewPreviewProps {
     description: string | null;
     targetAudience: string | null;
     targetTransformation: string | null;
+    priceInCents?: number;
     weeks: WeekData[];
   };
-  skin: Skin;
+  // skin is kept for backwards compat but layout uses CSS custom properties
+  // (injected by parent via getTokenCSSVars)
+  skin: { name: string };
   onSelectSession: (sessionId: string) => void;
 }
 
 export function ProgramOverviewPreview({
   program,
-  skin,
   onSelectSession,
 }: ProgramOverviewPreviewProps) {
-  const totalSessions = program.weeks.reduce((sum, w) => sum + w.sessions.length, 0);
+  // Feature cards: first 2 sessions that have a summary
+  const featureCards = program.weeks
+    .flatMap((w) => w.sessions)
+    .filter((s) => s.summary)
+    .slice(0, 2);
+
+  const priceDisplay =
+    program.priceInCents === 0
+      ? "Free"
+      : program.priceInCents
+      ? `$${(program.priceInCents / 100).toFixed(2)}`
+      : null;
 
   return (
     <div
       className="min-h-full"
-      style={{ backgroundColor: skin.colors.bg, color: skin.colors.text }}
+      style={{
+        backgroundColor: "var(--token-color-bg-default)",
+        color: "var(--token-color-text-primary)",
+        fontFamily: "var(--token-text-body-md-font)",
+      }}
     >
-      {/* Hero section */}
-      <div
-        className="px-6 py-12 text-center"
-        style={{ backgroundColor: skin.colors.bgSecondary }}
-      >
-        <h1 className="text-3xl font-bold mb-4">{program.title}</h1>
-        {program.description && (
-          <p
-            className="text-lg max-w-2xl mx-auto mb-6"
-            style={{ color: skin.colors.textMuted }}
-          >
-            {program.description}
-          </p>
-        )}
+      {/* ── Hero ─────────────────────────────────────────────────────────────── */}
+      <section className="px-6 pt-16 pb-8 max-w-5xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-16 items-center">
 
-        {/* Stats */}
-        <div className="flex items-center justify-center gap-8 mt-8">
-          <div>
-            <div className="text-2xl font-bold" style={{ color: skin.colors.accent }}>
-              {program.weeks.length}
-            </div>
-            <div className="text-sm" style={{ color: skin.colors.textMuted }}>
-              Weeks
-            </div>
-          </div>
-          <div
-            className="w-px h-10"
-            style={{ backgroundColor: skin.colors.border }}
-          />
-          <div>
-            <div className="text-2xl font-bold" style={{ color: skin.colors.accent }}>
-              {totalSessions}
-            </div>
-            <div className="text-sm" style={{ color: skin.colors.textMuted }}>
-              Sessions
-            </div>
-          </div>
-        </div>
-
-        {/* CTA button */}
-        <button
-          className={`mt-8 px-8 py-3 font-semibold transition ${
-            skin.videoFrame === "rounded" ? "rounded-full" : "rounded"
-          }`}
-          style={{
-            backgroundColor:
-              skin.buttonStyle === "outline" ? "transparent" : skin.colors.accent,
-            color:
-              skin.buttonStyle === "outline" ? skin.colors.accent : skin.colors.bg,
-            border:
-              skin.buttonStyle === "outline"
-                ? `2px solid ${skin.colors.accent}`
-                : "none",
-          }}
-        >
-          Start Learning
-        </button>
-      </div>
-
-      {/* Transformation section */}
-      {program.targetTransformation && (
-        <div className="px-6 py-8 text-center">
-          <h2 className="text-xl font-semibold mb-3">Your Transformation</h2>
-          <p
-            className="max-w-xl mx-auto"
-            style={{ color: skin.colors.textMuted }}
-          >
-            {program.targetTransformation}
-          </p>
-        </div>
-      )}
-
-      {/* Week list */}
-      <div className="px-6 py-8">
-        <h2 className="text-xl font-semibold mb-6">Program Curriculum</h2>
-
-        <div className="space-y-4">
-          {program.weeks.map((week, weekIndex) => (
-            <div
-              key={week.id}
-              className={`p-4 ${skin.cardStyle === "bordered" ? "border" : ""} ${
-                skin.videoFrame === "rounded" ? "rounded-xl" : "rounded"
-              }`}
+          {/* Left: text */}
+          <div className="flex flex-col gap-6">
+            {/* Gradient heading */}
+            <h1
               style={{
-                backgroundColor:
-                  skin.cardStyle === "flat" ? "transparent" : skin.colors.bgSecondary,
-                borderColor: skin.colors.border,
-                boxShadow:
-                  skin.cardStyle === "elevated"
-                    ? "0 4px 6px -1px rgba(0, 0, 0, 0.1)"
-                    : "none",
+                fontFamily: "var(--token-text-heading-xl-font)",
+                fontSize: "clamp(1.75rem, 4vw, var(--token-text-heading-xl-size))",
+                fontWeight: "var(--token-text-heading-xl-weight)",
+                lineHeight: "1.05",
+                background:
+                  "linear-gradient(90deg, var(--token-color-accent), var(--token-color-accent-secondary, var(--token-color-accent)))",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                backgroundClip: "text",
               }}
             >
-              {/* Week header */}
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold">{week.title}</h3>
-                <span
-                  className="text-sm"
-                  style={{ color: skin.colors.textMuted }}
-                >
-                  {week.sessions.length} session{week.sessions.length !== 1 ? "s" : ""}
-                </span>
-              </div>
+              {program.targetTransformation || program.title}
+            </h1>
 
-              {week.summary && (
-                <p
-                  className="text-sm mb-4"
-                  style={{ color: skin.colors.textMuted }}
-                >
-                  {week.summary}
-                </p>
-              )}
+            {/* Subtitle */}
+            {program.description && (
+              <p
+                style={{
+                  fontFamily: "var(--token-text-body-md-font)",
+                  fontSize: "var(--token-text-body-md-size)",
+                  color: "var(--token-color-text-secondary)",
+                  lineHeight: "1.5",
+                }}
+              >
+                {program.description}
+              </p>
+            )}
 
-              {/* Sessions */}
-              <div className="space-y-2">
-                {week.sessions.map((session, sessionIndex) => (
-                  <button
-                    key={session.id}
-                    onClick={() => onSelectSession(session.id)}
-                    className={`w-full flex items-center gap-3 p-3 text-left transition ${
-                      skin.videoFrame === "rounded" ? "rounded-lg" : "rounded"
-                    }`}
+            {/* CTA */}
+            <div className="max-w-xs">
+              <button
+                style={{
+                  width: "100%",
+                  padding: "12px 24px",
+                  borderRadius: "var(--token-comp-btn-primary-radius)",
+                  background:
+                    "linear-gradient(90deg, var(--token-color-accent), var(--token-color-accent-secondary, var(--token-color-accent)))",
+                  color: "#fff",
+                  fontFamily: "var(--token-text-body-sm-font)",
+                  fontSize: "var(--token-text-body-sm-size)",
+                  fontWeight: "700",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                } as React.CSSProperties}
+              >
+                {priceDisplay === "Free" ? "Enroll free" : priceDisplay ? `Buy for ${priceDisplay}` : "Join the program"}
+              </button>
+            </div>
+          </div>
+
+          {/* Right: video preview (desktop only) */}
+          <div
+            className="hidden md:flex flex-col items-center justify-center gap-3"
+            style={{
+              aspectRatio: "4/3",
+              borderRadius: "var(--token-radius-lg)",
+              backgroundColor: "var(--token-color-bg-elevated)",
+              border: "2px solid var(--token-color-accent)",
+              boxShadow: "var(--token-shadow-md)",
+            }}
+          >
+            <div
+              style={{
+                width: "56px",
+                height: "56px",
+                borderRadius: "50%",
+                background:
+                  "linear-gradient(90deg, var(--token-color-accent), var(--token-color-accent-secondary, var(--token-color-accent)))",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow:
+                  "0 0 40px color-mix(in srgb, var(--token-color-accent) 60%, transparent)",
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </div>
+            <p
+              style={{
+                fontFamily: "var(--token-text-label-sm-font)",
+                fontSize: "var(--token-text-label-sm-size)",
+                fontWeight: "var(--token-text-label-sm-weight)",
+                color: "var(--token-color-accent)",
+                textTransform: "uppercase",
+                letterSpacing: "0.15em",
+              }}
+            >
+              Preview
+            </p>
+            <p
+              style={{
+                fontFamily: "var(--token-text-body-sm-font)",
+                fontSize: "var(--token-text-body-sm-size)",
+                color: "var(--token-color-text-primary)",
+              }}
+            >
+              Watch program intro
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Divider ──────────────────────────────────────────────────────────── */}
+      <div
+        style={{
+          borderTop: "2px solid var(--token-color-accent)",
+          margin: "0 24px",
+          maxWidth: "calc(64rem - 0px)",
+          marginLeft: "auto",
+          marginRight: "auto",
+        }}
+      />
+
+      {/* ── What you get ─────────────────────────────────────────────────────── */}
+      <section className="px-6 pt-12 pb-16 max-w-5xl mx-auto">
+        <h2
+          className="mb-8"
+          style={{
+            fontFamily: "var(--token-text-heading-lg-font)",
+            fontSize: "var(--token-text-heading-lg-size)",
+            fontWeight: "var(--token-text-heading-lg-weight)",
+            color: "var(--token-color-accent)",
+          }}
+        >
+          What you get
+        </h2>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* Left: weeks list */}
+          <div className="flex flex-col gap-5">
+            {program.weeks.map((week, i) => (
+              <div key={week.id} className="flex items-center gap-4">
+                <div
+                  className="flex-shrink-0"
+                  style={{
+                    width: "24px",
+                    height: "24px",
+                    borderRadius: "50%",
+                    border: "2px solid var(--token-color-accent)",
+                  }}
+                />
+                <div>
+                  <p
                     style={{
-                      backgroundColor: skin.colors.bg,
-                      border: `1px solid ${skin.colors.border}`,
+                      fontFamily: "var(--token-text-label-sm-font)",
+                      fontSize: "var(--token-text-label-sm-size)",
+                      fontWeight: "var(--token-text-label-sm-weight)",
+                      color: "var(--token-color-accent)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.1em",
                     }}
                   >
-                    <div
-                      className={`w-8 h-8 flex items-center justify-center text-sm font-medium ${
-                        skin.videoFrame === "rounded" ? "rounded-full" : "rounded"
-                      }`}
-                      style={{
-                        backgroundColor: skin.colors.accent + "20",
-                        color: skin.colors.accent,
-                      }}
-                    >
-                      {weekIndex + 1}.{sessionIndex + 1}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{session.title}</p>
-                      {session.summary && (
-                        <p
-                          className="text-sm truncate"
-                          style={{ color: skin.colors.textMuted }}
-                        >
-                          {session.summary}
-                        </p>
-                      )}
-                    </div>
-                    <svg
-                      className="w-5 h-5 flex-shrink-0"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      style={{ color: skin.colors.textMuted }}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9 5l7 7-7 7"
-                      />
-                    </svg>
-                  </button>
-                ))}
+                    Week {i + 1}
+                  </p>
+                  <p
+                    style={{
+                      fontFamily: "var(--token-text-body-md-font)",
+                      fontSize: "var(--token-text-body-md-size)",
+                      fontWeight: "500",
+                      color: "var(--token-color-text-primary)",
+                    }}
+                  >
+                    {week.title}
+                  </p>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      </div>
+            ))}
+          </div>
 
-      {/* Footer */}
-      <div
-        className="px-6 py-8 text-center"
-        style={{ borderTop: `1px solid ${skin.colors.border}` }}
-      >
-        <p className="text-sm" style={{ color: skin.colors.textMuted }}>
-          Powered by Journeyline
-        </p>
-      </div>
+          {/* Right: feature cards (sessions with summaries, clickable) */}
+          {featureCards.length > 0 && (
+            <div className="flex flex-col gap-4">
+              {featureCards.map((session) => (
+                <button
+                  key={session.id}
+                  onClick={() => onSelectSession(session.id)}
+                  className="p-5 text-left transition-opacity hover:opacity-80"
+                  style={{
+                    borderRadius: "var(--token-radius-lg)",
+                    backgroundColor: "var(--token-color-bg-elevated)",
+                    border: "2px solid var(--token-color-accent)",
+                    boxShadow: "var(--token-shadow-md)",
+                  }}
+                >
+                  <p
+                    className="mb-2"
+                    style={{
+                      fontFamily: "var(--token-text-body-md-font)",
+                      fontSize: "var(--token-text-body-md-size)",
+                      fontWeight: "700",
+                      color: "var(--token-color-text-primary)",
+                    }}
+                  >
+                    {session.title}
+                  </p>
+                  <p
+                    style={{
+                      fontFamily: "var(--token-text-body-sm-font)",
+                      fontSize: "var(--token-text-body-sm-size)",
+                      color: "var(--token-color-text-secondary)",
+                      lineHeight: "1.5",
+                    }}
+                  >
+                    {session.summary}
+                  </p>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ── Pricing ──────────────────────────────────────────────────────────── */}
+      {priceDisplay !== null && (
+        <section className="px-6 pt-8 pb-16 max-w-5xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div>
+            <p
+              style={{
+                fontFamily: "var(--token-text-label-sm-font)",
+                fontSize: "var(--token-text-label-sm-size)",
+                fontWeight: "var(--token-text-label-sm-weight)",
+                color: "var(--token-color-accent)",
+                textTransform: "uppercase",
+                letterSpacing: "0.15em",
+                marginBottom: "8px",
+              }}
+            >
+              Investment
+            </p>
+            <p
+              style={{
+                fontFamily: "var(--token-text-heading-xl-font)",
+                fontSize: "var(--token-text-heading-xl-size)",
+                fontWeight: "var(--token-text-heading-xl-weight)",
+                color: "var(--token-color-text-primary)",
+                lineHeight: "1",
+              }}
+            >
+              {priceDisplay}
+            </p>
+          </div>
+          <div className="w-full md:w-auto md:min-w-[280px]">
+            <button
+              style={{
+                width: "100%",
+                padding: "12px 24px",
+                borderRadius: "var(--token-comp-btn-primary-radius)",
+                background:
+                  "linear-gradient(90deg, var(--token-color-accent), var(--token-color-accent-secondary, var(--token-color-accent)))",
+                color: "#fff",
+                fontFamily: "var(--token-text-body-sm-font)",
+                fontSize: "var(--token-text-body-sm-size)",
+                fontWeight: "700",
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+              } as React.CSSProperties}
+            >
+              Start your journey
+            </button>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

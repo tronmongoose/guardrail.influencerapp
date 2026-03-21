@@ -96,7 +96,7 @@ export default function NewProgramPage() {
   const [pacingMode, setPacingMode] = useState<"unlock_on_complete" | "drip_by_week">("unlock_on_complete");
   const [vibePrompt, setVibePrompt] = useState("");
   const [videoHints, setVideoHints] = useState("");
-  const [skinId, setSkinId] = useState("default");
+  const [skinId, setSkinId] = useState("classic-minimal");
   const [intentResult, setIntentResult] = useState<{
     groups: { clipIndexes: number[]; title: string; combinable: boolean }[];
     sectionBoundaries: number[];

@@ -9,6 +9,7 @@ import type { SkinTokens } from "@guide-rail/shared";
 
 interface SkinPreviewPanelProps {
   skinId: string;
+  viewMode?: "desktop" | "mobile";
 }
 
 // ── Section header (sticky) ───────────────────────────────────────────────────
@@ -101,221 +102,343 @@ function ColorSwatch({ name, value }: { name: string; value: string }) {
 
 // ── Marketing Lander section ──────────────────────────────────────────────────
 // Mirrors the layout of apps/web/app/p/[slug]/page.tsx
-function MarketingLanderSection() {
+// viewMode="mobile"  → single-column (hero + what you get + pricing)
+// viewMode="desktop" → 2-col hero with video preview + what you get + pricing
+function MarketingLanderSection({ viewMode = "mobile" }: { viewMode?: "desktop" | "mobile" }) {
   const weeks = [
-    { week: 1, title: "Foundation & Mobility", sessions: 2, actions: 6 },
-    { week: 2, title: "Building Core Strength", sessions: 2, actions: 6 },
-    { week: 3, title: "Progressive Overload", sessions: 2, actions: 6 },
+    { week: 1, title: "Foundation" },
+    { week: 2, title: "Progressive Overload" },
+    { week: 3, title: "Recovery" },
+    { week: 4, title: "Mastery" },
+  ];
+  const featureCards = [
+    { title: "Form Fundamentals", desc: "Master proper technique from day one with detailed video breakdowns" },
+    { title: "Progressive Loading", desc: "Build strength systematically with guided progression protocols" },
   ];
 
-  return (
-    <div
-      style={{
-        backgroundColor: "var(--token-color-bg-default)",
-        fontFamily: "var(--token-text-body-md-font)",
-      }}
-    >
-      {/* Hero — mirrors <header className="px-6 pt-16 pb-12 text-center"> */}
-      <header className="px-5 pt-8 pb-6 text-center">
-        {/* Duration chip */}
-        <span
-          className="inline-block px-3 py-1 mb-4"
-          style={{
-            fontSize: "var(--token-text-label-sm-size)",
-            fontWeight: "var(--token-text-label-sm-weight)",
-            fontFamily: "var(--token-text-label-sm-font)",
-            borderRadius: "var(--token-comp-chip-radius)",
-            backgroundColor: "var(--token-comp-chip-bg)",
-            color: "var(--token-comp-chip-text)",
-            border: "1px solid color-mix(in srgb, var(--token-color-accent) 30%, transparent)",
-          }}
-        >
-          8-week program
-        </span>
+  // Shared sub-components (inline, scaled for preview)
+  const WeekItem = ({ week, title }: { week: number; title: string }) => (
+    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+      <div style={{
+        width: "16px", height: "16px", borderRadius: "50%", flexShrink: 0,
+        border: "1.5px solid var(--token-color-accent)",
+      }} />
+      <div>
+        <p style={{
+          fontFamily: "var(--token-text-label-sm-font)",
+          fontSize: "9px",
+          fontWeight: "var(--token-text-label-sm-weight)",
+          color: "var(--token-color-accent)",
+          textTransform: "uppercase" as const,
+          letterSpacing: "0.1em",
+          lineHeight: 1,
+        }}>
+          Week {week}
+        </p>
+        <p style={{
+          fontFamily: "var(--token-text-body-sm-font)",
+          fontSize: "var(--token-text-body-sm-size)",
+          fontWeight: "500",
+          color: "var(--token-color-text-primary)",
+        }}>
+          {title}
+        </p>
+      </div>
+    </div>
+  );
 
-        {/* Transformation headline */}
-        <h1
-          className="mb-3 leading-tight heading-display"
-          style={{
+  const FeatureCard = ({ title, desc }: { title: string; desc: string }) => (
+    <div style={{
+      padding: "10px 12px",
+      borderRadius: "var(--token-radius-lg)",
+      backgroundColor: "var(--token-color-bg-elevated)",
+      border: "1.5px solid var(--token-color-accent)",
+      boxShadow: "var(--token-shadow-sm)",
+    }}>
+      <p style={{
+        fontFamily: "var(--token-text-body-sm-font)",
+        fontSize: "var(--token-text-body-sm-size)",
+        fontWeight: "700",
+        color: "var(--token-color-text-primary)",
+        marginBottom: "3px",
+      }}>{title}</p>
+      <p style={{
+        fontFamily: "var(--token-text-body-sm-font)",
+        fontSize: "10px",
+        color: "var(--token-color-text-secondary)",
+        lineHeight: "1.4",
+      }}>{desc}</p>
+    </div>
+  );
+
+  const wrapper: React.CSSProperties = {
+    backgroundColor: "var(--token-color-bg-default)",
+    fontFamily: "var(--token-text-body-md-font)",
+  };
+
+  if (viewMode === "mobile") {
+    // ── Mobile: single-column hero + what you get + pricing ────────────────
+    return (
+      <div style={wrapper}>
+        {/* Hero */}
+        <div style={{ padding: "16px 16px 12px" }}>
+          <p style={{
+            fontFamily: "var(--token-text-label-sm-font)",
+            fontSize: "9px",
+            fontWeight: "var(--token-text-label-sm-weight)",
+            color: "var(--token-color-accent)",
+            textTransform: "uppercase",
+            letterSpacing: "0.15em",
+            marginBottom: "8px",
+          }}>
+            Coach Maya Rivera
+          </p>
+          <h1 style={{
             fontFamily: "var(--token-text-heading-xl-font)",
-            fontSize: "var(--token-text-heading-xl-size)",
+            fontSize: "var(--token-text-heading-md-size)",
             fontWeight: "var(--token-text-heading-xl-weight)",
-            lineHeight: "var(--token-text-heading-xl-line-height)",
-            background: "linear-gradient(90deg, #C27AFF, #FB64B6)",
+            lineHeight: "1.1",
+            background: "linear-gradient(90deg, var(--token-color-accent), var(--token-color-accent-secondary, var(--token-color-accent)))",
             WebkitBackgroundClip: "text",
             WebkitTextFillColor: "transparent",
             backgroundClip: "text",
-          }}
-        >
-          Build strength from the ground up
-        </h1>
-
-        {/* Program title / subtitle */}
-        <p
-          className="mb-3"
-          style={{
-            fontFamily: "var(--token-text-body-md-font)",
-            fontSize: "var(--token-text-body-md-size)",
-            color: "var(--token-color-text-secondary)",
-          }}
-        >
-          8-Week Strength Foundation
-        </p>
-
-        {/* Creator */}
-        <p
-          style={{
+            marginBottom: "8px",
+          }}>
+            The 8-Week Strength Foundation
+          </h1>
+          <p style={{
             fontFamily: "var(--token-text-body-sm-font)",
             fontSize: "var(--token-text-body-sm-size)",
             color: "var(--token-color-text-secondary)",
-          }}
-        >
-          by{" "}
-          <span style={{ color: "var(--token-color-text-primary)" }}>Alex Rivera</span>
-        </p>
-
-        {/* Quick stats — mirrors the 3-stat row with SVG icons */}
-        <div
-          className="flex items-center justify-center gap-4 mt-5"
-          style={{
-            fontSize: "var(--token-text-body-sm-size)",
+            marginBottom: "12px",
+          }}>
+            Build a training habit that actually sticks
+          </p>
+          <button style={{
+            width: "100%",
+            padding: "8px",
+            borderRadius: "var(--token-comp-btn-primary-radius)",
+            background: "linear-gradient(90deg, var(--token-color-accent), var(--token-color-accent-secondary, var(--token-color-accent)))",
+            color: "#fff",
             fontFamily: "var(--token-text-body-sm-font)",
-            color: "var(--token-color-text-secondary)",
-          }}
-        >
-          <span className="flex items-center gap-1">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            8 weeks
-          </span>
-          <span className="flex items-center gap-1">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-            </svg>
-            16 sessions
-          </span>
-          <span className="flex items-center gap-1">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-            </svg>
-            48 actions
-          </span>
+            fontSize: "var(--token-text-body-sm-size)",
+            fontWeight: "700",
+            textTransform: "uppercase" as const,
+            letterSpacing: "0.08em",
+          }}>
+            Join the program
+          </button>
         </div>
-      </header>
 
-      <main className="px-5 pb-16">
-        {/* Curriculum — mirrors <section className="mb-12"> / "What you'll learn" */}
-        <section className="mb-6">
-          <h2
-            className="mb-3"
-            style={{
-              fontFamily: "var(--token-text-heading-lg-font)",
-              fontSize: "var(--token-text-heading-lg-size)",
-              fontWeight: "var(--token-text-heading-lg-weight)",
-              color: "var(--token-color-text-primary)",
-            }}
-          >
-            What you&apos;ll learn
-          </h2>
-          <div className="space-y-2">
-            {weeks.map(({ week, title, sessions, actions }) => (
-              <details
-                key={week}
-                className="overflow-hidden"
-                style={{
-                  borderRadius: "var(--token-radius-lg)",
-                  backgroundColor: "var(--token-color-bg-elevated)",
-                  border: "1px solid var(--token-color-border-subtle)",
-                }}
-              >
-                <summary className="flex items-center justify-between p-3 cursor-pointer list-none">
-                  <div className="flex items-center gap-2.5">
-                    <span
-                      className="w-7 h-7 flex items-center justify-center flex-shrink-0"
-                      style={{
-                        borderRadius: "var(--token-radius-md)",
-                        backgroundColor: "var(--token-comp-badge-info-bg)",
-                        color: "var(--token-comp-badge-info-text)",
-                        fontSize: "var(--token-text-label-sm-size)",
-                        fontWeight: "var(--token-text-heading-xl-weight)",
-                      }}
-                    >
-                      {week}
-                    </span>
-                    <div>
-                      <p
-                        style={{
-                          fontSize: "var(--token-text-body-sm-size)",
-                          fontFamily: "var(--token-text-body-sm-font)",
-                          fontWeight: "500",
-                          color: "var(--token-color-text-primary)",
-                        }}
-                      >
-                        {title}
-                      </p>
-                      <p
-                        style={{
-                          fontSize: "var(--token-text-label-sm-size)",
-                          fontFamily: "var(--token-text-label-sm-font)",
-                          color: "var(--token-color-text-secondary)",
-                        }}
-                      >
-                        {sessions} sessions · {actions} actions
-                      </p>
-                    </div>
-                  </div>
-                  <svg
-                    className="w-3.5 h-3.5"
-                    style={{ color: "var(--token-color-text-secondary)" }}
-                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </summary>
-              </details>
+        {/* Divider */}
+        <div style={{ borderTop: "1.5px solid var(--token-color-accent)", margin: "0 16px" }} />
+
+        {/* What you get */}
+        <div style={{ padding: "12px 16px" }}>
+          <p style={{
+            fontFamily: "var(--token-text-heading-md-font)",
+            fontSize: "var(--token-text-heading-md-size)",
+            fontWeight: "var(--token-text-heading-md-weight)",
+            color: "var(--token-color-accent)",
+            marginBottom: "10px",
+          }}>
+            What you get
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "10px" }}>
+            {weeks.map(({ week, title }) => (
+              <WeekItem key={week} week={week} title={title} />
             ))}
           </div>
-        </section>
-      </main>
-
-      {/* Sticky CTA footer — mirrors the fixed bottom bar */}
-      <div
-        className="px-5 py-3"
-        style={{
-          backgroundColor: "color-mix(in srgb, var(--token-color-bg-default) 90%, transparent)",
-          borderTop: "1px solid var(--token-color-border-subtle)",
-        }}
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex-shrink-0">
-            <p
-              style={{
-                fontFamily: "var(--token-text-heading-lg-font)",
-                fontSize: "var(--token-text-heading-lg-size)",
-                fontWeight: "var(--token-text-heading-lg-weight)",
-                color: "var(--token-color-text-primary)",
-              }}
-            >
-              $47
-            </p>
-          </div>
-          <div className="flex-1">
-            <button
-              className="w-full py-2 text-sm font-semibold"
-              style={{
-                borderRadius: "var(--token-comp-btn-primary-radius)",
-                backgroundColor: "var(--token-color-accent)",
-                color: "var(--token-color-bg-default)",
-                fontFamily: "var(--token-text-body-sm-font)",
-                fontSize: "var(--token-text-body-sm-size)",
-                fontWeight: "var(--token-text-heading-md-weight)",
-              }}
-            >
-              Start now
-            </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            {featureCards.map((c) => (
+              <FeatureCard key={c.title} title={c.title} desc={c.desc} />
+            ))}
           </div>
         </div>
+
+        {/* Pricing */}
+        <div style={{ padding: "10px 16px 16px" }}>
+          <p style={{
+            fontSize: "9px", fontWeight: "700",
+            color: "var(--token-color-accent)",
+            textTransform: "uppercase" as const,
+            letterSpacing: "0.15em",
+            marginBottom: "2px",
+          }}>Investment</p>
+          <p style={{
+            fontFamily: "var(--token-text-heading-xl-font)",
+            fontSize: "var(--token-text-heading-lg-size)",
+            fontWeight: "var(--token-text-heading-xl-weight)",
+            color: "var(--token-color-text-primary)",
+            marginBottom: "8px",
+          }}>$149</p>
+          <button style={{
+            width: "100%",
+            padding: "8px",
+            borderRadius: "var(--token-comp-btn-primary-radius)",
+            background: "linear-gradient(90deg, var(--token-color-accent), var(--token-color-accent-secondary, var(--token-color-accent)))",
+            color: "#fff",
+            fontFamily: "var(--token-text-body-sm-font)",
+            fontSize: "var(--token-text-body-sm-size)",
+            fontWeight: "700",
+            textTransform: "uppercase" as const,
+            letterSpacing: "0.08em",
+          }}>
+            Start your journey
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Desktop: 2-col hero + what you get + pricing ───────────────────────────
+  return (
+    <div style={wrapper}>
+      {/* Hero — 2 columns */}
+      <div style={{ padding: "16px", display: "flex", gap: "12px", alignItems: "center" }}>
+        {/* Left: text */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "8px" }}>
+          <p style={{
+            fontFamily: "var(--token-text-label-sm-font)",
+            fontSize: "9px",
+            fontWeight: "var(--token-text-label-sm-weight)",
+            color: "var(--token-color-accent)",
+            textTransform: "uppercase",
+            letterSpacing: "0.15em",
+          }}>
+            Coach Maya Rivera
+          </p>
+          <h1 style={{
+            fontFamily: "var(--token-text-heading-xl-font)",
+            fontSize: "var(--token-text-heading-lg-size)",
+            fontWeight: "var(--token-text-heading-xl-weight)",
+            lineHeight: "1.05",
+            background: "linear-gradient(90deg, var(--token-color-accent), var(--token-color-accent-secondary, var(--token-color-accent)))",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+            backgroundClip: "text",
+          }}>
+            The 8-Week Strength Foundation
+          </h1>
+          <p style={{
+            fontFamily: "var(--token-text-body-sm-font)",
+            fontSize: "var(--token-text-body-sm-size)",
+            color: "var(--token-color-text-secondary)",
+          }}>
+            Build a training habit that actually sticks
+          </p>
+          <button style={{
+            padding: "6px 14px",
+            borderRadius: "var(--token-comp-btn-primary-radius)",
+            background: "linear-gradient(90deg, var(--token-color-accent), var(--token-color-accent-secondary, var(--token-color-accent)))",
+            color: "#fff",
+            fontFamily: "var(--token-text-body-sm-font)",
+            fontSize: "9px",
+            fontWeight: "700",
+            textTransform: "uppercase" as const,
+            letterSpacing: "0.08em",
+            alignSelf: "flex-start",
+          }}>
+            Join the program
+          </button>
+        </div>
+
+        {/* Right: video preview */}
+        <div style={{
+          flex: 1,
+          aspectRatio: "4/3",
+          borderRadius: "var(--token-radius-lg)",
+          backgroundColor: "var(--token-color-bg-elevated)",
+          border: "1.5px solid var(--token-color-accent)",
+          boxShadow: "var(--token-shadow-sm)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "6px",
+        }}>
+          <div style={{
+            width: "28px", height: "28px", borderRadius: "50%",
+            background: "linear-gradient(90deg, var(--token-color-accent), var(--token-color-accent-secondary, var(--token-color-accent)))",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="white">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </div>
+          <p style={{
+            fontSize: "8px", fontWeight: "700",
+            color: "var(--token-color-accent)",
+            textTransform: "uppercase" as const,
+            letterSpacing: "0.15em",
+          }}>Preview</p>
+          <p style={{
+            fontSize: "9px",
+            color: "var(--token-color-text-primary)",
+          }}>Watch program intro</p>
+        </div>
+      </div>
+
+      {/* Divider */}
+      <div style={{ borderTop: "1.5px solid var(--token-color-accent)", margin: "0 16px" }} />
+
+      {/* What you get */}
+      <div style={{ padding: "12px 16px" }}>
+        <p style={{
+          fontFamily: "var(--token-text-heading-md-font)",
+          fontSize: "var(--token-text-heading-md-size)",
+          fontWeight: "var(--token-text-heading-md-weight)",
+          color: "var(--token-color-accent)",
+          marginBottom: "10px",
+        }}>
+          What you get
+        </p>
+        <div style={{ display: "flex", gap: "12px" }}>
+          {/* Left: weeks */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "8px" }}>
+            {weeks.map(({ week, title }) => (
+              <WeekItem key={week} week={week} title={title} />
+            ))}
+          </div>
+          {/* Right: feature cards */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "6px" }}>
+            {featureCards.map((c) => (
+              <FeatureCard key={c.title} title={c.title} desc={c.desc} />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Pricing */}
+      <div style={{ padding: "10px 16px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+        <div>
+          <p style={{
+            fontSize: "9px", fontWeight: "700",
+            color: "var(--token-color-accent)",
+            textTransform: "uppercase" as const,
+            letterSpacing: "0.15em",
+            marginBottom: "2px",
+          }}>Investment</p>
+          <p style={{
+            fontFamily: "var(--token-text-heading-xl-font)",
+            fontSize: "var(--token-text-heading-lg-size)",
+            fontWeight: "var(--token-text-heading-xl-weight)",
+            color: "var(--token-color-text-primary)",
+          }}>$149</p>
+        </div>
+        <button style={{
+          padding: "8px 20px",
+          borderRadius: "var(--token-comp-btn-primary-radius)",
+          background: "linear-gradient(90deg, var(--token-color-accent), var(--token-color-accent-secondary, var(--token-color-accent)))",
+          color: "#fff",
+          fontFamily: "var(--token-text-body-sm-font)",
+          fontSize: "9px",
+          fontWeight: "700",
+          textTransform: "uppercase" as const,
+          letterSpacing: "0.08em",
+        }}>
+          Start your journey
+        </button>
       </div>
     </div>
   );
@@ -653,7 +776,7 @@ function LearnerStepViewSection() {
                 fontWeight: "700",
                 letterSpacing: "0.12em",
                 textTransform: "uppercase" as const,
-                background: "linear-gradient(90deg, #C27AFF 0%, #FB64B6 100%)",
+                background: "linear-gradient(90deg, var(--token-color-accent), var(--token-color-accent-secondary, var(--token-color-accent)))",
                 WebkitBackgroundClip: "text",
                 WebkitTextFillColor: "transparent",
                 backgroundClip: "text",
@@ -700,9 +823,12 @@ function LearnerStepViewSection() {
         >
           <div
             className="w-8 h-8 rounded-full flex items-center justify-center"
-            style={{ backgroundColor: "rgba(173, 70, 255, 0.3)", border: "2px solid #AD46FF" }}
+            style={{
+              backgroundColor: "color-mix(in srgb, var(--token-color-accent), transparent 70%)",
+              border: "2px solid var(--token-color-accent)",
+            }}
           >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="#AD46FF">
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="var(--token-color-accent)">
               <path d="M8 5v14l11-7z" />
             </svg>
           </div>
@@ -713,9 +839,9 @@ function LearnerStepViewSection() {
           <button
             className="w-full py-2 text-sm font-semibold"
             style={{
-              borderRadius: "100px",
-              background: "linear-gradient(90deg, #AD46FF 0%, #F6339A 100%)",
-              color: "#fff",
+              borderRadius: "var(--token-comp-btn-primary-radius)",
+              background: "linear-gradient(90deg, var(--token-color-accent), var(--token-color-accent-secondary, var(--token-color-accent)))",
+              color: "var(--token-color-bg-default)",
               fontSize: "var(--token-text-body-sm-size)",
               fontWeight: "600",
             }}
@@ -751,7 +877,7 @@ function LearnerStepViewSection() {
                 fontWeight: "700",
                 letterSpacing: "0.12em",
                 textTransform: "uppercase" as const,
-                background: "linear-gradient(90deg, #C27AFF 0%, #FB64B6 100%)",
+                background: "linear-gradient(90deg, var(--token-color-accent), var(--token-color-accent-secondary, var(--token-color-accent)))",
                 WebkitBackgroundClip: "text",
                 WebkitTextFillColor: "transparent",
                 backgroundClip: "text",
@@ -786,8 +912,8 @@ function ProgramCoversSection() {
         style={{
           borderRadius: "var(--token-radius-lg)",
           backgroundColor: "var(--token-color-bg-elevated)",
-          border: "1px solid rgba(194, 122, 255, 0.2)",
-          boxShadow: "0 4px 24px rgba(173, 70, 255, 0.15)",
+          border: "1px solid var(--token-color-border-subtle)",
+          boxShadow: "var(--token-shadow-md)",
           overflow: "hidden",
         }}
       >
@@ -796,7 +922,7 @@ function ProgramCoversSection() {
           style={{
             aspectRatio: "16/9",
             position: "relative",
-            background: "linear-gradient(135deg, #3C0366 0%, #1E1A4D 50%, #000 100%)",
+            background: "var(--token-color-bg-gradient, linear-gradient(135deg, var(--token-color-bg-elevated) 0%, var(--token-color-bg-default) 100%))",
           }}
         >
           {/* Decorative orbs */}
@@ -808,7 +934,7 @@ function ProgramCoversSection() {
               width: "60px",
               height: "60px",
               borderRadius: "50%",
-              background: "radial-gradient(circle, rgba(173,70,255,0.4), transparent 70%)",
+              background: "radial-gradient(circle, color-mix(in srgb, var(--token-color-accent), transparent 60%), transparent 70%)",
             }}
           />
           <div
@@ -819,7 +945,7 @@ function ProgramCoversSection() {
               width: "40px",
               height: "40px",
               borderRadius: "50%",
-              background: "radial-gradient(circle, rgba(246,51,154,0.4), transparent 70%)",
+              background: "radial-gradient(circle, color-mix(in srgb, var(--token-color-accent-secondary, var(--token-color-accent)), transparent 60%), transparent 70%)",
             }}
           />
           {/* Bottom gradient overlay + title */}
@@ -827,7 +953,7 @@ function ProgramCoversSection() {
             style={{
               position: "absolute",
               inset: 0,
-              background: "linear-gradient(180deg, transparent 30%, rgba(30,26,77,0.7) 60%, rgba(0,0,0,0.95) 100%)",
+              background: "linear-gradient(180deg, transparent 30%, color-mix(in srgb, var(--token-color-bg-default), transparent 30%) 60%, var(--token-color-bg-default) 100%)",
               display: "flex",
               flexDirection: "column" as const,
               justifyContent: "flex-end",
@@ -839,7 +965,7 @@ function ProgramCoversSection() {
                 fontSize: "var(--token-text-heading-md-size)",
                 fontWeight: "700",
                 lineHeight: "1.2",
-                background: "linear-gradient(90deg, #C27AFF, #FB64B6)",
+                background: "linear-gradient(90deg, var(--token-color-accent), var(--token-color-accent-secondary, var(--token-color-accent)))",
                 WebkitBackgroundClip: "text",
                 WebkitTextFillColor: "transparent",
                 backgroundClip: "text",
@@ -848,7 +974,7 @@ function ProgramCoversSection() {
             >
               8-Week Strength Foundation
             </h3>
-            <p style={{ fontSize: "11px", color: "rgba(233, 212, 255, 0.7)" }}>
+            <p style={{ fontSize: "11px", color: "var(--token-color-text-secondary)" }}>
               Build strength from the ground up
             </p>
           </div>
@@ -861,7 +987,7 @@ function ProgramCoversSection() {
             <div
               className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
               style={{
-                background: "linear-gradient(135deg, #AD46FF, #F6339A)",
+                background: "linear-gradient(135deg, var(--token-color-accent), var(--token-color-accent-secondary, var(--token-color-accent)))",
                 fontSize: "10px",
                 fontWeight: "600",
                 color: "#fff",
@@ -889,8 +1015,8 @@ function ProgramCoversSection() {
               className="px-2 py-0.5 text-[9px] font-semibold"
               style={{
                 borderRadius: "100px",
-                background: "linear-gradient(90deg, #AD46FF 0%, #F6339A 100%)",
-                color: "#fff",
+                background: "linear-gradient(90deg, var(--token-color-accent), var(--token-color-accent-secondary, var(--token-color-accent)))",
+                color: "var(--token-color-bg-default)",
               }}
             >
               $47
@@ -905,7 +1031,7 @@ function ProgramCoversSection() {
         style={{
           borderRadius: "var(--token-radius-lg)",
           backgroundColor: "var(--token-color-bg-elevated)",
-          border: "1px solid rgba(194, 122, 255, 0.12)",
+          border: "1px solid var(--token-color-border-subtle)",
           overflow: "hidden",
           opacity: 0.65,
         }}
@@ -917,7 +1043,7 @@ function ProgramCoversSection() {
               width: "56px",
               height: "56px",
               borderRadius: "var(--token-radius-md)",
-              background: "linear-gradient(135deg, #3C0366, #1E1A4D)",
+              background: "var(--token-color-bg-gradient, linear-gradient(135deg, var(--token-color-bg-elevated), var(--token-color-bg-default)))",
               flexShrink: 0,
             }}
           />
@@ -1135,7 +1261,7 @@ function DesignTokensSection({ tokens }: { tokens: SkinTokens }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export function SkinPreviewPanel({ skinId }: SkinPreviewPanelProps) {
+export function SkinPreviewPanel({ skinId, viewMode = "mobile" }: SkinPreviewPanelProps) {
   const tokens = useMemo(() => getSkinTokens(skinId), [skinId]);
   const cssVars = useMemo(() => getTokenCSSVars(tokens), [tokens]);
   const entry = getSkinCatalogEntry(skinId);
@@ -1177,7 +1303,7 @@ export function SkinPreviewPanel({ skinId }: SkinPreviewPanelProps) {
 
         {/* ── Section 1: Public program page ── */}
         <SectionHeader label="Public program page" />
-        <MarketingLanderSection />
+        <MarketingLanderSection viewMode={viewMode} />
 
         {/* ── Section 2: Learner timeline ── */}
         <SectionHeader label="Learner timeline" />

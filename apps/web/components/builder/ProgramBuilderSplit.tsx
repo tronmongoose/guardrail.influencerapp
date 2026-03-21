@@ -10,6 +10,7 @@ interface ProgramBuilderSplitProps {
   weeks: WeekData[];
   videos: YouTubeVideoData[];
   onUpdate: () => void;
+  pacingMode: "DRIP_BY_WEEK" | "UNLOCK_ON_COMPLETE";
 }
 
 export function ProgramBuilderSplit({
@@ -17,6 +18,7 @@ export function ProgramBuilderSplit({
   weeks,
   videos,
   onUpdate,
+  pacingMode,
 }: ProgramBuilderSplitProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -97,6 +99,7 @@ export function ProgramBuilderSplit({
                 setSidebarOpen(false);
               }}
               onUpdate={handleUpdate}
+              pacingMode={pacingMode}
             />
           </div>
         </div>
@@ -112,6 +115,7 @@ export function ProgramBuilderSplit({
             selectedSessionId={selectedSessionId}
             onSelectSession={setSelectedSessionId}
             onUpdate={handleUpdate}
+            pacingMode={pacingMode}
           />
         </div>
 

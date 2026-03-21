@@ -138,16 +138,11 @@ export function WeekCard({ week, programId, videos, onUpdate }: WeekCardProps) {
     const [moved] = reordered.splice(oldIndex, 1);
     reordered.splice(newIndex, 0, moved);
 
-    const items = reordered.map((s, idx) => ({
-      id: s.id,
-      orderIndex: idx,
-    }));
-
     try {
       const res = await fetch(`/api/programs/${programId}/weeks/${week.id}/sessions/reorder`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({ sessionIds: reordered.map((s) => s.id) }),
       });
       if (!res.ok) throw new Error("Reorder failed");
       onUpdate();

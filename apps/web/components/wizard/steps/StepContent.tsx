@@ -34,8 +34,9 @@ type ContentTab = "youtube" | "upload";
 
 interface FileExtractionState {
   filename: string;
+  fileSize?: number;
   progress: number;
-  status: "extracting" | "transcribing" | "done" | "error";
+  status: "pending" | "extracting" | "transcribing" | "done" | "error";
   error?: string;
   phase?: string;
 }
@@ -94,6 +95,33 @@ export function StepContent({
   const [videoUrl, setVideoUrl] = useState("");
   const [isAddingVideo, setIsAddingVideo] = useState(false);
   const [extractionStates, setExtractionStates] = useState<FileExtractionState[]>([]);
+  const [aiMessageIndex, setAiMessageIndex] = useState(0);
+
+  const isExtracting = extractionStates.some((s) => s.status === "pending" || s.status === "extracting" || s.status === "transcribing");
+
+  const AI_UPLOAD_MESSAGES = [
+    "Compiling your videos...",
+    "Crafting catchy headlines...",
+    "Finding the best moments...",
+    "Building your program structure...",
+    "Writing engaging session titles...",
+    "Grouping related content...",
+    "Mapping out your curriculum...",
+    "Polishing the week-by-week flow...",
+    "Almost there — putting it all together...",
+  ];
+
+  useEffect(() => {
+    if (!isExtracting) {
+      setAiMessageIndex(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setAiMessageIndex((i) => (i + 1) % AI_UPLOAD_MESSAGES.length);
+    }, 2800);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isExtracting]);
 
   // Batch mode state
   const [showBatchMode, setShowBatchMode] = useState(false);
@@ -120,8 +148,6 @@ export function StepContent({
 
   const totalSegmentCount = Object.values(segmentCounts).reduce((a, b) => a + b, 0);
   const segmentedVideoCount = Object.keys(segmentCounts).length;
-
-  const isExtracting = extractionStates.some((s) => s.status === "extracting" || s.status === "transcribing");
 
   const handleAddVideo = async () => {
     const videoId = parseYouTubeVideoId(videoUrl);
@@ -229,13 +255,27 @@ export function StepContent({
 
     updateState(0, "Uploading");
 
-    const blob = await upload(file.name, file, {
-      access: "public",
-      handleUploadUrl: `/api/programs/${programId}/videos/upload`,
-      onUploadProgress: ({ percentage }) => {
-        updateState(Math.round(percentage * 0.9), "Uploading");
-      },
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10 * 60 * 1000); // 10-minute timeout
+
+    let blob: Awaited<ReturnType<typeof upload>>;
+    try {
+      blob = await upload(file.name, file, {
+        access: "public",
+        handleUploadUrl: `/api/programs/${programId}/videos/upload`,
+        abortSignal: controller.signal,
+        onUploadProgress: ({ percentage }) => {
+          updateState(Math.round(percentage * 0.9), "Uploading");
+        },
+      });
+    } catch (err) {
+      if (controller.signal.aborted) {
+        throw new Error(`${file.name}: Upload timed out after 10 minutes`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     updateState(92, "Saving");
 
@@ -393,63 +433,85 @@ export function StepContent({
     const files = Array.from(e.target.files ?? []);
     if (files.length === 0) return;
 
-    // Initialize extraction states
+    const videoFiles = files.filter((f) => isVideoFile(f.name));
+    const otherFiles = files.filter((f) => !isVideoFile(f.name));
+
+    // Initialize extraction states — videos start as "extracting" (upload immediately),
+    // other files start as "pending" until their turn in the sequential queue
     const newStates: FileExtractionState[] = files.map((f) => ({
       filename: f.name,
+      fileSize: f.size,
       progress: 0,
-      status: "extracting" as const,
+      status: (isVideoFile(f.name) ? "extracting" : "pending") as FileExtractionState["status"],
     }));
     setExtractionStates((prev) => [...prev, ...newStates]);
 
-    const newArtifacts: Artifact[] = [];
     const newVideos: Video[] = [];
+    const newArtifacts: Artifact[] = [];
 
-    // Process files sequentially
-    for (const file of files) {
+    // Upload all video files in parallel
+    if (videoFiles.length > 0) {
+      const videoResults = await Promise.allSettled(
+        videoFiles.map((file) => uploadVideoBlob(file))
+      );
+      for (let i = 0; i < videoFiles.length; i++) {
+        const file = videoFiles[i];
+        const result = videoResults[i];
+        if (result.status === "fulfilled" && result.value) {
+          newVideos.push(result.value);
+          setExtractionStates((prev) =>
+            prev.map((s) => s.filename === file.name ? { ...s, status: "done", progress: 100 } : s)
+          );
+        } else if (result.status === "rejected") {
+          console.error("Upload error:", result.reason);
+          setExtractionStates((prev) =>
+            prev.map((s) => s.filename === file.name
+              ? { ...s, status: "error", error: result.reason instanceof Error ? result.reason.message : "Upload failed" }
+              : s
+            )
+          );
+        }
+      }
+    }
+
+    // Process non-video files sequentially (they use client-side extraction)
+    for (const file of otherFiles) {
+      setExtractionStates((prev) =>
+        prev.map((s) => s.filename === file.name ? { ...s, status: "extracting" } : s)
+      );
       try {
-        if (isVideoFile(file.name)) {
-          // Video files → direct Vercel Blob upload → Gemini analysis pipeline
-          const video = await uploadVideoBlob(file);
-          if (video) {
-            newVideos.push(video);
-            setExtractionStates((prev) =>
-              prev.map((s) => s.filename === file.name ? { ...s, status: "done", progress: 100 } : s)
-            );
-          }
-        } else {
-          const artifact = isAudioFile(file.name)
-            ? await extractAudioVideoFile(file)
-            : await extractSingleFile(file);
-          if (artifact) {
-            // Save to API immediately so extractedText is persisted server-side
-            try {
-              const res = await fetch(`/api/programs/${programId}/artifacts`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(artifact),
-              });
-              if (res.ok) {
-                const saved = await res.json();
-                artifact.id = saved.id;
-              }
-            } catch {
-              // Non-critical — artifact can be saved later in handleGenerate
+        const artifact = isAudioFile(file.name)
+          ? await extractAudioVideoFile(file)
+          : await extractSingleFile(file);
+        if (artifact) {
+          // Save to API immediately so extractedText is persisted server-side
+          try {
+            const res = await fetch(`/api/programs/${programId}/artifacts`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(artifact),
+            });
+            if (res.ok) {
+              const saved = await res.json();
+              artifact.id = saved.id;
             }
-            newArtifacts.push(artifact);
-            setExtractionStates((prev) =>
-              prev.map((s) => s.filename === file.name ? { ...s, status: "done", progress: 100 } : s)
-            );
-          } else {
-            setExtractionStates((prev) =>
-              prev.map((s) => s.filename === file.name ? { ...s, status: "error", error: "Unsupported file type" } : s)
-            );
+          } catch {
+            // Non-critical — artifact can be saved later in handleGenerate
           }
+          newArtifacts.push(artifact);
+          setExtractionStates((prev) =>
+            prev.map((s) => s.filename === file.name ? { ...s, status: "done", progress: 100 } : s)
+          );
+        } else {
+          setExtractionStates((prev) =>
+            prev.map((s) => s.filename === file.name ? { ...s, status: "error", error: "Unsupported file type" } : s)
+          );
         }
       } catch (error) {
-        console.error("Upload/extraction error:", error);
+        console.error("Extraction error:", error);
         setExtractionStates((prev) =>
           prev.map((s) => s.filename === file.name
-            ? { ...s, status: "error", error: error instanceof Error ? error.message : "Upload failed" }
+            ? { ...s, status: "error", error: error instanceof Error ? error.message : "Processing failed" }
             : s
           )
         );
@@ -465,7 +527,7 @@ export function StepContent({
 
     // Clear completed extraction states after a delay
     setTimeout(() => {
-      setExtractionStates((prev) => prev.filter((s) => s.status === "extracting" || s.status === "transcribing"));
+      setExtractionStates((prev) => prev.filter((s) => s.status === "pending" || s.status === "extracting" || s.status === "transcribing"));
     }, 2000);
 
     // Reset file input
@@ -694,9 +756,12 @@ export function StepContent({
               }
             `}>
               {isExtracting ? (
-                <div>
-                  <div className="w-8 h-8 mx-auto mb-2 border-2 border-neon-pink border-t-transparent rounded-full animate-spin" />
-                  <p className="text-sm text-neon-pink">Processing files...</p>
+                <div className="text-center">
+                  <div className="w-8 h-8 mx-auto mb-3 border-2 border-neon-pink border-t-transparent rounded-full animate-spin" />
+                  <p className="text-sm font-medium text-neon-pink transition-all duration-500">
+                    {AI_UPLOAD_MESSAGES[aiMessageIndex]}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">Large videos take a minute — hang tight</p>
                 </div>
               ) : (
                 <>
@@ -732,7 +797,11 @@ export function StepContent({
                 <div key={`${state.filename}-${i}`} className="p-2 bg-surface-dark rounded-lg border border-surface-border">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs text-gray-400 truncate flex-1">{state.filename}</span>
-                    <span className="text-xs ml-2">
+                    <span className="text-xs ml-2 flex items-center gap-2">
+                      {state.fileSize && (
+                        <span className="text-gray-500">{(state.fileSize / (1024 * 1024)).toFixed(0)} MB</span>
+                      )}
+                      {state.status === "pending" && <span className="text-gray-500">Queued</span>}
                       {state.status === "extracting" && <span className="text-neon-pink">{state.phase ?? `${Math.round(state.progress)}%`}</span>}
                       {state.status === "transcribing" && <span className="text-neon-cyan">{state.phase ?? "Transcribing..."}</span>}
                       {state.status === "done" && <span className="text-green-400">Done</span>}
@@ -742,9 +811,9 @@ export function StepContent({
                   <div className="h-1 bg-surface-border rounded-full overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-300 ${
-                        state.status === "error" ? "bg-red-500" : state.status === "done" ? "bg-green-500" : state.status === "transcribing" ? "bg-neon-cyan" : "bg-neon-pink"
+                        state.status === "error" ? "bg-red-500" : state.status === "done" ? "bg-green-500" : state.status === "transcribing" ? "bg-neon-cyan" : state.status === "pending" ? "bg-gray-600" : "bg-neon-pink"
                       }`}
-                      style={{ width: `${state.progress}%` }}
+                      style={{ width: `${state.status === "pending" ? 0 : state.progress}%` }}
                     />
                   </div>
                   {state.error && (

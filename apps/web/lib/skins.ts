@@ -26,7 +26,7 @@ export interface Skin {
   cardStyle: "elevated" | "flat" | "bordered";
 }
 
-export const SKINS: Record<SkinId, Skin> = {
+export const SKINS: Record<string, Skin> = {
   default: {
     id: "default",
     name: "Dark Neon",
@@ -112,6 +112,23 @@ export const SKINS: Record<SkinId, Skin> = {
     buttonStyle: "gradient",
     cardStyle: "bordered",
   },
+  "ai-command-center": {
+    id: "ai-command-center",
+    name: "AI Command Center",
+    description: "Terminal-grade dark with neon green intelligence",
+    colors: {
+      bg: "#020618",
+      bgSecondary: "#0F172B",
+      text: "#FFFFFF",
+      textMuted: "#6A7282",
+      accent: "#05DF72",
+      accentHover: "#00F07A",
+      border: "#0D542B",
+    },
+    videoFrame: "sharp",
+    buttonStyle: "solid",
+    cardStyle: "bordered",
+  },
 };
 
 export const SKIN_IDS = Object.keys(SKINS) as (keyof typeof SKINS)[];
@@ -121,7 +138,7 @@ export const SKIN_IDS = Object.keys(SKINS) as (keyof typeof SKINS)[];
  * This returns the legacy Skin interface. Kept for builder preview components.
  */
 export function getSkin(skinId: string): Skin {
-  return SKINS[skinId as SkinId] || SKINS.default;
+  return SKINS[skinId as SkinId] ?? SKINS["default"]!;
 }
 
 /**

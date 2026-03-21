@@ -9,17 +9,118 @@ import { z } from "zod";
  * Extend this object when adding new skins.
  */
 export const SkinId = {
-  Default: "default",
-  Professional: "professional",
-  Warm: "warm",
-  Minimal: "minimal",
+  // CLASSIC
+  ClassicMinimal: "classic-minimal",
+  ClassicStudio: "classic-studio",
+  ClassicPlayful: "classic-playful",
+  ClassicBold: "classic-bold",
+  ClassicElegant: "classic-elegant",
+  // CREATIVE
+  CreativeRetro: "creative-retro",
+  CreativeChalkboard: "creative-chalkboard",
+  CreativeSheetMusic: "creative-sheet-music",
+  CreativeLiterary: "creative-literary",
+  CreativeCode: "creative-code",
+  CreativeEsports: "creative-esports",
+  // LIFESTYLE
+  LifestyleGlam: "lifestyle-glam",
+  LifestyleWanderlust: "lifestyle-wanderlust",
+  LifestyleGraffiti: "lifestyle-graffiti",
+  LifestyleZen: "lifestyle-zen",
+  LifestyleScience: "lifestyle-science",
+  LifestylePodcast: "lifestyle-podcast",
+  // ACTIVITY
+  ActivityHologram: "activity-hologram",
+  ActivityWorkshop: "activity-workshop",
+  ActivityCulinary: "activity-culinary",
+  ActivitySports: "activity-sports",
+  ActivityKids: "activity-kids",
+  ActivityFashion: "activity-fashion",
+  // ENTERTAINMENT
+  EntertainmentFilmNoir: "entertainment-film-noir",
+  EntertainmentFestival: "entertainment-festival",
+  // MUSIC
+  MusicSoundwave: "music-soundwave",
+  MusicBackstage: "music-backstage",
+  MusicDancefloor: "music-dancefloor",
+  // MEDIA
+  MediaHero: "media-hero",
+  MediaFilm: "media-film",
+  MediaLens: "media-lens",
+  MediaPulse: "media-pulse",
+  // PROFESSIONAL
+  ProMindspace: "pro-mindspace",
   CosmicStudio: "cosmic-studio",
+  ProAtelier: "pro-atelier",
+  ProStartup: "pro-startup",
+  ProWellness: "pro-wellness",
+  ProHomeGym: "pro-home-gym",
+  ProCreator: "pro-creator",
+  ProLuxury: "pro-luxury",
+  ProStreetFitness: "pro-street-fitness",
+  ProMindMap: "pro-mind-map",
+  ProBookNook: "pro-book-nook",
+  ProAdventure: "pro-adventure",
   AiCommandCenter: "ai-command-center",
 } as const;
 
 export type SkinId = (typeof SkinId)[keyof typeof SkinId];
 
-export const SkinIdSchema = z.enum(["default", "professional", "warm", "minimal", "cosmic-studio", "ai-command-center"]);
+export const SkinIdSchema = z.enum([
+  // CLASSIC
+  "classic-minimal",
+  "classic-studio",
+  "classic-playful",
+  "classic-bold",
+  "classic-elegant",
+  // CREATIVE
+  "creative-retro",
+  "creative-chalkboard",
+  "creative-sheet-music",
+  "creative-literary",
+  "creative-code",
+  "creative-esports",
+  // LIFESTYLE
+  "lifestyle-glam",
+  "lifestyle-wanderlust",
+  "lifestyle-graffiti",
+  "lifestyle-zen",
+  "lifestyle-science",
+  "lifestyle-podcast",
+  // ACTIVITY
+  "activity-hologram",
+  "activity-workshop",
+  "activity-culinary",
+  "activity-sports",
+  "activity-kids",
+  "activity-fashion",
+  // ENTERTAINMENT
+  "entertainment-film-noir",
+  "entertainment-festival",
+  // MUSIC
+  "music-soundwave",
+  "music-backstage",
+  "music-dancefloor",
+  // MEDIA
+  "media-hero",
+  "media-film",
+  "media-lens",
+  "media-pulse",
+  // PROFESSIONAL
+  "pro-mindspace",
+  "cosmic-studio",
+  "pro-atelier",
+  "pro-startup",
+  "pro-wellness",
+  "pro-home-gym",
+  "pro-creator",
+  "pro-luxury",
+  "pro-street-fitness",
+  "pro-mind-map",
+  "pro-book-nook",
+  "pro-adventure",
+  "ai-command-center",
+]);
 
 // ---------------------------------------------------------------------------
 // Color Tokens

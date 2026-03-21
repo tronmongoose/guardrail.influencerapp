@@ -28,15 +28,22 @@ export async function PATCH(
     return NextResponse.json({ error: "weekIds must be an array" }, { status: 400 });
   }
 
-  // Update week numbers in order
-  await prisma.$transaction(
-    weekIds.map((weekId, index) =>
+  // Two-pass update to avoid unique constraint violations on (programId, weekNumber):
+  // First set to negative temporaries, then to final positive values.
+  await prisma.$transaction([
+    ...weekIds.map((weekId, index) =>
+      prisma.week.update({
+        where: { id: weekId },
+        data: { weekNumber: -(index + 1) },
+      })
+    ),
+    ...weekIds.map((weekId, index) =>
       prisma.week.update({
         where: { id: weekId },
         data: { weekNumber: index + 1 },
       })
-    )
-  );
+    ),
+  ]);
 
   return NextResponse.json({ success: true });
 }

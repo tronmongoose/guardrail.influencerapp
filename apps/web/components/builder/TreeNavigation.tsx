@@ -1,14 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   DndContext,
+  DragEndEvent,
   closestCenter,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
-  DragEndEvent,
+  useDroppable,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -27,6 +28,7 @@ interface TreeNavigationProps {
   selectedSessionId: string | null;
   onSelectSession: (sessionId: string) => void;
   onUpdate: () => void;
+  pacingMode: "DRIP_BY_WEEK" | "UNLOCK_ON_COMPLETE";
 }
 
 interface TreeWeekItemProps {
@@ -36,23 +38,18 @@ interface TreeWeekItemProps {
   selectedSessionId: string | null;
   onSelectSession: (sessionId: string) => void;
   onUpdate: () => void;
+  groupLabel: string;
 }
 
 interface TreeSessionItemProps {
   session: SessionData;
-  programId: string;
+  weekId: string;
   videos: YouTubeVideoData[];
   isSelected: boolean;
   onSelect: () => void;
-  onUpdate: () => void;
 }
 
-function TreeSessionItem({
-  session,
-  videos,
-  isSelected,
-  onSelect,
-}: TreeSessionItemProps) {
+function TreeSessionItem({ session, weekId, videos, isSelected, onSelect }: TreeSessionItemProps) {
   const {
     attributes,
     listeners,
@@ -60,7 +57,7 @@ function TreeSessionItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: session.id });
+  } = useSortable({ id: session.id, data: { type: "session", weekId } });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -68,7 +65,6 @@ function TreeSessionItem({
     opacity: isDragging ? 0.5 : 1,
   };
 
-  // Find the first WATCH action to get video thumbnail
   const watchAction = session.actions.find((a) => a.type === "WATCH" && a.youtubeVideoId);
   const video = watchAction ? videos.find((v) => v.id === watchAction.youtubeVideoId) : null;
 
@@ -119,6 +115,20 @@ function TreeSessionItem({
   );
 }
 
+function WeekDropZone({ weekId }: { weekId: string }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `drop-${weekId}` });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`pl-8 pr-2 py-2 text-xs italic transition-colors ${
+        isOver ? "text-teal-400 bg-teal-900/10" : "text-gray-600"
+      }`}
+    >
+      {isOver ? "Drop here" : "No sessions yet"}
+    </div>
+  );
+}
+
 function TreeWeekItem({
   week,
   programId,
@@ -126,9 +136,20 @@ function TreeWeekItem({
   selectedSessionId,
   onSelectSession,
   onUpdate,
+  groupLabel,
 }: TreeWeekItemProps) {
   const [expanded, setExpanded] = useState(true);
   const [addingSession, setAddingSession] = useState(false);
+  const [editing, setEditing] = useState(false);
+  // Show the stored title but swap "Week" prefix to groupLabel for display
+  const displayTitle = week.title.replace(/^Week\b/i, groupLabel);
+  const [titleInput, setTitleInput] = useState(displayTitle);
+
+  // Keep input in sync when external data refreshes
+  useEffect(() => {
+    if (!editing) setTitleInput(displayTitle);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [week.title, groupLabel]);
 
   const {
     attributes,
@@ -137,7 +158,7 @@ function TreeWeekItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: week.id });
+  } = useSortable({ id: week.id, data: { type: "week" } });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -145,12 +166,28 @@ function TreeWeekItem({
     opacity: isDragging ? 0.5 : 1,
   };
 
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
+  async function handleSaveTitle() {
+    const trimmed = titleInput.trim();
+    if (!trimmed || trimmed === displayTitle) {
+      setTitleInput(displayTitle);
+      setEditing(false);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/programs/${programId}/weeks/${week.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: trimmed }),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      onUpdate();
+    } catch (err) {
+      console.error("Save failed:", err);
+      setTitleInput(displayTitle);
+    } finally {
+      setEditing(false);
+    }
+  }
 
   async function handleAddSession() {
     setAddingSession(true);
@@ -173,31 +210,6 @@ function TreeWeekItem({
       console.error("Failed to add session:", err);
     } finally {
       setAddingSession(false);
-    }
-  }
-
-  async function handleReorderSessions(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    const oldIndex = week.sessions.findIndex((s) => s.id === active.id);
-    const newIndex = week.sessions.findIndex((s) => s.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
-
-    const reordered = [...week.sessions];
-    const [moved] = reordered.splice(oldIndex, 1);
-    reordered.splice(newIndex, 0, moved);
-
-    try {
-      const res = await fetch(`/api/programs/${programId}/weeks/${week.id}/sessions/reorder`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionIds: reordered.map((s) => s.id) }),
-      });
-      if (!res.ok) throw new Error("Reorder failed");
-      onUpdate();
-    } catch (err) {
-      console.error("Reorder failed:", err);
     }
   }
 
@@ -229,9 +241,29 @@ function TreeWeekItem({
           </svg>
         </button>
 
-        <span className="text-sm font-medium text-white flex-1 truncate">
-          {week.title}
-        </span>
+        {editing ? (
+          <input
+            type="text"
+            value={titleInput}
+            onChange={(e) => setTitleInput(e.target.value)}
+            onBlur={handleSaveTitle}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleSaveTitle();
+              if (e.key === "Escape") { setTitleInput(displayTitle); setEditing(false); }
+            }}
+            autoFocus
+            className="flex-1 bg-transparent border-b border-teal-500 text-white text-sm focus:outline-none"
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <button
+            onClick={() => { setTitleInput(displayTitle); setEditing(true); }}
+            className="flex-1 text-left text-sm font-medium text-white hover:text-teal-400 transition truncate"
+            title="Click to rename"
+          >
+            {displayTitle}
+          </button>
+        )}
 
         <span className="text-xs text-gray-400">{week.sessions.length}</span>
       </div>
@@ -240,32 +272,23 @@ function TreeWeekItem({
       {expanded && (
         <div className="pb-1">
           {week.sessions.length > 0 ? (
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleReorderSessions}
+            <SortableContext
+              items={week.sessions.map((s) => s.id)}
+              strategy={verticalListSortingStrategy}
             >
-              <SortableContext
-                items={week.sessions.map((s) => s.id)}
-                strategy={verticalListSortingStrategy}
-              >
-                {week.sessions.map((session) => (
-                  <TreeSessionItem
-                    key={session.id}
-                    session={session}
-                    programId={programId}
-                    videos={videos}
-                    isSelected={selectedSessionId === session.id}
-                    onSelect={() => onSelectSession(session.id)}
-                    onUpdate={onUpdate}
-                  />
-                ))}
-              </SortableContext>
-            </DndContext>
+              {week.sessions.map((session) => (
+                <TreeSessionItem
+                  key={session.id}
+                  session={session}
+                  weekId={week.id}
+                  videos={videos}
+                  isSelected={selectedSessionId === session.id}
+                  onSelect={() => onSelectSession(session.id)}
+                />
+              ))}
+            </SortableContext>
           ) : (
-            <div className="pl-8 pr-2 py-2 text-xs text-gray-400 italic">
-              No sessions yet
-            </div>
+            <WeekDropZone weekId={week.id} />
           )}
 
           <button
@@ -300,15 +323,23 @@ export function TreeNavigation({
   selectedSessionId,
   onSelectSession,
   onUpdate,
+  pacingMode,
 }: TreeNavigationProps) {
   const [addingWeek, setAddingWeek] = useState(false);
 
+  const groupLabel = pacingMode === "UNLOCK_ON_COMPLETE" ? "Lesson" : "Week";
+  const weekIds = weeks.map((w) => w.id);
+
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
+
+  function findWeekForSession(sessionId: string): WeekData | undefined {
+    return weeks.find((w) => w.sessions.some((s) => s.id === sessionId));
+  }
 
   async function handleAddWeek() {
     setAddingWeek(true);
@@ -321,7 +352,7 @@ export function TreeNavigation({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: `Week ${nextWeekNumber}`,
+          title: `${groupLabel} ${nextWeekNumber}`,
           weekNumber: nextWeekNumber,
         }),
       });
@@ -334,28 +365,99 @@ export function TreeNavigation({
     }
   }
 
-  async function handleReorderWeeks(event: DragEndEvent) {
+  async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const oldIndex = weeks.findIndex((w) => w.id === active.id);
-    const newIndex = weeks.findIndex((w) => w.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
+    const activeId = active.id as string;
+    const overId = over.id as string;
+    const activeType = active.data.current?.type;
 
-    const reordered = [...weeks];
-    const [moved] = reordered.splice(oldIndex, 1);
-    reordered.splice(newIndex, 0, moved);
+    if (activeType === "week") {
+      // Only reorder if over another week
+      if (!weekIds.includes(overId)) return;
 
-    try {
-      const res = await fetch(`/api/programs/${programId}/weeks/reorder`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ weekIds: reordered.map((w) => w.id) }),
-      });
-      if (!res.ok) throw new Error("Reorder failed");
-      onUpdate();
-    } catch (err) {
-      console.error("Reorder failed:", err);
+      const oldIndex = weeks.findIndex((w) => w.id === activeId);
+      const newIndex = weeks.findIndex((w) => w.id === overId);
+      if (oldIndex === -1 || newIndex === -1) return;
+
+      const reordered = [...weeks];
+      const [moved] = reordered.splice(oldIndex, 1);
+      reordered.splice(newIndex, 0, moved);
+
+      try {
+        const res = await fetch(`/api/programs/${programId}/weeks/reorder`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ weekIds: reordered.map((w) => w.id) }),
+        });
+        if (!res.ok) throw new Error("Reorder failed");
+        onUpdate();
+      } catch (err) {
+        console.error("Reorder failed:", err);
+      }
+    } else if (activeType === "session") {
+      const sourceWeek = findWeekForSession(activeId);
+      if (!sourceWeek) return;
+
+      // Determine target week
+      let targetWeek: WeekData | undefined;
+      let targetSessionId: string | undefined;
+
+      if (overId.startsWith("drop-")) {
+        // Dropped onto empty week drop zone
+        targetWeek = weeks.find((w) => w.id === overId.slice(5));
+      } else if (weekIds.includes(overId)) {
+        // Dropped near a week header — move to end of that week
+        targetWeek = weeks.find((w) => w.id === overId);
+      } else {
+        // Dropped onto another session
+        targetWeek = findWeekForSession(overId);
+        if (targetWeek) targetSessionId = overId;
+      }
+
+      if (!targetWeek) return;
+
+      if (sourceWeek.id === targetWeek.id) {
+        // Same week — reorder (only if landed on a specific session, not the week header)
+        if (!targetSessionId) return;
+
+        const oldIndex = sourceWeek.sessions.findIndex((s) => s.id === activeId);
+        const newIndex = sourceWeek.sessions.findIndex((s) => s.id === targetSessionId);
+        if (oldIndex === -1 || newIndex === -1) return;
+
+        const reordered = [...sourceWeek.sessions];
+        const [moved] = reordered.splice(oldIndex, 1);
+        reordered.splice(newIndex, 0, moved);
+
+        try {
+          const res = await fetch(
+            `/api/programs/${programId}/weeks/${sourceWeek.id}/sessions/reorder`,
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ sessionIds: reordered.map((s) => s.id) }),
+            }
+          );
+          if (!res.ok) throw new Error("Reorder failed");
+          onUpdate();
+        } catch (err) {
+          console.error("Reorder failed:", err);
+        }
+      } else {
+        // Different week — move session
+        try {
+          const res = await fetch(`/api/programs/${programId}/sessions/${activeId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ weekId: targetWeek.id }),
+          });
+          if (!res.ok) throw new Error("Move failed");
+          onUpdate();
+        } catch (err) {
+          console.error("Move failed:", err);
+        }
+      }
     }
   }
 
@@ -368,23 +470,23 @@ export function TreeNavigation({
       <div className="flex-1 overflow-y-auto">
         {weeks.length === 0 ? (
           <div className="p-4 text-center">
-            <p className="text-sm text-gray-400 mb-3">No weeks yet</p>
+            <p className="text-sm text-gray-400 mb-3">No {groupLabel.toLowerCase()}s yet</p>
             <button
               onClick={handleAddWeek}
               disabled={addingWeek}
               className="text-sm text-teal-600 hover:text-teal-700 transition disabled:opacity-50"
             >
-              {addingWeek ? "Adding..." : "+ Add first week"}
+              {addingWeek ? "Adding..." : `+ Add first ${groupLabel.toLowerCase()}`}
             </button>
           </div>
         ) : (
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
-            onDragEnd={handleReorderWeeks}
+            onDragEnd={handleDragEnd}
           >
             <SortableContext
-              items={weeks.map((w) => w.id)}
+              items={weekIds}
               strategy={verticalListSortingStrategy}
             >
               {weeks.map((week) => (
@@ -396,6 +498,7 @@ export function TreeNavigation({
                   selectedSessionId={selectedSessionId}
                   onSelectSession={onSelectSession}
                   onUpdate={onUpdate}
+                  groupLabel={groupLabel}
                 />
               ))}
             </SortableContext>
@@ -408,7 +511,7 @@ export function TreeNavigation({
           <button
             onClick={handleAddWeek}
             disabled={addingWeek}
-            className="w-full py-2 text-xs text-gray-400 hover:text-teal-400 border border-dashed border-gray-700 hover:border-teal-500 rounded-lg transition disabled:opacity-50 flex items-center justify-center gap-1"
+            className="w-full py-2 border border-dashed border-gray-700 rounded-lg text-xs text-gray-400 hover:border-teal-600 hover:text-teal-600 transition disabled:opacity-50 flex items-center justify-center gap-1"
           >
             {addingWeek ? (
               <>
@@ -420,7 +523,7 @@ export function TreeNavigation({
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
-                Add Week
+                Add {groupLabel}
               </>
             )}
           </button>

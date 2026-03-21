@@ -12,7 +12,8 @@ import {
 } from "@/components/builder";
 import { ProgramWizard } from "@/components/wizard/ProgramWizard";
 import { SkinPicker } from "@/components/skins/SkinPicker";
-import { getSkin, getSkinCSSVars } from "@/lib/skins";
+import { getSkinTokens } from "@/lib/skin-bundles/registry";
+import { tokensToSkin, getTokenCSSVars } from "@/lib/skin-bridge";
 import { ProgramOverviewPreview } from "@/components/preview/ProgramOverviewPreview";
 import { SessionPreview } from "@/components/preview/SessionPreview";
 import { useGenerationSteps } from "@/components/generation/useGenerationSteps";
@@ -114,7 +115,7 @@ export default function ProgramEditPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showWizard, setShowWizard] = useState(searchParams.get("wizard") === "true");
-  const [activeTab, setActiveTab] = useState<"curriculum" | "settings" | "pricing" | "preview">("curriculum");
+  const [activeTab, setActiveTab] = useState<"curriculum" | "theme" | "settings" | "preview">("curriculum");
   const [previewView, setPreviewView] = useState<"overview" | "session">("overview");
   const [previewDeviceMode, setPreviewDeviceMode] = useState<"desktop" | "mobile">("desktop");
   const [previewSelectedSessionId, setPreviewSelectedSessionId] = useState<string | null>(null);
@@ -133,6 +134,7 @@ export default function ProgramEditPage() {
   const [asyncStage, setAsyncStage] = useState<string | null>(null);
   const [asyncProgress, setAsyncProgress] = useState(0);
   const [lastGenError, setLastGenError] = useState<string | null>(null);
+  const [isProgramDetailsOpen, setIsProgramDetailsOpen] = useState(true);
 
   const load = useCallback(async (retryCount = 0) => {
     const maxRetries = 3;
@@ -443,8 +445,9 @@ export default function ProgramEditPage() {
     );
   }
 
-  const previewSkin = getSkin(program.skinId);
-  const previewCssVars = getSkinCSSVars(previewSkin);
+  const previewTokens = getSkinTokens(program.skinId);
+  const previewSkin = tokensToSkin(previewTokens);
+  const previewCssVars = getTokenCSSVars(previewTokens);
   const previewSelectedSession = previewSelectedSessionId
     ? program.weeks.flatMap((w) => w.sessions).find((s) => s.id === previewSelectedSessionId)
     : null;
@@ -752,7 +755,7 @@ export default function ProgramEditPage() {
       {/* Tab Bar */}
       <div className="border-b border-gray-800" style={{ background: "#0a0a0f" }}>
         <div className="flex overflow-x-auto px-6">
-          {(["curriculum", "settings", "pricing", "preview"] as const).map((tab) => (
+          {(["curriculum", "theme", "settings", "preview"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -762,7 +765,7 @@ export default function ProgramEditPage() {
                   : "text-gray-500 border-transparent hover:text-gray-300"
               }`}
             >
-              {tab === "curriculum" ? "Curriculum" : tab === "settings" ? "Settings" : tab === "pricing" ? "Pricing" : "Preview"}
+              {tab === "curriculum" ? "Curriculum" : tab === "theme" ? "Theme" : tab === "settings" ? "Settings" : "Preview"}
             </button>
           ))}
         </div>
@@ -842,6 +845,7 @@ export default function ProgramEditPage() {
               weeks={program.weeks}
               videos={program.videos}
               onUpdate={load}
+              pacingMode={program.pacingMode}
             />
           )}
         </main>
@@ -876,62 +880,75 @@ export default function ProgramEditPage() {
             className="space-y-8"
           >
             <div className="space-y-4">
-              <h2 className="text-base font-semibold text-white">Program Details</h2>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Title</label>
-                <input
-                  name="title"
-                  defaultValue={program.title}
-                  className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-teal-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Description</label>
-                <textarea
-                  name="description"
-                  defaultValue={program.description || ""}
-                  rows={3}
-                  className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-teal-500 resize-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Target Audience</label>
-                <input
-                  name="targetAudience"
-                  defaultValue={program.targetAudience || ""}
-                  placeholder="Who is this program for?"
-                  className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-teal-500 placeholder:text-gray-600"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Target Transformation</label>
-                <input
-                  name="targetTransformation"
-                  defaultValue={program.targetTransformation || ""}
-                  placeholder="What will learners achieve?"
-                  className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-teal-500 placeholder:text-gray-600"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">AI Vibe Prompt</label>
-                <textarea
-                  name="vibePrompt"
-                  defaultValue={program.vibePrompt || ""}
-                  rows={2}
-                  placeholder="How should the AI write? (only affects re-generation)"
-                  className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-teal-500 resize-none placeholder:text-gray-600"
-                />
-              </div>
-              {program.published && (
-                <p className="text-xs text-gray-500">
-                  Slug: <code className="text-teal-400">/p/{program.slug}</code> — frozen after publish
-                </p>
-              )}
-            </div>
+              <button
+                type="button"
+                onClick={() => setIsProgramDetailsOpen(!isProgramDetailsOpen)}
+                className="w-full flex items-center justify-between group"
+              >
+                <h2 className="text-base font-semibold text-white">Program Details</h2>
+                <svg
+                  className="w-4 h-4 text-gray-500 group-hover:text-gray-300 transition-all duration-200"
+                  style={{ transform: isProgramDetailsOpen ? "rotate(0deg)" : "rotate(-90deg)" }}
+                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
 
-            <div className="space-y-3">
-              <h2 className="text-base font-semibold text-white">Theme</h2>
-              <SkinPicker value={program.skinId} onChange={handleSkinChange} />
+              {isProgramDetailsOpen && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Title</label>
+                    <input
+                      name="title"
+                      defaultValue={program.title}
+                      className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-teal-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Description</label>
+                    <textarea
+                      name="description"
+                      defaultValue={program.description || ""}
+                      rows={3}
+                      className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-teal-500 resize-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Target Audience</label>
+                    <input
+                      name="targetAudience"
+                      defaultValue={program.targetAudience || ""}
+                      placeholder="Who is this program for?"
+                      className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-teal-500 placeholder:text-gray-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Target Transformation</label>
+                    <input
+                      name="targetTransformation"
+                      defaultValue={program.targetTransformation || ""}
+                      placeholder="What will learners achieve?"
+                      className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-teal-500 placeholder:text-gray-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">AI Vibe Prompt</label>
+                    <textarea
+                      name="vibePrompt"
+                      defaultValue={program.vibePrompt || ""}
+                      rows={2}
+                      placeholder="How should the AI write? (only affects re-generation)"
+                      className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-teal-500 resize-none placeholder:text-gray-600"
+                    />
+                  </div>
+                  {program.published && (
+                    <p className="text-xs text-gray-500">
+                      Slug: <code className="text-teal-400">/p/{program.slug}</code> — frozen after publish
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="flex items-center justify-between pt-2 border-t border-gray-800">
@@ -971,73 +988,80 @@ export default function ProgramEditPage() {
               </button>
             </div>
           </form>
+
+          <div className="space-y-8 mt-8 pt-8 border-t border-gray-800">
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-base font-semibold text-white mb-1">Price</h2>
+                <p className="text-sm text-gray-400 mb-4">Choose how much to charge for your program</p>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[0, 1900, 2900, 4900, 9900, 14900, 19900].map((price) => (
+                  <button
+                    key={price}
+                    onClick={() => handlePriceChange(price)}
+                    className={`px-4 py-3 rounded-xl border-2 text-sm font-medium transition ${
+                      program.priceInCents === price
+                        ? "border-teal-500 bg-teal-900/30 text-teal-400"
+                        : "border-gray-700 text-gray-400 hover:border-gray-600 bg-gray-900"
+                    }`}
+                  >
+                    {formatPrice(price)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <h2 className="text-base font-semibold text-white">Payments</h2>
+              <p className="text-sm text-gray-400">Connect Stripe to receive payments for paid programs</p>
+              {stripeStatus?.onboardingComplete ? (
+                <div className="flex items-center gap-3 px-4 py-3 bg-teal-900/30 border border-teal-700 rounded-xl">
+                  <svg className="w-5 h-5 text-teal-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span className="text-sm text-teal-400 font-medium">Stripe connected</span>
+                </div>
+              ) : (
+                <div className="bg-[#635BFF]/5 border border-[#635BFF]/20 rounded-xl p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-full bg-[#635BFF]/10 border border-[#635BFF]/30 flex items-center justify-center flex-shrink-0">
+                      <svg className="w-5 h-5 text-[#635BFF]" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M13.976 9.15c-2.172-.806-3.356-1.426-3.356-2.409 0-.831.683-1.305 1.901-1.305 2.227 0 4.515.858 6.09 1.631l.89-5.494C18.252.975 15.697 0 12.165 0 9.667 0 7.589.654 6.104 1.872 4.56 3.147 3.757 4.992 3.757 7.218c0 4.039 2.467 5.76 6.476 7.219 2.585.92 3.445 1.574 3.445 2.583 0 .98-.84 1.545-2.354 1.545-1.875 0-4.965-.921-6.99-2.109l-.9 5.555C5.175 22.99 8.385 24 11.714 24c2.641 0 4.843-.624 6.328-1.813 1.664-1.305 2.525-3.236 2.525-5.732 0-4.128-2.524-5.851-6.591-7.305z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-white">Connect Stripe</p>
+                      <p className="text-xs text-gray-400">Required to sell paid programs</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleConnectStripe}
+                    disabled={connectingStripe}
+                    className="w-full px-4 py-2.5 bg-[#635BFF] text-white font-medium rounded-lg hover:bg-[#5851ea] transition disabled:opacity-50 flex items-center justify-center gap-2 text-sm"
+                  >
+                    {connectingStripe ? (
+                      <>
+                        <Spinner size="sm" />
+                        Connecting...
+                      </>
+                    ) : (
+                      "Connect Stripe →"
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
-      {/* === Pricing Tab === */}
-      {activeTab === "pricing" && (
-        <div className="max-w-2xl mx-auto py-8 px-4 space-y-8" style={{ background: "#0a0a0f", minHeight: "calc(100vh - 112px)" }}>
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-base font-semibold text-white mb-1">Price</h2>
-              <p className="text-sm text-gray-400 mb-4">Choose how much to charge for your program</p>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[0, 1900, 2900, 4900, 9900, 14900, 19900].map((price) => (
-                <button
-                  key={price}
-                  onClick={() => handlePriceChange(price)}
-                  className={`px-4 py-3 rounded-xl border-2 text-sm font-medium transition ${
-                    program.priceInCents === price
-                      ? "border-teal-500 bg-teal-900/30 text-teal-400"
-                      : "border-gray-700 text-gray-400 hover:border-gray-600 bg-gray-900"
-                  }`}
-                >
-                  {formatPrice(price)}
-                </button>
-              ))}
-            </div>
-          </div>
-
+      {/* === Theme Tab === */}
+      {activeTab === "theme" && (
+        <div className="max-w-2xl mx-auto py-8 px-4" style={{ background: "#0a0a0f", minHeight: "calc(100vh - 112px)" }}>
           <div className="space-y-3">
-            <h2 className="text-base font-semibold text-white">Payments</h2>
-            <p className="text-sm text-gray-400">Connect Stripe to receive payments for paid programs</p>
-            {stripeStatus?.onboardingComplete ? (
-              <div className="flex items-center gap-3 px-4 py-3 bg-teal-900/30 border border-teal-700 rounded-xl">
-                <svg className="w-5 h-5 text-teal-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                <span className="text-sm text-teal-400 font-medium">Stripe connected</span>
-              </div>
-            ) : (
-              <div className="bg-[#635BFF]/5 border border-[#635BFF]/20 rounded-xl p-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-full bg-[#635BFF]/10 border border-[#635BFF]/30 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-5 h-5 text-[#635BFF]" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M13.976 9.15c-2.172-.806-3.356-1.426-3.356-2.409 0-.831.683-1.305 1.901-1.305 2.227 0 4.515.858 6.09 1.631l.89-5.494C18.252.975 15.697 0 12.165 0 9.667 0 7.589.654 6.104 1.872 4.56 3.147 3.757 4.992 3.757 7.218c0 4.039 2.467 5.76 6.476 7.219 2.585.92 3.445 1.574 3.445 2.583 0 .98-.84 1.545-2.354 1.545-1.875 0-4.965-.921-6.99-2.109l-.9 5.555C5.175 22.99 8.385 24 11.714 24c2.641 0 4.843-.624 6.328-1.813 1.664-1.305 2.525-3.236 2.525-5.732 0-4.128-2.524-5.851-6.591-7.305z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-white">Connect Stripe</p>
-                    <p className="text-xs text-gray-400">Required to sell paid programs</p>
-                  </div>
-                </div>
-                <button
-                  onClick={handleConnectStripe}
-                  disabled={connectingStripe}
-                  className="w-full px-4 py-2.5 bg-[#635BFF] text-white font-medium rounded-lg hover:bg-[#5851ea] transition disabled:opacity-50 flex items-center justify-center gap-2 text-sm"
-                >
-                  {connectingStripe ? (
-                    <>
-                      <Spinner size="sm" />
-                      Connecting...
-                    </>
-                  ) : (
-                    "Connect Stripe →"
-                  )}
-                </button>
-              </div>
-            )}
+            <h2 className="text-base font-semibold text-white">Theme</h2>
+            <SkinPicker value={program.skinId} onChange={handleSkinChange} />
           </div>
         </div>
       )}

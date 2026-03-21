@@ -196,6 +196,7 @@ export function VideoPlayer({
       style={{
         borderRadius: "var(--token-comp-video-radius)",
         border: "var(--token-comp-video-border)",
+        boxShadow: "var(--token-shadow-md)",
       }}
     />
   );

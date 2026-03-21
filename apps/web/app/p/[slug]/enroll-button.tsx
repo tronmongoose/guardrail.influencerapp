@@ -10,6 +10,12 @@ interface EnrollButtonProps {
   isEnrolled?: boolean;
 }
 
+const gradientBtnStyle: React.CSSProperties = {
+  background: "linear-gradient(90deg, #AD46FF 0%, #F6339A 100%)",
+  borderRadius: "100px",
+  fontWeight: 600,
+};
+
 const labelStyle: React.CSSProperties = {
   fontSize: "var(--token-text-label-sm-size)",
   fontWeight: "var(--token-text-label-sm-weight)",
@@ -46,6 +52,7 @@ export function EnrollButton({ programId, isFree, priceDisplay, isEnrolled }: En
         variant="primary"
         onClick={() => { window.location.href = `/learn/${programId}`; }}
         className="w-full py-3"
+        style={gradientBtnStyle}
       >
         Continue learning →
       </SkinButton>
@@ -135,6 +142,7 @@ export function EnrollButton({ programId, isFree, priceDisplay, isEnrolled }: En
           onClick={handleEnroll}
           disabled={loading || !email}
           className="w-full py-3"
+          style={gradientBtnStyle}
         >
           {loading ? "Processing..." : isFree ? "Get free access" : "Continue to payment"}
         </SkinButton>
@@ -161,6 +169,7 @@ export function EnrollButton({ programId, isFree, priceDisplay, isEnrolled }: En
         onClick={handleEnroll}
         disabled={loading}
         className="w-full py-3"
+        style={gradientBtnStyle}
       >
         {loading ? "Processing..." : isFree ? "Enroll free" : `Buy for ${priceDisplay}`}
       </SkinButton>
