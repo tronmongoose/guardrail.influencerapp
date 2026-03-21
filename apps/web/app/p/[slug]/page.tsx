@@ -108,8 +108,9 @@ export default async function SalesPage({ params }: { params: Promise<{ slug: st
       data-skin={program.skinId}
       style={{
         ...(skinCSSVars as React.CSSProperties),
-        backgroundColor: "var(--token-color-bg-default)",
+        background: "var(--token-color-bg-gradient, var(--token-color-bg-default))",
         color: "var(--token-color-text-primary)",
+        fontFamily: "var(--token-text-body-md-font)",
       }}
     >
       {/* Hero */}
@@ -132,7 +133,17 @@ export default async function SalesPage({ params }: { params: Promise<{ slug: st
         {/* Transformation headline */}
         {program.targetTransformation ? (
           <>
-            <Heading size="xl" className="mb-4 sm:text-4xl leading-tight">
+            <Heading
+              size="xl"
+              className="mb-4 sm:text-4xl leading-tight heading-display"
+              style={{
+                background: "linear-gradient(90deg, #C27AFF, #FB64B6)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                backgroundClip: "text",
+                color: "transparent",
+              }}
+            >
               {program.targetTransformation}
             </Heading>
             <Body size="md" style={{ color: "var(--token-color-text-secondary)" }}>
@@ -140,16 +151,45 @@ export default async function SalesPage({ params }: { params: Promise<{ slug: st
             </Body>
           </>
         ) : (
-          <Heading size="xl" className="mb-4 sm:text-4xl leading-tight">
+          <Heading
+            size="xl"
+            className="mb-4 sm:text-4xl leading-tight heading-display"
+            style={{
+              background: "linear-gradient(90deg, #C27AFF, #FB64B6)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              backgroundClip: "text",
+              color: "transparent",
+            }}
+          >
             {program.title}
           </Heading>
         )}
 
         {/* Creator */}
         {program.creator.name && (
-          <Body size="sm" className="mt-4" style={{ color: "var(--token-color-text-secondary)" }}>
-            by <span style={{ color: "var(--token-color-text-primary)" }}>{program.creator.name}</span>
-          </Body>
+          <div className="mt-4 flex items-center justify-center gap-2">
+            <span
+              style={{
+                width: "36px",
+                height: "36px",
+                borderRadius: "50%",
+                background: "linear-gradient(135deg, #AD46FF, #F6339A)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "13px",
+                fontWeight: 600,
+                color: "#fff",
+                flexShrink: 0,
+              }}
+            >
+              {program.creator.name.charAt(0).toUpperCase()}
+            </span>
+            <Body size="sm" as="span" style={{ color: "var(--token-color-text-secondary)" }}>
+              by <span style={{ color: "var(--token-color-text-primary)" }}>{program.creator.name}</span>
+            </Body>
+          </div>
         )}
 
         {/* Quick stats */}

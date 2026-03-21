@@ -215,7 +215,7 @@ export function LearnerTimeline({
   return (
     <div
       className="min-h-screen"
-      style={{ backgroundColor: "var(--token-color-bg-default)" }}
+      style={{ background: "var(--token-color-bg-gradient, var(--token-color-bg-default))", fontFamily: "var(--token-text-body-md-font)" }}
     >
       {/* Fixed top bar */}
       <nav
@@ -235,7 +235,7 @@ export function LearnerTimeline({
           </Link>
           <div className="flex-1 text-center px-4">
             <h1
-              className="text-sm font-semibold truncate"
+              className="text-sm font-semibold truncate heading-display"
               style={{ color: "var(--token-color-text-primary)" }}
             >
               {program.title}
@@ -328,6 +328,16 @@ export function LearnerTimeline({
                 )}
               </div>
 
+              {/* Week heading gradient divider */}
+              <div
+                style={{
+                  height: "1px",
+                  background: "linear-gradient(90deg, #AD46FF, #F6339A)",
+                  marginBottom: "12px",
+                  opacity: isUnlocked ? 1 : 0.3,
+                }}
+              />
+
               {/* Week progress bar */}
               {isUnlocked && weekActions.length > 0 && (
                 <div
@@ -414,8 +424,9 @@ export function LearnerTimeline({
                         const cardBorderStyle = (): React.CSSProperties => {
                           if (isNext && !isExpanded) {
                             return {
-                              borderColor: "color-mix(in srgb, var(--token-color-accent), transparent 50%)",
-                              boxShadow: "0 10px 15px -3px color-mix(in srgb, var(--token-color-accent), transparent 90%)",
+                              borderColor: "var(--token-color-accent-hover)",
+                              borderWidth: "2px",
+                              boxShadow: "0 10px 15px -3px color-mix(in srgb, var(--token-color-accent-hover), transparent 80%)",
                             };
                           }
                           if (isCompleting) {
@@ -438,7 +449,9 @@ export function LearnerTimeline({
                             key={action.id}
                             ref={isNext ? nextActionRef : undefined}
                             className={`border transition-all duration-300 overflow-hidden ${
-                              isNext && !isExpanded
+                              isExpanded && !done
+                                ? "step-card-active"
+                                : isNext && !isExpanded
                                 ? "pulse-ring-border"
                                 : isCompleting
                                 ? "scale-[0.98]"
@@ -495,7 +508,12 @@ export function LearnerTimeline({
                                 </p>
                                 <span
                                   className="text-[10px] uppercase tracking-wider font-semibold"
-                                  style={getActionTypeColor(action.type)}
+                                  style={{
+                                    background: "linear-gradient(90deg, #C27AFF 0%, #FB64B6 100%)",
+                                    WebkitBackgroundClip: "text",
+                                    WebkitTextFillColor: "transparent",
+                                    backgroundClip: "text",
+                                  }}
                                 >
                                   {ACTION_TYPE_LABELS[action.type] || action.type}
                                 </span>

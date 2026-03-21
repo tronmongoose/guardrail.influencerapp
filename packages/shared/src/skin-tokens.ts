@@ -14,11 +14,12 @@ export const SkinId = {
   Warm: "warm",
   Minimal: "minimal",
   CosmicStudio: "cosmic-studio",
+  AiCommandCenter: "ai-command-center",
 } as const;
 
 export type SkinId = (typeof SkinId)[keyof typeof SkinId];
 
-export const SkinIdSchema = z.enum(["default", "professional", "warm", "minimal", "cosmic-studio"]);
+export const SkinIdSchema = z.enum(["default", "professional", "warm", "minimal", "cosmic-studio", "ai-command-center"]);
 
 // ---------------------------------------------------------------------------
 // Color Tokens
@@ -34,6 +35,9 @@ export interface ColorTokens {
     hero: string;
     /** Subtle card/section background */
     surface: string;
+    /** Optional full-page background gradient (CSS gradient string). When set,
+     *  overrides `default` as the page background on program-facing screens. */
+    gradient?: string;
   };
   border: {
     /** Default borders, dividers */
@@ -268,6 +272,7 @@ export const SkinTokensSchema = z.object({
       elevated: z.string(),
       hero: z.string(),
       surface: z.string(),
+      gradient: z.string().optional(),
     }),
     border: z.object({
       subtle: z.string(),

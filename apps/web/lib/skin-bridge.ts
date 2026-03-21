@@ -188,6 +188,9 @@ export function getTokenCSSVars(tokens: SkinTokens): Record<string, string> {
     "--token-color-bg-elevated": tokens.color.background.elevated,
     "--token-color-bg-hero": tokens.color.background.hero,
     "--token-color-bg-surface": tokens.color.background.surface,
+    ...(tokens.color.background.gradient
+      ? { "--token-color-bg-gradient": tokens.color.background.gradient }
+      : {}),
     "--token-color-border-subtle": tokens.color.border.subtle,
     "--token-color-text-primary": tokens.color.text.primary,
     "--token-color-text-secondary": tokens.color.text.secondary,

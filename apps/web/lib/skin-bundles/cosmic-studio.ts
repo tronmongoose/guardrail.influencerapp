@@ -1,7 +1,7 @@
 /**
  * Complete token bundle for the "Cosmic Studio" skin.
  *
- * Space exploration — deep purple cosmos with magenta-to-pink gradient accents.
+ * Space exploration — deep indigo cosmos with violet-to-pink gradient accents.
  */
 
 import { SkinId } from "@guide-rail/shared";
@@ -12,28 +12,29 @@ const FONT = "'Inter', system-ui, sans-serif";
 export const cosmicStudioTokens: SkinTokens = {
   id: SkinId.CosmicStudio,
   name: "Cosmic Studio",
-  description: "Space exploration — deep purple cosmos with magenta-to-pink gradient accents",
+  description: "Space exploration — deep indigo cosmos with violet-to-pink gradient accents",
 
   color: {
     background: {
-      default: "#1A0A2E",
-      elevated: "#2D1B4E",
-      hero: "#160826",
-      surface: "#231040",
+      default: "#1E1A4D",
+      elevated: "#3C0366",
+      hero: "#1E1A4D",
+      surface: "#59168B",
+      gradient: "linear-gradient(180deg, #1E1A4D 0%, #3C0366 40%, #000000 100%)",
     },
-    border: { subtle: "#2D1B4E" },
+    border: { subtle: "rgba(194, 122, 255, 0.2)" },
     text: {
       primary: "#FFFFFF",
-      secondary: "#C4A8E0",
+      secondary: "#E9D4FF",
     },
-    accent: { primary: "#C84FD8", secondary: "#F06292" },
-    accentHover: "#D966E8",
+    accent: { primary: "#AD46FF", secondary: "#F6339A" },
+    accentHover: "#FB64B6",
     semantic: {
       success: "#4CAF7D",
       warning: "#eab308",
       error: "#ef4444",
-      actionDo: "#C84FD8",
-      actionReflect: "#9B59D0",
+      actionDo: "#AD46FF",
+      actionReflect: "#F6339A",
     },
   },
 
@@ -60,9 +61,9 @@ export const cosmicStudioTokens: SkinTokens = {
   radius: { sm: "4px", md: "8px", lg: "12px" },
 
   shadow: {
-    sm: "0 0 12px rgba(200, 79, 216, 0.15)",
-    md: "0 0 24px rgba(200, 79, 216, 0.25)",
-    lg: "0 0 48px rgba(200, 79, 216, 0.35)",
+    sm: "0 0 12px rgba(173, 70, 255, 0.15)",
+    md: "0 0 24px rgba(173, 70, 255, 0.25)",
+    lg: "0 0 48px rgba(173, 70, 255, 0.35)",
   },
 
   motion: {
@@ -71,37 +72,36 @@ export const cosmicStudioTokens: SkinTokens = {
 
   component: {
     button: {
-      // Full gradient: linear-gradient(135deg, #9B3BC8 0%, #E040FB 50%, #F06292 100%)
+      // Full gradient: linear-gradient(135deg, #AD46FF 0%, #F6339A 100%)
       // Applied by components reading color.accent.primary/secondary
       primary: { variant: "gradient", radius: "8px" },
       secondary: { variant: "outline", radius: "8px" },
     },
     card: {
       radius: "12px",
-      shadow: "0 0 24px rgba(200, 79, 216, 0.15)",
-      border: "1px solid #3D1F5E",
+      shadow: "0 0 24px rgba(173, 70, 255, 0.15)",
+      border: "1px solid #59168B",
     },
-    chip: { background: "#3D1F5E", text: "#C4A8E0", radius: "9999px" },
-    badge: { info: { background: "#2D1B4E", text: "#C84FD8" } },
+    chip: { background: "#3C0366", text: "#E9D4FF", radius: "9999px" },
+    badge: { info: { background: "#3C0366", text: "#AD46FF" } },
     progress: {
-      track: "#2D1B4E",
+      track: "#3C0366",
       // Gradient fill — interface fill: string accepts CSS gradient strings
-      fill: "linear-gradient(90deg, #9B3BC8 0%, #F06292 100%)",
+      fill: "linear-gradient(90deg, #AD46FF 0%, #F6339A 100%)",
       radius: "9999px",
     },
-    video: { frame: { radius: "8px", border: "1px solid #3D1F5E" } },
+    video: { frame: { radius: "8px", border: "1px solid #59168B" } },
     viewer: {
       chapterRail: {
-        background: "#1A0A2E",
-        activeChapter: "rgba(200, 79, 216, 0.1)",
-        // Mapped from activeRowBorder (#F06292) — closest available field
-        divider: "#F06292",
+        background: "#1E1A4D",
+        activeChapter: "rgba(173, 70, 255, 0.1)",
+        divider: "#F6339A",
       },
       overlay: {
-        titleCard: { background: "rgba(26, 10, 46, 0.95)", text: "#FFFFFF" },
+        titleCard: { background: "rgba(30, 26, 77, 0.95)", text: "#FFFFFF" },
         transition: { style: "FADE", durationMs: 500 },
       },
-      controlsTint: "#C84FD8",
+      controlsTint: "#AD46FF",
     },
   },
 };
