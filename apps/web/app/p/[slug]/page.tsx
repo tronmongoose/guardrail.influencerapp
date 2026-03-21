@@ -51,16 +51,22 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function SalesPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const program = await prisma.program.findUnique({
-    where: { slug },
-    include: {
-      creator: true,
-      weeks: {
-        include: { sessions: { include: { actions: true } } },
-        orderBy: { weekNumber: "asc" },
+  let program;
+  try {
+    program = await prisma.program.findUnique({
+      where: { slug },
+      include: {
+        creator: true,
+        weeks: {
+          include: { sessions: { include: { actions: true } } },
+          orderBy: { weekNumber: "asc" },
+        },
       },
-    },
-  });
+    });
+  } catch (err) {
+    logger.error({ operation: "sales_page.db_error", slug }, err);
+    notFound();
+  }
 
   if (!program) {
     logger.warn({ operation: "sales_page.not_found", slug });

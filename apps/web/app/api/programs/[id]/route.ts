@@ -7,60 +7,68 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const user = await getOrCreateUser();
-  if (!user) {
-    return NextResponse.json(
-      { error: "Unauthorized" },
-      { status: 401, headers: { "Cache-Control": "no-store" } }
-    );
-  }
+  try {
+    const { id } = await params;
+    const user = await getOrCreateUser();
+    if (!user) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401, headers: { "Cache-Control": "no-store" } }
+      );
+    }
 
-  const program = await prisma.program.findUnique({
-    where: { id },
-    include: {
-      videos: { orderBy: { createdAt: "asc" } },
-      drafts: { orderBy: { createdAt: "desc" }, take: 5 },
-      weeks: {
-        orderBy: { weekNumber: "asc" },
-        include: {
-          sessions: {
-            orderBy: { orderIndex: "asc" },
-            include: {
-              actions: { orderBy: { orderIndex: "asc" } },
-              compositeSession: {
-                include: {
-                  clips: { orderBy: { orderIndex: "asc" }, include: { youtubeVideo: true } },
-                  overlays: { orderBy: { orderIndex: "asc" } },
+    const program = await prisma.program.findUnique({
+      where: { id },
+      include: {
+        videos: { orderBy: { createdAt: "asc" } },
+        drafts: { orderBy: { createdAt: "desc" }, take: 5 },
+        weeks: {
+          orderBy: { weekNumber: "asc" },
+          include: {
+            sessions: {
+              orderBy: { orderIndex: "asc" },
+              include: {
+                actions: { orderBy: { orderIndex: "asc" } },
+                compositeSession: {
+                  include: {
+                    clips: { orderBy: { orderIndex: "asc" }, include: { youtubeVideo: true } },
+                    overlays: { orderBy: { orderIndex: "asc" } },
+                  },
                 },
               },
             },
           },
         },
       },
-    },
-  });
-  if (!program) {
+    });
+    if (!program) {
+      return NextResponse.json(
+        { error: "Not found" },
+        {
+          status: 404,
+          headers: { "Cache-Control": "no-store" }
+        }
+      );
+    }
+
+    // Verify ownership
+    if (program.creatorId !== user.id) {
+      return NextResponse.json(
+        { error: "Forbidden" },
+        { status: 403, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+
+    return NextResponse.json(program, {
+      headers: { "Cache-Control": "no-store, max-age=0" }
+    });
+  } catch (err) {
+    console.error("[programs/[id] GET] Unhandled error:", err);
     return NextResponse.json(
-      { error: "Not found" },
-      {
-        status: 404,
-        headers: { "Cache-Control": "no-store" }
-      }
+      { error: "Failed to load program" },
+      { status: 500, headers: { "Cache-Control": "no-store" } }
     );
   }
-
-  // Verify ownership
-  if (program.creatorId !== user.id) {
-    return NextResponse.json(
-      { error: "Forbidden" },
-      { status: 403, headers: { "Cache-Control": "no-store" } }
-    );
-  }
-
-  return NextResponse.json(program, {
-    headers: { "Cache-Control": "no-store, max-age=0" }
-  });
 }
 
 export async function PATCH(
