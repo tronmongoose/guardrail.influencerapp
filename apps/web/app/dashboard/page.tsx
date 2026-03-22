@@ -108,6 +108,13 @@ function DashboardContent() {
       fetch("/api/user/metrics").then((r) => (r.ok ? r.json() : null)),
     ])
       .then(([programsData, userData, metricsData]) => {
+        // Platform access gate
+        const hasAccess = userData.platformPromoGranted || userData.platformPaymentComplete;
+        if (!hasAccess) {
+          router.push("/onboarding/upgrade");
+          return;
+        }
+
         if (
           (!Array.isArray(programsData) || programsData.length === 0) &&
           !userData.onboardingComplete
@@ -174,7 +181,15 @@ function DashboardContent() {
         >
           Journeyline
         </Link>
-        <UserButton />
+        <div className="flex items-center gap-4">
+          <Link
+            href="/dashboard/settings"
+            className="text-sm text-gray-400 hover:text-white transition"
+          >
+            Settings
+          </Link>
+          <UserButton />
+        </div>
       </nav>
 
       <main className="max-w-2xl mx-auto px-4 py-8 space-y-8">

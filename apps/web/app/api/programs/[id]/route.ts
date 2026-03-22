@@ -20,6 +20,7 @@ export async function GET(
     const program = await prisma.program.findUnique({
       where: { id },
       include: {
+        creator: { select: { name: true } },
         videos: { orderBy: { createdAt: "asc" } },
         drafts: { orderBy: { createdAt: "desc" }, take: 5 },
         weeks: {

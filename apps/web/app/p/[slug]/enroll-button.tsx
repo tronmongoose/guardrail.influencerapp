@@ -45,6 +45,9 @@ export function EnrollButton({ programId, isFree, priceDisplay, isEnrolled }: En
   const [showEmailForm, setShowEmailForm] = useState(false);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const [promoCode, setPromoCode] = useState("");
+  const [showPromoInput, setShowPromoInput] = useState(false);
+  const [promoError, setPromoError] = useState<string | null>(null);
 
   if (isEnrolled) {
     return (
@@ -77,13 +80,22 @@ export function EnrollButton({ programId, isFree, priceDisplay, isEnrolled }: En
       const res = await fetch(`/api/checkout/${programId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email || undefined, name: name || undefined }),
+        body: JSON.stringify({
+          email: email || undefined,
+          name: name || undefined,
+          promoCode: promoCode.trim() || undefined,
+        }),
       });
       const data = await res.json();
 
       if (!res.ok) {
         if (data.requiresEmail) {
           setShowEmailForm(true);
+          setLoading(false);
+          return;
+        }
+        if (data.promoError) {
+          setPromoError(data.error || "Invalid promo code");
           setLoading(false);
           return;
         }
@@ -174,6 +186,59 @@ export function EnrollButton({ programId, isFree, priceDisplay, isEnrolled }: En
         {loading ? "Processing..." : isFree ? "Enroll free" : `Buy for ${priceDisplay}`}
       </SkinButton>
       <ErrorMessage message={error} />
+
+      {/* Promo code toggle (paid programs only) */}
+      {!isFree && (
+        <div className="pt-1">
+          {!showPromoInput ? (
+            <button
+              type="button"
+              onClick={() => setShowPromoInput(true)}
+              className="w-full text-center text-xs transition"
+              style={{ color: "var(--token-color-text-secondary)" }}
+            >
+              Have a promo code?
+            </button>
+          ) : (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={promoCode}
+                  onChange={(e) => { setPromoCode(e.target.value.toUpperCase()); setPromoError(null); }}
+                  placeholder="Enter promo code"
+                  className="flex-1 px-3 py-2 focus:outline-none text-sm"
+                  style={inputStyle}
+                />
+                <button
+                  type="button"
+                  onClick={() => { setShowPromoInput(false); setPromoCode(""); setPromoError(null); }}
+                  className="text-xs transition flex-shrink-0"
+                  style={{ color: "var(--token-color-text-secondary)" }}
+                >
+                  Cancel
+                </button>
+              </div>
+              {promoError && (
+                <p className="text-xs" style={{ color: "var(--token-color-semantic-error)" }}>
+                  {promoError}
+                </p>
+              )}
+              {promoCode && (
+                <SkinButton
+                  variant="primary"
+                  onClick={handleEnroll}
+                  disabled={loading}
+                  className="w-full py-2.5"
+                  style={gradientBtnStyle}
+                >
+                  {loading ? "Processing..." : "Apply & Enroll"}
+                </SkinButton>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

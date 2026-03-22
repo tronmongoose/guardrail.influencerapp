@@ -103,6 +103,19 @@ export async function POST(
   // Warn if no videos (not blocking, but included in response)
   const hasVideos = program.videos.length > 0;
 
+  // Check creator has platform access
+  const hasAccess = user.platformPromoGranted || user.platformPaymentComplete;
+  if (!hasAccess) {
+    return NextResponse.json(
+      {
+        error: "Platform access required",
+        code: "PLATFORM_ACCESS_REQUIRED",
+        message: "Please complete platform setup to publish programs.",
+      },
+      { status: 402 }
+    );
+  }
+
   // Check Stripe Connect requirement for paid programs
   if (program.priceInCents > 0) {
     if (!user.stripeOnboardingComplete) {

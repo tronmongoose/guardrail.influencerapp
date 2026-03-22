@@ -1,101 +1,53 @@
 "use client";
 
+import { SkinPicker } from "@/components/skins/SkinPicker";
 import type { WizardState } from "../ProgramWizard";
 
 interface StepReviewProps {
   state: WizardState;
+  skinId: string;
+  onSkinChange: (skinId: string) => void;
   isGenerating: boolean;
   onGenerate: () => void;
 }
 
-export function StepReview({ state, isGenerating, onGenerate }: StepReviewProps) {
+export function StepReview({ state, skinId, onSkinChange, isGenerating, onGenerate }: StepReviewProps) {
   const totalContent = state.content.videos.length + state.content.artifacts.length;
-  const totalWords = state.content.artifacts.reduce(
-    (sum, a) => sum + (a.metadata.wordCount || 0),
-    0
-  );
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div>
-        <h2 className="text-xl font-semibold text-white mb-2">Review & Generate</h2>
+        <h2 className="text-xl font-semibold text-white mb-1">Choose Your Theme</h2>
         <p className="text-gray-400 text-sm">
-          Review your program details before generating the structure.
+          Pick a look for your program page. You can change it anytime after launch.
         </p>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Basics */}
-        <div className="p-4 bg-surface-dark rounded-lg border border-surface-border">
-          <h3 className="text-sm font-medium text-neon-cyan mb-3">Program Basics</h3>
-          <div className="space-y-2">
-            <div>
-              <label className="text-xs text-gray-500">Title</label>
-              <p className="text-white">{state.basics.title || "Untitled"}</p>
-            </div>
-            {state.basics.targetAudience && (
-              <div>
-                <label className="text-xs text-gray-500">Target Audience</label>
-                <p className="text-sm text-gray-300 line-clamp-2">{state.basics.targetAudience}</p>
-              </div>
-            )}
-            {state.basics.targetTransformation && (
-              <div>
-                <label className="text-xs text-gray-500">Transformation</label>
-                <p className="text-sm text-gray-300 line-clamp-2">{state.basics.targetTransformation}</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Duration */}
-        <div className="p-4 bg-surface-dark rounded-lg border border-surface-border">
-          <h3 className="text-sm font-medium text-neon-cyan mb-3">Duration</h3>
-          <div className="flex items-center gap-4">
-            <div className="text-4xl font-bold text-white">{state.duration.weeks}</div>
-            <div>
-              <p className="text-white">weeks</p>
-              <p className="text-xs text-gray-500">
-                ~{Math.ceil(state.duration.weeks / 4)} month{Math.ceil(state.duration.weeks / 4) > 1 ? "s" : ""}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="p-4 bg-surface-dark rounded-lg border border-surface-border">
-          <h3 className="text-sm font-medium text-neon-cyan mb-3">Content</h3>
-          <div className="space-y-2">
-            <div className="flex justify-between">
-              <span className="text-gray-400">Videos</span>
-              <span className="text-white">{state.content.videos.length}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-400">Documents</span>
-              <span className="text-white">{state.content.artifacts.length}</span>
-            </div>
-            {totalWords > 0 && (
-              <div className="flex justify-between">
-                <span className="text-gray-400">Extracted words</span>
-                <span className="text-white">{totalWords.toLocaleString()}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Vibe */}
-        <div className="p-4 bg-surface-dark rounded-lg border border-surface-border">
-          <h3 className="text-sm font-medium text-neon-cyan mb-3">Vibe & Style</h3>
-          {state.vibe.vibePrompt ? (
-            <p className="text-sm text-gray-300 line-clamp-3">{state.vibe.vibePrompt}</p>
-          ) : (
-            <p className="text-gray-400">Using default AI style</p>
-          )}
-        </div>
+      {/* Compact summary strip */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 bg-surface-dark border border-surface-border rounded-lg text-sm">
+        <span className="text-white font-medium truncate max-w-[200px]">
+          {state.basics.title || "Untitled"}
+        </span>
+        <span className="text-gray-500">·</span>
+        <span className="text-gray-400">{state.duration.weeks}w program</span>
+        <span className="text-gray-500">·</span>
+        <span className="text-gray-400">
+          {state.content.videos.length} video{state.content.videos.length !== 1 ? "s" : ""}
+          {state.content.artifacts.length > 0 && `, ${state.content.artifacts.length} doc${state.content.artifacts.length !== 1 ? "s" : ""}`}
+        </span>
+        {state.vibe.vibePrompt && (
+          <>
+            <span className="text-gray-500">·</span>
+            <span className="text-gray-400 italic truncate max-w-[180px]">{state.vibe.vibePrompt}</span>
+          </>
+        )}
       </div>
 
-      {/* Warnings */}
+      {/* Skin picker — hero feature */}
+      <SkinPicker value={skinId} onChange={onSkinChange} />
+
+      {/* No-content warning */}
       {totalContent === 0 && (
         <div className="p-4 bg-neon-yellow/10 border border-neon-yellow/30 rounded-lg">
           <div className="flex items-start gap-3">
@@ -113,7 +65,7 @@ export function StepReview({ state, isGenerating, onGenerate }: StepReviewProps)
       )}
 
       {/* Generate button */}
-      <div className="pt-4">
+      <div>
         <button
           onClick={onGenerate}
           disabled={isGenerating || totalContent === 0}
@@ -138,7 +90,7 @@ export function StepReview({ state, isGenerating, onGenerate }: StepReviewProps)
           )}
         </button>
         <p className="text-center text-xs text-gray-500 mt-3">
-          This will analyze your content and create a complete program structure with weeks, sessions, and actions.
+          AI will analyze your content and build out weeks, sessions, and actions.
         </p>
       </div>
     </div>

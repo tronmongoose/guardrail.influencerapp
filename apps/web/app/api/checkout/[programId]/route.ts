@@ -12,6 +12,7 @@ const PLATFORM_FEE_PERCENT = 10;
 interface CheckoutRequestBody {
   email?: string;
   name?: string;
+  promoCode?: string;
 }
 
 export async function POST(
@@ -89,6 +90,52 @@ export async function POST(
 
   if (existing?.status === "ACTIVE") {
     // Already enrolled — Clerk users go straight to learn page, others get magic link
+    if (clerkUser) {
+      return NextResponse.json({ enrolled: true, redirectUrl: `/learn/${programId}` });
+    }
+    const { token } = await createMagicLink({ email: user.email, programId });
+    return NextResponse.json({ enrolled: true, redirectUrl: getMagicLinkUrl(token, programId) });
+  }
+
+  // Learner promo code — grant free access to paid program
+  if (body.promoCode && program.priceInCents > 0) {
+    const upperCode = body.promoCode.toUpperCase();
+    const now = new Date();
+
+    // Raw SQL so PromoCode table works before Prisma client restart
+    const promoRows = await prisma.$queryRaw<Array<{ id: string; maxUses: number | null; uses: number }>>`
+      SELECT id, "maxUses", uses FROM "PromoCode"
+      WHERE code = ${upperCode}
+        AND active = true
+        AND "creatorId" = ${program.creatorId}
+        AND ("programId" IS NULL OR "programId" = ${programId})
+        AND ("expiresAt" IS NULL OR "expiresAt" > ${now})
+      LIMIT 1
+    `;
+    const promo = promoRows[0];
+
+    if (!promo || (promo.maxUses !== null && promo.uses >= promo.maxUses)) {
+      return NextResponse.json(
+        { error: "Invalid or expired promo code", promoError: true },
+        { status: 400 }
+      );
+    }
+
+    // Increment uses and grant entitlement
+    await prisma.$executeRaw`UPDATE "PromoCode" SET uses = uses + 1 WHERE id = ${promo.id}`;
+    await prisma.entitlement.upsert({
+      where: { userId_programId: { userId: user.id, programId } },
+      create: { userId: user.id, programId, status: "ACTIVE" },
+      update: { status: "ACTIVE" },
+    });
+
+    logger.info({
+      operation: "checkout.promo_enrollment",
+      userId: user.id,
+      programId,
+      promoCode: upperCode,
+    });
+
     if (clerkUser) {
       return NextResponse.json({ enrolled: true, redirectUrl: `/learn/${programId}` });
     }

@@ -38,6 +38,25 @@ export async function POST(req: NextRequest) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
 
+      // Platform access payment (one-time creator fee)
+      if (session.metadata?.type === "platform_access") {
+        const userId = session.metadata.userId;
+        if (userId) {
+          // Raw SQL so new columns work before Prisma client restart
+          await prisma.$executeRaw`
+            UPDATE "User"
+            SET "platformPaymentComplete" = true, "platformStripeSessionId" = ${session.id}
+            WHERE id = ${userId}
+          `;
+          logger.info({
+            operation: "stripe.webhook.platform_access_granted",
+            userId,
+            sessionId: session.id,
+          });
+        }
+        break;
+      }
+
       const userId = session.metadata?.userId;
       const programId = session.metadata?.programId;
 

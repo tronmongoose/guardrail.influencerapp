@@ -142,7 +142,10 @@ export function StructureBuilder({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ weekIds: reordered.map(w => w.id) }),
       });
-      if (!res.ok) throw new Error("Reorder failed");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(`Reorder failed (${res.status}): ${body.error ?? "unknown"}`);
+      }
       onUpdate();
     } catch (err) {
       console.error("Reorder failed:", err);

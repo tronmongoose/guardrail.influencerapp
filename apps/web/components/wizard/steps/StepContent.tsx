@@ -90,7 +90,7 @@ export function StepContent({
   onArtifactsChange,
 }: StepContentProps) {
   const [activeTab, setActiveTab] = useState<ContentTab>(
-    videos.length > 0 ? "youtube" : artifacts.length > 0 ? "upload" : "youtube"
+    artifacts.length > 0 && videos.length === 0 ? "upload" : videos.length > 0 ? "youtube" : "upload"
   );
   const [videoUrl, setVideoUrl] = useState("");
   const [isAddingVideo, setIsAddingVideo] = useState(false);
@@ -247,6 +247,7 @@ export function StepContent({
   };
 
   const uploadVideoBlob = async (file: File): Promise<Video | null> => {
+    let lastProgress = 0;
     const updateState = (progress: number, phase: string, status: "extracting" | "transcribing" = "extracting") => {
       setExtractionStates((prev) =>
         prev.map((s) => s.filename === file.name ? { ...s, progress, phase, status } : s)
@@ -264,8 +265,14 @@ export function StepContent({
         access: "public",
         handleUploadUrl: `/api/programs/${programId}/videos/upload`,
         abortSignal: controller.signal,
-        onUploadProgress: ({ percentage }) => {
-          updateState(Math.round(percentage * 0.9), "Uploading");
+        onUploadProgress: ({ loaded, total }) => {
+          // Use loaded/total to compute cumulative progress and clamp to 90%
+          // (prevents per-chunk oscillation from multipart uploads)
+          const pct = total > 0 ? Math.round((loaded / total) * 90) : 0;
+          if (pct > lastProgress) {
+            lastProgress = pct;
+            updateState(pct, "Uploading");
+          }
         },
       });
     } catch (err) {
@@ -436,24 +443,37 @@ export function StepContent({
     const videoFiles = files.filter((f) => isVideoFile(f.name));
     const otherFiles = files.filter((f) => !isVideoFile(f.name));
 
-    // Initialize extraction states — videos start as "extracting" (upload immediately),
-    // other files start as "pending" until their turn in the sequential queue
-    const newStates: FileExtractionState[] = files.map((f) => ({
-      filename: f.name,
-      fileSize: f.size,
-      progress: 0,
-      status: (isVideoFile(f.name) ? "extracting" : "pending") as FileExtractionState["status"],
-    }));
+    // Initialize extraction states — first batch of videos start as "extracting",
+    // later-batch videos and other files start as "pending" until their turn
+    const CONCURRENCY = 3;
+    const newStates: FileExtractionState[] = files.map((f, _idx) => {
+      const videoIdx = videoFiles.indexOf(f);
+      const isFirstBatch = videoIdx >= 0 && videoIdx < CONCURRENCY;
+      return {
+        filename: f.name,
+        fileSize: f.size,
+        progress: 0,
+        status: (isFirstBatch ? "extracting" : "pending") as FileExtractionState["status"],
+      };
+    });
     setExtractionStates((prev) => [...prev, ...newStates]);
 
     const newVideos: Video[] = [];
     const newArtifacts: Artifact[] = [];
 
-    // Upload all video files in parallel
+    // Upload video files with a concurrency limit to avoid saturating browser connections
     if (videoFiles.length > 0) {
-      const videoResults = await Promise.allSettled(
-        videoFiles.map((file) => uploadVideoBlob(file))
-      );
+      const CONCURRENCY = 3;
+      const videoResults: PromiseSettledResult<Video | null>[] = [];
+      for (let i = 0; i < videoFiles.length; i += CONCURRENCY) {
+        const batch = videoFiles.slice(i, i + CONCURRENCY);
+        // Mark this batch as actively uploading
+        setExtractionStates((prev) =>
+          prev.map((s) => batch.some((f) => f.name === s.filename) ? { ...s, status: "extracting" } : s)
+        );
+        const batchResults = await Promise.allSettled(batch.map((file) => uploadVideoBlob(file)));
+        videoResults.push(...batchResults);
+      }
       for (let i = 0; i < videoFiles.length; i++) {
         const file = videoFiles[i];
         const result = videoResults[i];
@@ -580,21 +600,18 @@ export function StepContent({
         </div>
       )}
 
+      {/* Combined content tip */}
+      <div className="flex items-start gap-2 p-3 bg-neon-cyan/5 border border-neon-cyan/20 rounded-lg">
+        <svg className="w-4 h-4 text-neon-cyan flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+        <p className="text-xs text-gray-300">
+          Upload your videos. We&apos;ll sort them by topic, recommend a duration, and break long ones into clips. Aim for more content if you want a longer program.
+        </p>
+      </div>
+
       {/* Tabs */}
       <div className="flex border-b border-surface-border">
-        <button
-          type="button"
-          onClick={() => setActiveTab("youtube")}
-          className={`
-            px-4 py-2.5 text-sm font-medium transition -mb-px
-            ${activeTab === "youtube"
-              ? "text-neon-cyan border-b-2 border-neon-cyan"
-              : "text-gray-400 hover:text-gray-300"
-            }
-          `}
-        >
-          YouTube Videos
-        </button>
         <button
           type="button"
           onClick={() => setActiveTab("upload")}
@@ -607,6 +624,19 @@ export function StepContent({
           `}
         >
           Upload Files
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("youtube")}
+          className={`
+            px-4 py-2.5 text-sm font-medium transition -mb-px
+            ${activeTab === "youtube"
+              ? "text-neon-cyan border-b-2 border-neon-cyan"
+              : "text-gray-400 hover:text-gray-300"
+            }
+          `}
+        >
+          YouTube Videos
         </button>
       </div>
 
@@ -736,16 +766,6 @@ export function StepContent({
             Add videos from your phone, documents, or audio recordings. AI will analyze everything and build your program.
           </p>
 
-          {/* Video upload nudge */}
-          <div className="flex items-start gap-2 p-3 bg-neon-cyan/5 border border-neon-cyan/20 rounded-lg">
-            <svg className="w-4 h-4 text-neon-cyan flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-            </svg>
-            <p className="text-xs text-gray-300">
-              Short clips work best — aim for <span className="text-neon-cyan">1–3 videos per lesson</span> and we&apos;ll group related ones together. Got a big batch or long video? Drop everything in. We&apos;ll put something sharp together.
-            </p>
-          </div>
-
           {/* File dropzone — mobile-optimized */}
           <label className="block cursor-pointer">
             <div className={`
@@ -859,18 +879,6 @@ export function StepContent({
             </div>
           )}
 
-          {/* Privacy notice */}
-          <div className="flex items-start gap-2 p-3 bg-neon-cyan/5 border border-neon-cyan/20 rounded-lg">
-            <svg className="w-5 h-5 text-neon-cyan flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-            </svg>
-            <div>
-              <p className="text-sm text-neon-cyan font-medium">Privacy First</p>
-              <p className="text-xs text-gray-400">
-                Documents are processed entirely in your browser. Audio is extracted locally, then sent securely for transcription. Only the extracted text is saved.
-              </p>
-            </div>
-          </div>
         </div>
       )}
 

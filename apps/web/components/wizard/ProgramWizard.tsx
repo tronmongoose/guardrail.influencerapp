@@ -5,7 +5,6 @@ import { WizardProgress } from "./WizardProgress";
 import { StepBasics } from "./steps/StepBasics";
 import { StepDuration } from "./steps/StepDuration";
 import { StepContent } from "./steps/StepContent";
-import { StepVibe } from "./steps/StepVibe";
 import { StepReview } from "./steps/StepReview";
 import { useGeneration } from "@/components/generation";
 
@@ -39,6 +38,9 @@ export interface WizardState {
   vibe: {
     vibePrompt: string;
   };
+  theme: {
+    skinId: string;
+  };
 }
 
 interface ProgramWizardProps {
@@ -50,10 +52,9 @@ interface ProgramWizardProps {
 
 const STEPS = [
   { label: "Basics", description: "Who & what" },
-  { label: "Duration", description: "Program length" },
   { label: "Content", description: "Videos & files" },
-  { label: "Vibe", description: "Style & tone" },
-  { label: "Review", description: "Generate" },
+  { label: "Duration", description: "Program length" },
+  { label: "Theme", description: "Your look" },
 ];
 
 const DEFAULT_STATE: WizardState = {
@@ -74,6 +75,9 @@ const DEFAULT_STATE: WizardState = {
   },
   vibe: {
     vibePrompt: "",
+  },
+  theme: {
+    skinId: "classic-minimal",
   },
 };
 
@@ -134,18 +138,35 @@ export function ProgramWizard({
           state.basics.title.trim().length > 0 &&
           state.basics.targetTransformation.trim().length > 0
         );
-      case 1: // Duration
-        return [6, 8, 12].includes(state.duration.weeks);
-      case 2: // Content
+      case 1: // Content
         return state.content.videos.length > 0 || state.content.artifacts.length > 0;
-      case 3: // Vibe (optional)
-        return true;
-      case 4: // Review
+      case 2: // Duration
+        return state.duration.weeks >= 2;
+      case 3: // Theme (optional)
         return true;
       default:
         return false;
     }
   }, [currentStep, state]);
+
+  // Auto-select middle preset when entering the duration step if current value isn't one of the presets
+  useEffect(() => {
+    if (currentStep !== 2) return;
+    const videoCount = state.content.videos.length;
+    let presets: number[];
+    if (videoCount === 0) {
+      presets = [4, 8, 12];
+    } else {
+      const short = Math.max(2, Math.ceil(videoCount / 2));
+      const med = Math.max(short + 2, videoCount);
+      const long = Math.min(26, med + Math.ceil(med / 2));
+      presets = [short, med, long];
+    }
+    if (!presets.includes(state.duration.weeks)) {
+      setState((prev) => ({ ...prev, duration: { ...prev.duration, weeks: presets[1] } }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep]);
 
   const handleNext = () => {
     if (currentStep < STEPS.length - 1 && canProceed()) {
@@ -175,6 +196,7 @@ export function ProgramWizard({
           durationWeeks: state.duration.weeks,
           pacingMode: state.duration.pacingMode,
           vibePrompt: state.vibe.vibePrompt,
+          skinId: state.theme.skinId,
         }),
       });
 
@@ -229,15 +251,6 @@ export function ProgramWizard({
         );
       case 1:
         return (
-          <StepDuration
-            weeks={state.duration.weeks}
-            pacingMode={state.duration.pacingMode}
-            onWeeksChange={(weeks) => updateState("duration", { weeks })}
-            onPacingModeChange={(pacingMode) => updateState("duration", { pacingMode })}
-          />
-        );
-      case 2:
-        return (
           <StepContent
             programId={programId}
             videos={state.content.videos}
@@ -250,17 +263,22 @@ export function ProgramWizard({
             }
           />
         );
-      case 3:
+      case 2:
         return (
-          <StepVibe
-            value={state.vibe.vibePrompt}
-            onChange={(vibePrompt) => updateState("vibe", { vibePrompt })}
+          <StepDuration
+            weeks={state.duration.weeks}
+            pacingMode={state.duration.pacingMode}
+            videoCount={state.content.videos.length}
+            onWeeksChange={(weeks) => updateState("duration", { weeks })}
+            onPacingModeChange={(pacingMode) => updateState("duration", { pacingMode })}
           />
         );
-      case 4:
+      case 3:
         return (
           <StepReview
             state={state}
+            skinId={state.theme.skinId}
+            onSkinChange={(skinId) => updateState("theme", { skinId })}
             isGenerating={isGenerating}
             onGenerate={handleGenerate}
           />

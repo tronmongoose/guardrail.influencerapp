@@ -7,6 +7,7 @@ type PacingMode = "drip_by_week" | "unlock_on_complete";
 interface StepDurationProps {
   weeks: number;
   pacingMode: PacingMode;
+  videoCount: number;
   onWeeksChange: (weeks: number) => void;
   onPacingModeChange: (mode: PacingMode) => void;
 }
@@ -34,7 +35,27 @@ const PACING_OPTIONS: { value: PacingMode; label: string; description: string; i
   },
 ];
 
-export function StepDuration({ weeks, pacingMode, onWeeksChange, onPacingModeChange }: StepDurationProps) {
+function computePresets(videoCount: number): { weeks: number; ratioNote: string }[] {
+  if (videoCount === 0) {
+    return [
+      { weeks: 4, ratioNote: "Focused sprint" },
+      { weeks: 8, ratioNote: "Most popular" },
+      { weeks: 12, ratioNote: "Deep dive" },
+    ];
+  }
+  const short = Math.max(2, Math.ceil(videoCount / 2));
+  const med   = Math.max(short + 2, videoCount);
+  const long  = Math.min(26, med + Math.ceil(med / 2));
+  return [
+    { weeks: short, ratioNote: `~${(videoCount / short).toFixed(1)} videos/wk` },
+    { weeks: med,   ratioNote: `~${(videoCount / med).toFixed(1)} videos/wk` },
+    { weeks: long,  ratioNote: `~${(videoCount / long).toFixed(1)} videos/wk` },
+  ];
+}
+
+export function StepDuration({ weeks, pacingMode, videoCount, onWeeksChange, onPacingModeChange }: StepDurationProps) {
+  const presets = computePresets(videoCount);
+
   return (
     <div className="space-y-8">
       {/* Pacing Mode Selection */}
@@ -93,45 +114,24 @@ export function StepDuration({ weeks, pacingMode, onWeeksChange, onPacingModeCha
 
       {/* Duration Selection */}
       <div>
-        <h2 className="text-xl font-semibold text-white mb-2">{pacingMode === "unlock_on_complete" ? "Program Length" : "Program Duration"}</h2>
+        <h2 className="text-xl font-semibold text-white mb-2">
+          {pacingMode === "unlock_on_complete" ? "Program Length" : "Program Duration"}
+        </h2>
         <p className="text-gray-400 text-sm mb-4">
-          {pacingMode === "drip_by_week"
-            ? "How many weeks should the program run? Content will unlock weekly."
-            : "How many sessions should your program include?"}
+          {videoCount > 0
+            ? `Based on your ${videoCount} video${videoCount === 1 ? "" : "s"} — pick the pace that fits your program.`
+            : "You haven't added videos yet. You can adjust this after adding content."}
         </p>
 
-        <DurationSelector value={weeks} onChange={onWeeksChange} pacingMode={pacingMode} />
+        <DurationSelector
+          value={weeks}
+          onChange={onWeeksChange}
+          pacingMode={pacingMode}
+          presets={presets}
+        />
       </div>
 
-      {/* Duration guidance */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="p-4 bg-surface-dark rounded-lg border border-surface-border">
-          <h4 className="text-sm font-medium text-neon-cyan mb-2">{pacingMode === "unlock_on_complete" ? "6 Sessions" : "6 Weeks"}</h4>
-          <ul className="text-xs text-gray-400 space-y-1">
-            <li>• Best for focused skills</li>
-            <li>• Higher completion rates</li>
-            <li>• Quick wins mindset</li>
-          </ul>
-        </div>
-        <div className="p-4 bg-surface-dark rounded-lg border border-surface-border">
-          <h4 className="text-sm font-medium text-neon-yellow mb-2">{pacingMode === "unlock_on_complete" ? "8 Sessions" : "8 Weeks"}</h4>
-          <ul className="text-xs text-gray-400 space-y-1">
-            <li>• Balanced depth</li>
-            <li>• Room for practice</li>
-            <li>• Popular choice</li>
-          </ul>
-        </div>
-        <div className="p-4 bg-surface-dark rounded-lg border border-surface-border">
-          <h4 className="text-sm font-medium text-neon-pink mb-2">{pacingMode === "unlock_on_complete" ? "12 Sessions" : "12 Weeks"}</h4>
-          <ul className="text-xs text-gray-400 space-y-1">
-            <li>• Comprehensive journey</li>
-            <li>• Habit formation time</li>
-            <li>• Higher perceived value</li>
-          </ul>
-        </div>
-      </div>
-
-      {/* Pacing mode tips */}
+      {/* Pacing mode tip */}
       <div className="p-4 bg-neon-cyan/5 border border-neon-cyan/20 rounded-lg">
         <h4 className="text-sm font-medium text-neon-cyan mb-2">
           {pacingMode === "unlock_on_complete" ? "About Completion-based Progression" : "About Weekly Release"}

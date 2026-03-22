@@ -42,6 +42,8 @@ export default function OnboardingPage() {
   const [outcomeTarget, setOutcomeTarget] = useState("");
   const [enhancing, setEnhancing] = useState(false);
   const [originalOutcome, setOriginalOutcome] = useState<string | null>(null);
+  const [platformPromoCode, setPlatformPromoCode] = useState("");
+  const [showPromoInput, setShowPromoInput] = useState(false);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -148,6 +150,7 @@ export default function OnboardingPage() {
           bio: bio.trim() || null,
           niche: niche === "Other" ? customNiche.trim() : niche,
           outcomeTarget: outcomeTarget.trim(),
+          platformPromoCode: platformPromoCode.trim() || undefined,
         }),
       });
 
@@ -155,7 +158,15 @@ export default function OnboardingPage() {
         throw new Error("Failed to save");
       }
 
-      router.push("/dashboard");
+      const data = await res.json();
+      const hasAccess = data.platformPromoGranted || data.platformPaymentComplete;
+      const feeConfigured = true; // fee is always required unless promo granted
+
+      if (hasAccess || !feeConfigured) {
+        router.push("/dashboard");
+      } else {
+        router.push("/onboarding/upgrade");
+      }
     } catch {
       setError("Failed to complete onboarding. Please try again.");
       setSaving(false);
@@ -351,6 +362,36 @@ export default function OnboardingPage() {
                   <span className="text-neon-cyan font-medium">Tip:</span> Be specific! Instead of &quot;I help people get fit,&quot;
                   try &quot;I help busy professionals build a sustainable workout habit in just 20 minutes a day.&quot;
                 </p>
+              </div>
+
+              {/* Promo code */}
+              <div>
+                {!showPromoInput ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowPromoInput(true)}
+                    className="text-xs text-gray-400 hover:text-gray-600 underline transition"
+                  >
+                    Have a promo code?
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={platformPromoCode}
+                      onChange={(e) => setPlatformPromoCode(e.target.value)}
+                      placeholder="Enter promo code"
+                      className="flex-1 px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 text-sm focus:outline-none focus:border-neon-cyan focus:ring-1 focus:ring-neon-cyan"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => { setShowPromoInput(false); setPlatformPromoCode(""); }}
+                      className="text-xs text-gray-400 hover:text-gray-600 transition"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Example outcome stats card */}

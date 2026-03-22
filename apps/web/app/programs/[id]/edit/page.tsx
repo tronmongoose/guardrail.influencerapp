@@ -25,6 +25,17 @@ interface StripeConnectStatus {
   onboardingComplete: boolean;
 }
 
+interface PromoCodeItem {
+  id: string;
+  code: string;
+  programId: string | null;
+  program: { title: string } | null;
+  maxUses: number | null;
+  uses: number;
+  active: boolean;
+  expiresAt: string | null;
+}
+
 interface Program {
   id: string;
   title: string;
@@ -129,12 +140,29 @@ export default function ProgramEditPage() {
   const [showStripePrompt, setShowStripePrompt] = useState(false);
   const [connectingStripe, setConnectingStripe] = useState(false);
 
+  // Promo codes for this program
+  const [promoCodes, setPromoCodes] = useState<PromoCodeItem[]>([]);
+  const [promoCodesLoaded, setPromoCodesLoaded] = useState(false);
+  const [newPromoCode, setNewPromoCode] = useState("");
+  const [newPromoMaxUses, setNewPromoMaxUses] = useState("");
+  const [creatingPromo, setCreatingPromo] = useState(false);
+  const [deletePromoId, setDeletePromoId] = useState<string | null>(null);
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [promoSuccess, setPromoSuccess] = useState<string | null>(null);
+
   // Async generation tracking
   const [asyncGenerating, setAsyncGenerating] = useState(false);
   const [asyncStage, setAsyncStage] = useState<string | null>(null);
   const [asyncProgress, setAsyncProgress] = useState(0);
   const [lastGenError, setLastGenError] = useState<string | null>(null);
   const [isProgramDetailsOpen, setIsProgramDetailsOpen] = useState(true);
+
+  // Controlled state for program details form fields — synced from `program` whenever it loads/reloads
+  const [detailsTitle, setDetailsTitle] = useState("");
+  const [detailsDescription, setDetailsDescription] = useState("");
+  const [detailsTargetAudience, setDetailsTargetAudience] = useState("");
+  const [detailsTargetTransformation, setDetailsTargetTransformation] = useState("");
+  const [detailsVibePrompt, setDetailsVibePrompt] = useState("");
 
   const load = useCallback(async (retryCount = 0) => {
     const maxRetries = 3;
@@ -154,7 +182,13 @@ export default function ProgramEditPage() {
         }
         throw new Error("Failed to load program");
       }
-      setProgram(await res.json());
+      const data = await res.json();
+      setProgram(data);
+      setDetailsTitle(data.title ?? "");
+      setDetailsDescription(data.description ?? "");
+      setDetailsTargetAudience(data.targetAudience ?? "");
+      setDetailsTargetTransformation(data.targetTransformation ?? "");
+      setDetailsVibePrompt(data.vibePrompt ?? "");
       setLoadError(null);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Failed to load");
@@ -162,6 +196,18 @@ export default function ProgramEditPage() {
       setLoading(false);
     }
   }, [id]);
+
+  // Load promo codes when settings tab opens
+  useEffect(() => {
+    if (activeTab !== "settings" || promoCodesLoaded) return;
+    fetch("/api/promo-codes")
+      .then(r => r.ok ? r.json() : [])
+      .then((data: PromoCodeItem[]) => {
+        setPromoCodes(Array.isArray(data) ? data : []);
+        setPromoCodesLoaded(true);
+      })
+      .catch(() => setPromoCodesLoaded(true));
+  }, [activeTab, promoCodesLoaded]);
 
   useEffect(() => {
     load();
@@ -857,17 +903,16 @@ export default function ProgramEditPage() {
           <form
             onSubmit={async (e) => {
               e.preventDefault();
-              const formData = new FormData(e.currentTarget);
               try {
                 const res = await fetch(`/api/programs/${id}`, {
                   method: "PATCH",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
-                    title: formData.get("title"),
-                    description: formData.get("description") || null,
-                    targetAudience: formData.get("targetAudience") || null,
-                    targetTransformation: formData.get("targetTransformation") || null,
-                    vibePrompt: formData.get("vibePrompt") || null,
+                    title: detailsTitle,
+                    description: detailsDescription || null,
+                    targetAudience: detailsTargetAudience || null,
+                    targetTransformation: detailsTargetTransformation || null,
+                    vibePrompt: detailsVibePrompt || null,
                   }),
                 });
                 if (!res.ok) throw new Error("Failed to save");
@@ -900,43 +945,45 @@ export default function ProgramEditPage() {
                   <div>
                     <label className="block text-xs text-gray-400 mb-1">Title</label>
                     <input
-                      name="title"
-                      defaultValue={program.title}
+                      value={detailsTitle}
+                      onChange={(e) => setDetailsTitle(e.target.value)}
                       className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-teal-500"
                     />
                   </div>
                   <div>
                     <label className="block text-xs text-gray-400 mb-1">Description</label>
                     <textarea
-                      name="description"
-                      defaultValue={program.description || ""}
+                      value={detailsDescription}
+                      onChange={(e) => setDetailsDescription(e.target.value)}
                       rows={3}
                       className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-teal-500 resize-none"
                     />
                   </div>
                   <div>
                     <label className="block text-xs text-gray-400 mb-1">Target Audience</label>
-                    <input
-                      name="targetAudience"
-                      defaultValue={program.targetAudience || ""}
+                    <textarea
+                      value={detailsTargetAudience}
+                      onChange={(e) => setDetailsTargetAudience(e.target.value)}
                       placeholder="Who is this program for?"
-                      className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-teal-500 placeholder:text-gray-600"
+                      rows={2}
+                      className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-teal-500 placeholder:text-gray-600 resize-none"
                     />
                   </div>
                   <div>
                     <label className="block text-xs text-gray-400 mb-1">Target Transformation</label>
-                    <input
-                      name="targetTransformation"
-                      defaultValue={program.targetTransformation || ""}
+                    <textarea
+                      value={detailsTargetTransformation}
+                      onChange={(e) => setDetailsTargetTransformation(e.target.value)}
                       placeholder="What will learners achieve?"
-                      className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-teal-500 placeholder:text-gray-600"
+                      rows={2}
+                      className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-teal-500 placeholder:text-gray-600 resize-none"
                     />
                   </div>
                   <div>
                     <label className="block text-xs text-gray-400 mb-1">AI Vibe Prompt</label>
                     <textarea
-                      name="vibePrompt"
-                      defaultValue={program.vibePrompt || ""}
+                      value={detailsVibePrompt}
+                      onChange={(e) => setDetailsVibePrompt(e.target.value)}
                       rows={2}
                       placeholder="How should the AI write? (only affects re-generation)"
                       className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-teal-500 resize-none placeholder:text-gray-600"
@@ -993,22 +1040,44 @@ export default function ProgramEditPage() {
             <div className="space-y-4">
               <div>
                 <h2 className="text-base font-semibold text-white mb-1">Price</h2>
-                <p className="text-sm text-gray-400 mb-4">Choose how much to charge for your program</p>
+                <p className="text-sm text-gray-400">Choose how much to charge for your program</p>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[0, 1900, 2900, 4900, 9900, 14900, 19900].map((price) => (
+              <div className="flex flex-wrap gap-2">
+                {[0, 2500, 5000, 10000, 50000].map((price) => (
                   <button
                     key={price}
                     onClick={() => handlePriceChange(price)}
-                    className={`px-4 py-3 rounded-xl border-2 text-sm font-medium transition ${
+                    className={`px-4 py-2.5 rounded-xl border-2 text-sm font-medium transition ${
                       program.priceInCents === price
                         ? "border-teal-500 bg-teal-900/30 text-teal-400"
                         : "border-gray-700 text-gray-400 hover:border-gray-600 bg-gray-900"
                     }`}
                   >
-                    {formatPrice(price)}
+                    {price === 0 ? "Free" : `$${price / 100}`}
                   </button>
                 ))}
+              </div>
+              {/* Custom price input */}
+              <div className="flex items-center gap-2">
+                <div className="relative w-36">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="Other"
+                    defaultValue={
+                      [0, 2500, 5000, 10000, 50000].includes(program.priceInCents)
+                        ? ""
+                        : String(program.priceInCents / 100)
+                    }
+                    onBlur={(e) => {
+                      const val = parseFloat(e.target.value);
+                      if (!isNaN(val) && val > 0) handlePriceChange(Math.round(val * 100));
+                    }}
+                    className="w-full pl-7 pr-3 py-2.5 rounded-xl border-2 border-gray-700 bg-gray-900 text-gray-300 text-sm focus:outline-none focus:border-teal-500 placeholder:text-gray-600"
+                  />
+                </div>
+                <span className="text-xs text-gray-600">custom amount</span>
               </div>
             </div>
 
@@ -1049,6 +1118,125 @@ export default function ProgramEditPage() {
                       "Connect Stripe →"
                     )}
                   </button>
+                </div>
+              )}
+            </div>
+
+            {/* Promo Codes */}
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-base font-semibold text-white mb-1">Promo Codes</h2>
+                <p className="text-sm text-gray-400">Give your audience a code to access this program for free.</p>
+              </div>
+
+              {/* Create form */}
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!newPromoCode.trim()) return;
+                  setCreatingPromo(true);
+                  setPromoError(null);
+                  setPromoSuccess(null);
+                  try {
+                    const res = await fetch("/api/promo-codes", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        code: newPromoCode.trim(),
+                        programId: id,
+                        maxUses: newPromoMaxUses || undefined,
+                      }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || "Failed to create");
+                    setPromoCodes(prev => [data, ...prev]);
+                    setNewPromoCode("");
+                    setNewPromoMaxUses("");
+                    setPromoSuccess(`Code "${data.code}" created!`);
+                  } catch (err) {
+                    setPromoError(err instanceof Error ? err.message : "Something went wrong");
+                  } finally {
+                    setCreatingPromo(false);
+                  }
+                }}
+                className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3"
+              >
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-400 block mb-1">Code *</label>
+                    <input
+                      type="text"
+                      value={newPromoCode}
+                      onChange={(e) => setNewPromoCode(e.target.value.toUpperCase())}
+                      placeholder="FREEMONTH"
+                      maxLength={20}
+                      required
+                      className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-teal-500 placeholder:text-gray-600"
+                    />
+                    <p className="text-xs text-gray-600 mt-1">Letters, numbers, dashes. 3-20 chars.</p>
+                  </div>
+                  <div className="w-28">
+                    <label className="text-xs text-gray-400 block mb-1">Max uses</label>
+                    <input
+                      type="number"
+                      value={newPromoMaxUses}
+                      onChange={(e) => setNewPromoMaxUses(e.target.value)}
+                      placeholder="∞"
+                      min={1}
+                      className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-teal-500 placeholder:text-gray-600"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={creatingPromo || !newPromoCode.trim()}
+                  className="px-4 py-2 rounded-lg bg-teal-900/40 text-teal-400 border border-teal-700 text-sm font-medium hover:bg-teal-900/60 transition disabled:opacity-50 flex items-center gap-2"
+                >
+                  {creatingPromo ? <><Spinner size="sm" /> Creating...</> : "+ Create code"}
+                </button>
+                {promoError && <p className="text-xs text-red-400">{promoError}</p>}
+                {promoSuccess && <p className="text-xs text-teal-400">{promoSuccess}</p>}
+              </form>
+
+              {/* Codes list */}
+              {!promoCodesLoaded ? (
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <Spinner size="sm" /> Loading codes...
+                </div>
+              ) : promoCodes.filter(c => c.active && (c.programId === id || c.programId === null)).length === 0 ? (
+                <p className="text-sm text-gray-600">No active codes for this program yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {promoCodes
+                    .filter(c => c.active && (c.programId === id || c.programId === null))
+                    .map(c => (
+                      <div key={c.id} className="flex items-center justify-between bg-white/5 border border-white/10 rounded-lg px-4 py-3">
+                        <div>
+                          <p className="text-sm font-mono font-semibold text-teal-400">{c.code}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {c.programId === null ? "All programs" : "This program"} ·{" "}
+                            {c.uses}{c.maxUses !== null ? `/${c.maxUses}` : ""} uses
+                          </p>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            setDeletePromoId(c.id);
+                            try {
+                              await fetch(`/api/promo-codes/${c.id}`, { method: "DELETE" });
+                              setPromoCodes(prev => prev.filter(x => x.id !== c.id));
+                            } catch {
+                              // ignore
+                            } finally {
+                              setDeletePromoId(null);
+                            }
+                          }}
+                          disabled={deletePromoId === c.id}
+                          className="text-xs text-gray-500 hover:text-red-400 transition"
+                        >
+                          {deletePromoId === c.id ? "..." : "Deactivate"}
+                        </button>
+                      </div>
+                    ))}
                 </div>
               )}
             </div>
@@ -1126,7 +1314,7 @@ export default function ProgramEditPage() {
                 className={`h-full overflow-auto transition-all ${previewDeviceMode === "desktop" ? "w-full max-w-5xl" : "w-[375px]"}`}
                 style={{
                   ...previewCssVars,
-                  backgroundColor: previewSkin.colors.bg,
+                  background: "var(--token-color-bg-gradient, var(--token-color-bg-default))",
                   borderRadius: previewDeviceMode === "mobile" ? "24px" : "8px",
                   boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
                 }}

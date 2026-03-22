@@ -29,11 +29,17 @@ model User {
   stripeAccountStatus   String?  // "pending", "active", "restricted"
   stripeOnboardingComplete Boolean @default(false)
 
+  // Platform access fields
+  platformPromoGranted    Boolean  @default(false)  // entered valid platform promo code
+  platformPaymentComplete Boolean  @default(false)  // paid the one-time platform fee
+  platformStripeSessionId String?  @unique          // Stripe session ID for platform payment
+
   programs            Program[]
   entitlements        Entitlement[]
   progress            LearnerProgress[]
   followedInfluencers UserInfluencer[]
   magicLinks          MagicLink[]
+  promoCodes          PromoCode[]
 }
 
 // --- Magic Link for Learner Authentication ---
@@ -103,6 +109,8 @@ model Program {
   rating           ProgramRating?
   generationJobs   GenerationJob[]
   styleInfluencers String[]  // Array of influencer IDs that influenced this program
+
+  promoCodes       PromoCode[]
 }
 
 enum PacingMode {
@@ -313,6 +321,22 @@ enum DraftStatus {
   PENDING
   ACCEPTED
   REJECTED
+}
+
+// --- Promo Codes (creator-generated, for learner access) ---
+
+model PromoCode {
+  id        String    @id @default(cuid())
+  code      String    @unique     // stored uppercase
+  creatorId String
+  creator   User      @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  programId String?   // null = applies to all creator's programs
+  program   Program?  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  maxUses   Int?      // null = unlimited
+  uses      Int       @default(0)
+  active    Boolean   @default(true)
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
 }
 
 // --- Entitlement (purchase/enrollment) ---
