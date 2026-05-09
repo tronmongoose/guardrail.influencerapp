@@ -565,3 +565,38 @@ enum GenerationStatus {
   FAILED
 }
 
+// --- Ad Creative Render (ad-machine v1) ---
+
+model CreativeRender {
+  variationId    String           @id              // matches the API-generated id ("var-{ts}-{i}")
+  hook           String           @db.Text
+  body           String           @db.Text
+  cta            String
+  lane           String                            // "Fitness" | "Skill Builder" | "Business Coach" | "General"
+  format         String                            // "Meta Feed" | "Meta Story" | "TikTok" | "YouTube"
+  templateKey    String                            // "bold-statement" | "proof-numbers" | "transformation-arrow"
+  laneTag        String?                           // uppercase tag rendered on the ad ("FITNESS CREATORS")
+  proofNumber    String?                           // proof-numbers template only
+  proofLabel     String?                           // proof-numbers template only
+  ogParams       Json                              // exact params sent to /api/og — for re-render reproducibility
+  canvaDesignId  String?                           // populated if archived to Canva (v2)
+  blobUrl        String?                           // Vercel Blob PNG URL once rendered
+  blobKey        String?                           // Vercel Blob key for deletion
+  copyScore      Int?                              // 0-100 from /api/ops/score
+  visualScore    Int?                              // 0-100 from /api/ops/creative/visual-score (v2)
+  status         CreativeStatus   @default(PENDING)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([status])
+  @@index([templateKey])
+  @@index([createdAt])
+}
+
+enum CreativeStatus {
+  PENDING        // copy generated, not rendered
+  BLOCKED        // failed copy score gate
+  RENDERED       // PNG in blob, awaiting review
+  APPROVED
+  REJECTED
+}

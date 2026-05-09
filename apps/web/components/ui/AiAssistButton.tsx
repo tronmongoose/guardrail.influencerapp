@@ -37,6 +37,7 @@ export function AiAssistButton({
 }: AiAssistButtonProps) {
   const [loading, setLoading] = useState(false);
   const [previousValue, setPreviousValue] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const canEnhance = value.trim().length >= minLength;
   const canUndo = previousValue !== null;
@@ -45,6 +46,7 @@ export function AiAssistButton({
     if (!canEnhance || loading) return;
 
     setPreviousValue(value);
+    setErrorMessage(null);
     setLoading(true);
 
     try {
@@ -64,6 +66,7 @@ export function AiAssistButton({
     } catch (err) {
       console.error("AI enhance failed:", err);
       setPreviousValue(null);
+      setErrorMessage(err instanceof Error ? err.message : "Enhancement failed");
     } finally {
       setLoading(false);
     }
@@ -90,35 +93,40 @@ export function AiAssistButton({
 
   if (variant === "prominent") {
     return (
-      <div className="flex items-center gap-2 mt-2">
-        <button
-          type="button"
-          onClick={handleEnhance}
-          disabled={!canEnhance || loading}
-          title={canEnhance ? "Improve with AI" : `Type at least ${minLength} characters to use AI`}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-          style={
-            canEnhance && !loading
-              ? { background: "linear-gradient(135deg, rgba(0,255,200,0.15), rgba(255,0,128,0.15))", border: "1px solid rgba(0,255,200,0.35)", color: "#00ffc8" }
-              : { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", color: "#6b7280" }
-          }
-        >
-          {wandIcon}
-          {loading ? "Improving…" : "Improve with AI"}
-        </button>
-        {canUndo && !loading && (
+      <div className="mt-2">
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={handleUndo}
-            title="Undo AI suggestion"
-            className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs text-gray-500 hover:text-neon-pink hover:bg-neon-pink/10 transition"
+            onClick={handleEnhance}
+            disabled={!canEnhance || loading}
+            title={canEnhance ? "Improve with AI" : `Type at least ${minLength} characters to use AI`}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            style={
+              canEnhance && !loading
+                ? { background: "linear-gradient(135deg, rgba(0,255,200,0.15), rgba(255,0,128,0.15))", border: "1px solid rgba(0,255,200,0.35)", color: "#00ffc8" }
+                : { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", color: "#6b7280" }
+            }
           >
-            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M3 10h10a5 5 0 015 5v0a5 5 0 01-5 5H9" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M7 6L3 10l4 4" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            Undo
+            {wandIcon}
+            {loading ? "Improving…" : "Improve with AI"}
           </button>
+          {canUndo && !loading && (
+            <button
+              type="button"
+              onClick={handleUndo}
+              title="Undo AI suggestion"
+              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs text-gray-500 hover:text-neon-pink hover:bg-neon-pink/10 transition"
+            >
+              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 10h10a5 5 0 015 5v0a5 5 0 01-5 5H9" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M7 6L3 10l4 4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Undo
+            </button>
+          )}
+        </div>
+        {errorMessage && (
+          <p className="text-xs text-red-400 mt-1.5">{errorMessage}</p>
         )}
       </div>
     );

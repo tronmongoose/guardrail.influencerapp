@@ -55,10 +55,84 @@ const TARGET_LESSON_MIN_SECONDS = 5 * 60;   // 5 min
 const TARGET_LESSON_MAX_SECONDS = 15 * 60;  // 15 min
 const DEFAULT_VIDEO_DURATION = 600;          // 10 min fallback
 
-// A video only gets split into multiple lesson-clips if it exceeds this
-// duration AND has thematically distinct topics. Short single-concept videos
-// (e.g. a 5-minute tool demo) always collapse to one clip per video.
-const MIN_DURATION_FOR_SPLIT_SECONDS = 8 * 60;
+// A video gets considered for splitting if it exceeds this duration. Below
+// this floor, even a multi-topic video collapses to one full-video clip
+// (a 4-minute tool demo isn't worth slicing).
+const MIN_DURATION_FOR_SPLIT_SECONDS = 5 * 60;
+
+// Time-based fallback target window: when a long video's Gemini topics aren't
+// thematically distinct (Jaccard ≥ 0.3), we still slice it by time so it
+// doesn't land in one lesson as a single full-video clip. Aim for 5–10 min
+// chunks, snapping each cut to the nearest topic boundary within ±60s.
+const TARGET_CHUNK_MIN_SECONDS = 5 * 60;
+const TARGET_CHUNK_MAX_SECONDS = 10 * 60;
+const SNAP_WINDOW_SECONDS = 60;
+const MAX_TIME_SLICES = 8;
+
+function chooseChunkCount(duration: number, topicCount: number): number {
+  const minCount = Math.max(1, Math.ceil(duration / TARGET_CHUNK_MAX_SECONDS));
+  const maxCount = Math.max(1, Math.floor(duration / TARGET_CHUNK_MIN_SECONDS));
+  // If Gemini's topic count fits in the [minCount, maxCount] window, prefer it
+  // — it gives the LLM clean topic-aligned breaks. Otherwise default to fewer,
+  // longer chunks (less fragmentation for the learner).
+  if (topicCount >= minCount && topicCount <= maxCount) {
+    return Math.min(MAX_TIME_SLICES, topicCount);
+  }
+  return Math.min(MAX_TIME_SLICES, minCount);
+}
+
+function timeBasedSlices(
+  duration: number,
+  topics: { label: string; startSeconds: number; endSeconds: number }[],
+  count: number,
+): { startSeconds: number; endSeconds: number; label: string }[] {
+  if (count <= 1 || duration <= 0) {
+    return [{ startSeconds: 0, endSeconds: duration, label: topics[0]?.label ?? "Part 1" }];
+  }
+
+  const boundaries = topics
+    .map((t) => t.endSeconds)
+    .filter((e) => e > 0 && e < duration);
+
+  const idealBreaks: number[] = [];
+  for (let i = 1; i < count; i++) {
+    idealBreaks.push((duration * i) / count);
+  }
+
+  const used = new Set<number>();
+  const resolved: number[] = [];
+  for (const ideal of idealBreaks) {
+    let best: number | null = null;
+    let bestDist = Infinity;
+    for (const b of boundaries) {
+      if (used.has(b)) continue;
+      const dist = Math.abs(b - ideal);
+      if (dist <= SNAP_WINDOW_SECONDS && dist < bestDist) {
+        best = b;
+        bestDist = dist;
+      }
+    }
+    if (best !== null) {
+      used.add(best);
+      resolved.push(best);
+    } else {
+      resolved.push(Math.round(ideal));
+    }
+  }
+  resolved.sort((a, b) => a - b);
+
+  const slices: { startSeconds: number; endSeconds: number; label: string }[] = [];
+  let start = 0;
+  for (let i = 0; i <= resolved.length; i++) {
+    const end = i < resolved.length ? resolved[i] : duration;
+    if (end <= start) continue; // safety against degenerate snapping
+    const mid = (start + end) / 2;
+    const covering = topics.find((t) => t.startSeconds <= mid && t.endSeconds >= mid);
+    slices.push({ startSeconds: start, endSeconds: end, label: covering?.label ?? `Part ${slices.length + 1}` });
+    start = end;
+  }
+  return slices;
+}
 
 function bigrams(text: string): Set<string> {
   const tokens = text.toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(Boolean);
@@ -141,8 +215,35 @@ function collectClips(
           subtopics: topic.subtopics,
         });
       }
-      // Guard: if every topic was too short, fall through to the full-video clip
+      // Guard: if every topic was too short, fall through to the time-based
+      // / full-video paths below.
       if (clips.filter((c) => c.videoId === digest.contentId).length > 0) continue;
+    }
+
+    // Time-based fallback: a long video whose topics aren't all-distinct (or
+    // that has only one broad topic) still gets sliced into 5–10 min chunks
+    // so it can be distributed across lessons. Without this, a 20-min video
+    // collapsed to a single full-video clip and downstream lessons ended up
+    // empty when bin-packing couldn't split that single clip cleanly.
+    if (longEnoughToSplit) {
+      const chunkCount = chooseChunkCount(fullDuration, topics.length);
+      if (chunkCount > 1) {
+        const slices = timeBasedSlices(fullDuration, topics, chunkCount);
+        for (const slice of slices) {
+          const dur = slice.endSeconds - slice.startSeconds;
+          if (dur < MIN_CLIP_DURATION_SECONDS) continue;
+          clips.push({
+            videoId: digest.contentId,
+            videoTitle: digest.contentTitle,
+            topicLabel: slice.label,
+            startSeconds: slice.startSeconds,
+            endSeconds: slice.endSeconds,
+            durationSeconds: dur,
+            subtopics: topics.length > 0 ? topics.map((t) => t.label) : undefined,
+          });
+        }
+        if (clips.filter((c) => c.videoId === digest.contentId).length > 0) continue;
+      }
     }
 
     // Default path: one full-video clip. Preserve topic labels as subtopics so
@@ -167,13 +268,16 @@ function collectClips(
   for (const digest of basicDigests) {
     if (digest.contentType !== "video") continue;
     if (enrichedVideoIds.has(digest.contentId)) continue;
+    // Use the actual video duration when available — otherwise the basic
+    // digest fallback silently truncates a 20-min video to 10 min.
+    const fullDuration = digest.durationSeconds ?? DEFAULT_VIDEO_DURATION;
     clips.push({
       videoId: digest.contentId,
       videoTitle: digest.contentTitle,
       topicLabel: digest.contentTitle,
       startSeconds: 0,
-      endSeconds: DEFAULT_VIDEO_DURATION,
-      durationSeconds: DEFAULT_VIDEO_DURATION,
+      endSeconds: fullDuration,
+      durationSeconds: fullDuration,
     });
   }
 
@@ -405,6 +509,35 @@ export function distributeClipsToLessons(
     lesson.clips = unique;
   }
 
+  // Final guarantee: every lesson must have ≥1 clip when any clips exist.
+  // Empty lessons reach the LLM and become sessions with no SessionClip rows
+  // — which the editor renders as the "Upload video" widget. Steal a clip
+  // from the most-loaded lesson so each session has at least something.
+  const totalClipsAfterDedup = lessons.reduce((sum, l) => sum + l.clips.length, 0);
+  if (totalClipsAfterDedup > 0) {
+    for (let l = 0; l < lessons.length; l++) {
+      if (lessons[l].clips.length > 0) continue;
+      const candidates = lessons
+        .map((lesson, idx) => ({ lesson, idx }))
+        .filter((c) => c.idx !== l && c.lesson.clips.length > 1)
+        .sort((a, b) => b.lesson.clips.length - a.lesson.clips.length);
+      if (candidates.length === 0) {
+        warnings.push(
+          `Lesson ${l + 1} ended up empty and no other lesson has spare clips`,
+        );
+        continue;
+      }
+      const source = candidates[0].lesson;
+      const moved = source.clips.pop()!;
+      source.totalDurationSeconds -= moved.durationSeconds;
+      lessons[l].clips.push(moved);
+      lessons[l].totalDurationSeconds += moved.durationSeconds;
+      warnings.push(
+        `Lesson ${l + 1} was empty — moved "${moved.topicLabel}" from lesson ${candidates[0].idx + 1}`,
+      );
+    }
+  }
+
   return {
     lessons,
     totalClips: lessons.reduce((sum, l) => sum + l.clips.length, 0),
@@ -472,14 +605,55 @@ function formatTime(s: number): string {
 }
 
 /**
- * Format the distribution plan as a text block for injection into the LLM prompt.
+ * Per-clip transcript excerpt rendering — keeps prompt budget reasonable while
+ * giving the LLM a concrete time-aligned reference for chapterTitle generation.
  */
-export function formatDistributionPlanForPrompt(plan: DistributionPlan): string {
+const TRANSCRIPT_EXCERPT_MAX_CHARS = 600;
+
+function buildTranscriptExcerpt(
+  videoId: string,
+  clipStart: number,
+  clipEnd: number,
+  enrichedDigests: EnrichedContentDigest[] | undefined,
+): string | null {
+  if (!enrichedDigests || enrichedDigests.length === 0) return null;
+  const digest = enrichedDigests.find((d) => d.contentId === videoId);
+  if (!digest || !digest.segments || digest.segments.length === 0) return null;
+  // A segment overlaps the clip if any part of its [start, end] intersects
+  // [clipStart, clipEnd]. Strict containment is too restrictive — Gemini's
+  // segment boundaries rarely line up exactly with our chunk cuts.
+  const overlapping = digest.segments.filter(
+    (s) => s.endSeconds > clipStart && s.startSeconds < clipEnd,
+  );
+  if (overlapping.length === 0) return null;
+  const joined = overlapping
+    .map((s) => s.text)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!joined) return null;
+  if (joined.length <= TRANSCRIPT_EXCERPT_MAX_CHARS) return joined;
+  return joined.slice(0, TRANSCRIPT_EXCERPT_MAX_CHARS - 1).trimEnd() + "…";
+}
+
+/**
+ * Format the distribution plan as a text block for injection into the LLM prompt.
+ *
+ * When enrichedDigests are provided, each clip line is followed by a
+ * timestamped transcript excerpt drawn from Gemini's per-segment data — this
+ * lets the LLM ground chapterTitle generation in the actual content of each
+ * time range instead of guessing from the flat full transcript.
+ */
+export function formatDistributionPlanForPrompt(
+  plan: DistributionPlan,
+  enrichedDigests?: EnrichedContentDigest[],
+): string {
   const lines: string[] = [
     `═══ VIDEO ASSIGNMENT PLAN (MANDATORY) ═══`,
     `The following clip assignments have been pre-computed. You MUST follow them exactly.`,
     `Do NOT reassign, omit, or add video clips beyond this plan.`,
     `Your job is to write great titles, summaries, takeaways, DO/REFLECT actions, and overlay details for each lesson — but the video clips are fixed.`,
+    `For each clip, base its chapterTitle and chapterDescription on the timestamped transcript excerpt below it (when present) — never on the source video title or on adjacent clips.`,
     ``,
   ];
 
@@ -491,6 +665,17 @@ export function formatDistributionPlanForPrompt(plan: DistributionPlan): string 
       lines.push(
         `  Clip ${i + 1}: Video "${clip.videoTitle}" (ID: ${clip.videoId}) @ ${formatTime(clip.startSeconds)}-${formatTime(clip.endSeconds)} — "${clip.topicLabel}"`,
       );
+      const excerpt = buildTranscriptExcerpt(
+        clip.videoId,
+        clip.startSeconds,
+        clip.endSeconds,
+        enrichedDigests,
+      );
+      if (excerpt) {
+        lines.push(
+          `    Transcript (${formatTime(clip.startSeconds)}-${formatTime(clip.endSeconds)}): "${excerpt}"`,
+        );
+      }
     }
 
     lines.push(`  Total: ${formatTime(lesson.totalDurationSeconds)}`);

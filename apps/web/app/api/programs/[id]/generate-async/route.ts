@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { getOrCreateUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { generateProgramDraft, extractContentDigests, analyzeUploadedVideoWithGemini, distributeClipsToLessons, validateAndFixClipDistribution, validateDraftQuality } from "@guide-rail/ai";
+import { generateProgramDraft, extractContentDigests, analyzeUploadedVideoWithGemini, distributeClipsToLessons, validateAndFixClipDistribution, validateDraftQuality, computeGuardrailedLessonCount } from "@guide-rail/ai";
 import type { ContentDigest, EnrichedContentDigest, DistributionPlan } from "@guide-rail/ai";
 import { ProgramDraftSchema } from "@guide-rail/shared";
 import { Prisma } from "@prisma/client";
@@ -254,7 +254,7 @@ async function processGenerationJob(jobId: string, programId: string) {
     if (videosNeedingAnalysis.length > 0 && process.env.GOOGLE_AI_API_KEY) {
       console.info(`[generate-async] [GEMINI] ${videosNeedingAnalysis.length} video(s) need Gemini analysis`);
       const MUX_RENDITION_POLL_MS = 5_000;
-      const MUX_RENDITION_MAX_MS = 2 * 60_000; // 2 min max wait for renditions
+      const MUX_RENDITION_MAX_MS = 5 * 60_000; // 5 min max wait for renditions (Mux MP4 transcode for 20-min videos commonly takes 2-4 min)
 
       for (let i = 0; i < videosNeedingAnalysis.length; i++) {
         checkDeadline("fetching_transcripts");
@@ -411,7 +411,9 @@ async function processGenerationJob(jobId: string, programId: string) {
           contentType: "video",
         });
       } else {
-        // No transcript and no analysis — title-only fallback
+        // No transcript and no analysis — title-only fallback. Include the
+        // actual durationSeconds so the clip distributor can slice the video
+        // proportionally instead of falling back to the 600s default.
         enrichedDigests.push({
           contentId: v.id,
           contentTitle: v.title ?? "Untitled",
@@ -421,6 +423,7 @@ async function processGenerationJob(jobId: string, programId: string) {
           memorableExamples: [],
           difficultyLevel: "intermediate",
           summary: `Uploaded video: ${v.title ?? "Untitled"}`,
+          durationSeconds: v.durationSeconds ?? null,
         } as ContentDigest);
       }
     }
@@ -457,6 +460,16 @@ async function processGenerationJob(jobId: string, programId: string) {
           console.info(`[generate-async] Extraction progress: ${completed}/${total}`);
         },
       );
+      // Backfill durationSeconds for video digests so the clip distributor
+      // doesn't fall back to the 600s default for transcript-only videos.
+      const videoDurationById = new Map(
+        videosForPipeline.map((v) => [v.id, v.durationSeconds] as const),
+      );
+      for (const d of llmDigests) {
+        if (d.contentType === "video" && videoDurationById.has(d.contentId)) {
+          d.durationSeconds = videoDurationById.get(d.contentId) ?? null;
+        }
+      }
       enrichedDigests.push(...llmDigests);
       aiLogger.extractionSuccess(programId, extractionTimer.elapsed(), llmDigests.length);
     } else {
@@ -482,13 +495,17 @@ async function processGenerationJob(jobId: string, programId: string) {
 
     let clipDistributionPlan: DistributionPlan | undefined;
 
-    // Lesson count is anchored to video count (one lesson per video by default),
-    // capped at 4-6 when AI decides. Prevents over-splitting where every Gemini
-    // topic became its own lesson (e.g. 11 lessons from 5 short videos).
-    const videoCount = videosForPipeline.length;
+    // Lesson count: aiStructured runs duration-aware guardrails (1–12 lessons,
+    // tuned for the 1–3 × ~20 min video case). Otherwise honor the creator's
+    // explicit choice (already clamped to 12 at the PATCH route).
     const effectiveWeeks = program.aiStructured
-      ? Math.min(6, Math.max(4, videoCount))
+      ? computeGuardrailedLessonCount(
+          videosForPipeline.map((v) => ({ durationSeconds: v.durationSeconds })),
+        )
       : program.durationWeeks;
+    console.info(
+      `[generate-async] aiStructured=${program.aiStructured} videos=${videosForPipeline.length} → effectiveWeeks=${effectiveWeeks}`,
+    );
 
     if (enrichedOnly.length > 0) {
       clipDistributionPlan = distributeClipsToLessons(
@@ -602,7 +619,7 @@ async function processGenerationJob(jobId: string, programId: string) {
       targetAudience: program.targetAudience ?? undefined,
       targetTransformation: program.targetTransformation ?? undefined,
       vibePrompt: program.vibePrompt ?? undefined,
-      durationWeeks: program.durationWeeks,
+      durationWeeks: effectiveWeeks,
       clusters: clusterData,
       contentDigests: enrichedDigests,
       hasVideoAnalysis,
@@ -638,8 +655,20 @@ async function processGenerationJob(jobId: string, programId: string) {
             validated = revalidated;
             console.info(`[generate-async] Applied programmatic clip fixes — draft repaired`);
           } else {
-            console.warn(`[generate-async] Clip fix produced invalid draft — using original LLM output`);
+            // Previously this silently fell back to the original (broken) LLM
+            // draft, which is how empty Lesson 2 reached production. Fail
+            // loudly so the GenerationJob errors out and the creator retries.
+            console.error(`[generate-async] Clip fix produced invalid draft — failing job`, revalidated.error.issues);
+            throw new Error(
+              `Clip distribution repair failed schema validation: ${revalidated.error.issues
+                .map((i) => `${i.path.join(".")}: ${i.message}`)
+                .join("; ")}`,
+            );
           }
+        } else {
+          throw new Error(
+            `Clip distribution validation failed and no auto-fix available: ${clipValidation.errors.join("; ")}`,
+          );
         }
       } else {
         console.info(`[generate-async] Clip distribution validation passed`);
@@ -880,13 +909,26 @@ async function processGenerationJob(jobId: string, programId: string) {
   } catch (err) {
     console.error("[generate-async] Job failed:", err);
 
-    await prisma.generationJob.update({
-      where: { id: jobId },
-      data: {
-        status: "FAILED",
-        error: err instanceof Error ? err.message : String(err),
-        completedAt: new Date(),
-      },
-    });
+    // Always write a non-empty error message. The client uses `error` to surface a
+    // failure panel + retry button; an empty/null error makes the UI fall through
+    // and silently re-open the wizard, which looks like the job never ran.
+    const rawMessage = err instanceof Error ? err.message : String(err ?? "");
+    const errorMessage = rawMessage.trim() || "Generation failed unexpectedly. Please try again.";
+
+    try {
+      await prisma.generationJob.update({
+        where: { id: jobId },
+        data: {
+          status: "FAILED",
+          error: errorMessage,
+          completedAt: new Date(),
+        },
+      });
+    } catch (updateErr) {
+      // If even the FAILED write fails (DB connection lost, etc.), the job is left
+      // stuck in PROCESSING. The status route's isStale detection (3 min) is the
+      // last line of defense — log loudly so we can see this in production.
+      console.error("[generate-async] CRITICAL: failed to mark job FAILED — job will be stuck until isStale triggers:", updateErr);
+    }
   }
 }

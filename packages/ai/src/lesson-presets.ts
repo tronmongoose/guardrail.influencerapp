@@ -31,7 +31,8 @@ export interface LessonPreset {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_VIDEO_DURATION = 600; // 10 min fallback
-const MAX_WEEKS = 26;
+const MAX_WEEKS = 12;
+const MIN_LESSONS = 1;
 
 // ---------------------------------------------------------------------------
 // Core function
@@ -51,8 +52,11 @@ export function computeSmartPresets(
   }
 
   // --- Compute preset week counts ---
-  const compact = Math.max(2, Math.floor(videoCount / 2));
-  const natural = Math.max(compact + 1, videoCount);
+  // All three presets are clamped to MAX_WEEKS so creators can't exceed the
+  // 12-lesson universal cap. Strict ordering compact < natural < detailed
+  // is preserved by reserving headroom (compact <= MAX-2, natural <= MAX-1).
+  const compact = Math.max(2, Math.min(MAX_WEEKS - 2, Math.floor(videoCount / 2)));
+  const natural = Math.max(compact + 1, Math.min(MAX_WEEKS - 1, videoCount));
   let detailed = Math.min(MAX_WEEKS, videoCount * 2);
   // Ensure strict ordering
   if (detailed <= natural) detailed = Math.min(MAX_WEEKS, natural + 1);
@@ -128,38 +132,41 @@ export function computeSmartPresets(
 }
 
 // ---------------------------------------------------------------------------
-// AI-derived lesson count
+// AI-decides lesson count (replaces the route's hardcoded 4–6 clamp)
 // ---------------------------------------------------------------------------
 
 /**
- * Derive lesson count from Gemini topic analysis.
- * Blends topic density with duration to avoid over/under-splitting.
- * Used by the "Let AI decide" path in the wizard.
+ * Pick a lesson count for the aiStructured generation path.
+ *
+ * Single video → segment by duration (under-5 → 1, 5–20 → 2–3, 20–45 → 3–5,
+ * 45+ → 5–8). Multiple videos → key off average per-video duration (under-3min
+ * avg merges pairs, 3–10min avg gives 1 per video, 10+ avg allows splitting).
+ * Always clamped to [MIN_LESSONS, MAX_WEEKS] (1, 12).
+ *
+ * Topics intentionally not used here — within-lesson clip selection
+ * (clip-distributor) is the right layer for topic-aware decisions.
  */
-export function computeLessonCountFromTopics(videos: VideoInfo[]): number {
-  const totalTopics = videos.reduce((sum, v) => sum + (v.topicCount ?? 0), 0);
-  const totalDurationSec = videos.reduce(
-    (sum, v) => sum + (v.durationSeconds ?? DEFAULT_VIDEO_DURATION),
-    0,
-  );
+export function computeGuardrailedLessonCount(videos: VideoInfo[]): number {
+  const count = videos.length;
+  if (count === 0) return MIN_LESSONS;
 
-  if (totalTopics === 0) {
-    return Math.max(2, videos.length); // fallback: 1 lesson per video
+  const durations = videos.map(
+    (v) => v.durationSeconds ?? DEFAULT_VIDEO_DURATION,
+  );
+  const clamp = (n: number) => Math.max(MIN_LESSONS, Math.min(MAX_WEEKS, n));
+
+  if (count === 1) {
+    const d = durations[0];
+    const minutes = d / 60;
+    if (d < 300) return clamp(1);                                                  // <5 min
+    if (d < 1200) return clamp(Math.max(2, Math.round(minutes / 8)));              // 5–20 min
+    if (d < 2700) return clamp(Math.max(3, Math.min(5, Math.floor(minutes / 8)))); // 20–45 min
+    return clamp(Math.max(5, Math.min(8, Math.floor(minutes / 8))));               // 45+ min
   }
 
-  // Target ~10 min content per lesson (matches clip-distributor sweet spot of 5-15 min)
-  const TARGET_LESSON_SECONDS = 10 * 60;
-  const durationBased = Math.round(totalDurationSec / TARGET_LESSON_SECONDS);
-  const topicBased = totalTopics;
-
-  // Weight duration 2:1 vs topics — topics inform clip structure within lessons,
-  // but total content duration is the primary signal for lesson count.
-  const blended = Math.round((2 * durationBased + topicBased) / 3);
-
-  // Hard ceiling: each lesson must have at least 3 min of real content.
-  // Without this, topic-dense short content produces absurdly short lessons.
-  const MIN_CONTENT_PER_LESSON_SEC = 3 * 60;
-  const contentCeiling = Math.max(2, Math.floor(totalDurationSec / MIN_CONTENT_PER_LESSON_SEC));
-
-  return Math.max(2, Math.min(blended, contentCeiling, MAX_WEEKS));
+  // Multi-video: average per-video duration drives the decision
+  const avg = durations.reduce((a, b) => a + b, 0) / count;
+  if (avg < 180) return clamp(Math.ceil(count / 2));   // tiny avg → merge pairs
+  if (avg < 600) return clamp(count);                   // 3–10 min avg → 1 per video
+  return clamp(Math.min(count * 2, MAX_WEEKS));         // 10+ min avg → split
 }

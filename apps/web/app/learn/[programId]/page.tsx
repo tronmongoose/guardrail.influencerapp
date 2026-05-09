@@ -54,8 +54,14 @@ export default async function LearnPage({ params }: { params: Promise<{ programI
                 include: {
                   clips: {
                     orderBy: { orderIndex: "asc" },
-                    take: 1,
-                    include: { youtubeVideo: { select: { muxPlaybackId: true, thumbnailUrl: true, videoId: true, title: true, url: true } } },
+                    select: {
+                      id: true,
+                      startSeconds: true,
+                      endSeconds: true,
+                      chapterTitle: true,
+                      orderIndex: true,
+                      youtubeVideo: { select: { muxPlaybackId: true, thumbnailUrl: true, videoId: true, title: true, url: true } },
+                    },
                   },
                 },
               },

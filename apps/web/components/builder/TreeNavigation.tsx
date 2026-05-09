@@ -18,7 +18,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { getVideoThumbnailUrl } from "@/lib/video-thumbnail";
+import { VideoThumbnail } from "@/components/VideoThumbnail";
 import { Spinner } from "@/components/ui/spinner";
 import type { WeekData, SessionData, YouTubeVideoData } from "./StructureBuilder";
 
@@ -68,7 +68,6 @@ function TreeSessionItem({ session, weekId, videos, isSelected, onSelect }: Tree
 
   const watchAction = session.actions.find((a) => a.type === "WATCH" && a.youtubeVideoId);
   const video = watchAction ? videos.find((v) => v.id === watchAction.youtubeVideoId) : null;
-  const thumbUrl = getVideoThumbnailUrl(video);
 
   return (
     <div
@@ -94,19 +93,11 @@ function TreeSessionItem({ session, weekId, videos, isSelected, onSelect }: Tree
         </svg>
       </button>
 
-      {thumbUrl ? (
-        <img
-          src={thumbUrl}
-          alt=""
-          className="w-8 h-5 object-cover rounded flex-shrink-0"
-        />
-      ) : (
-        <div className="w-8 h-5 bg-gray-800 rounded flex-shrink-0 flex items-center justify-center">
-          <svg className="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-          </svg>
-        </div>
-      )}
+      <VideoThumbnail
+        video={video}
+        className="w-8 h-5 rounded flex-shrink-0"
+        iconSize="w-3 h-3"
+      />
 
       <span className={`text-xs truncate flex-1 ${isSelected ? "text-white font-medium" : "text-gray-400"}`}>
         {session.title}

@@ -206,6 +206,11 @@ export default function UpgradePage() {
             ))}
           </ul>
 
+          {/* Payout timing note */}
+          <p className="text-xs text-gray-500 text-left">
+            Payments hit your account about 2 days after a learner pays for your Journeyline.
+          </p>
+
           {/* CTA */}
           <button
             onClick={handleGetStarted}

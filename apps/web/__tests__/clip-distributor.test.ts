@@ -268,6 +268,150 @@ describe("distributeClipsToLessons", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Regression: 20-min single video, non-distinct topics → both lessons must
+// receive a clip. This is the bug from the screenshots — Lesson 2 was empty
+// because all of Gemini's topics shared overlapping labels (Jaccard ≥ 0.3),
+// so collectClips emitted ONE full-video clip and bin-packing left a gap.
+// ---------------------------------------------------------------------------
+
+describe("distributeClipsToLessons — time-based fallback for non-distinct topics", () => {
+  it("slices a 20-min video into clips even when topic labels overlap (Jaccard ≥ 0.3)", () => {
+    // All three labels share the bigram "training fundamentals" / "training",
+    // so topicsAreDistinct returns false. Before the fix this collapsed to a
+    // single full-video clip; now it slices by time.
+    const enriched = [
+      makeEnrichedDigest(
+        "v1",
+        "Liv Fitness",
+        [
+          { label: "training fundamentals overview", startSeconds: 0, endSeconds: 400 },
+          { label: "training fundamentals progression", startSeconds: 400, endSeconds: 800 },
+          { label: "training fundamentals integration", startSeconds: 800, endSeconds: 1200 },
+        ],
+        1200,
+      ),
+    ];
+    const plan = distributeClipsToLessons(enriched, [], 2);
+
+    expect(plan.lessons).toHaveLength(2);
+    // Both lessons must have at least 1 clip (the regression assertion).
+    for (const lesson of plan.lessons) {
+      expect(lesson.clips.length).toBeGreaterThanOrEqual(1);
+    }
+    // Total clip duration must equal the source video — no truncation.
+    expect(plan.totalDurationSeconds).toBe(1200);
+    // No identical clip range repeats across lessons.
+    const keys = plan.lessons.flatMap((l) =>
+      l.clips.map((c) => `${c.videoId}:${c.startSeconds}:${c.endSeconds}`),
+    );
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("snaps time-based slice boundaries to nearby Gemini topic boundaries (±60s)", () => {
+    // Three overlapping-label topics whose endSeconds sit close to the ideal
+    // halfway cut for a 2-lesson split (600s). The slicer should snap the cut
+    // to the topic boundary at 590, not use the raw 600.
+    const enriched = [
+      makeEnrichedDigest(
+        "v1",
+        "Beat making fundamentals",
+        [
+          { label: "beat fundamentals intro", startSeconds: 0, endSeconds: 590 },
+          { label: "beat fundamentals advanced", startSeconds: 590, endSeconds: 1200 },
+        ],
+        1200,
+      ),
+    ];
+    const plan = distributeClipsToLessons(enriched, [], 2);
+
+    expect(plan.lessons).toHaveLength(2);
+    const allBoundaries = plan.lessons.flatMap((l) =>
+      l.clips.flatMap((c) => [c.startSeconds, c.endSeconds]),
+    );
+    // The 590s topic boundary should appear (snapped) somewhere in the cuts.
+    expect(allBoundaries).toContain(590);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Basic digest duration preservation: the basic-digest path used to hardcode
+// endSeconds = 600s, silently truncating any longer video. Now it honors the
+// digest's durationSeconds field.
+// ---------------------------------------------------------------------------
+
+describe("distributeClipsToLessons — basic digest duration", () => {
+  it("respects durationSeconds on basic digests instead of defaulting to 600s", () => {
+    const basic = [
+      {
+        contentId: "v1",
+        contentTitle: "Long video",
+        contentType: "video" as const,
+        keyConcepts: ["topic"],
+        skillsIntroduced: [],
+        memorableExamples: [],
+        difficultyLevel: "intermediate",
+        summary: "long",
+        durationSeconds: 1200,
+      },
+    ];
+    const plan = distributeClipsToLessons([], basic, 2);
+
+    expect(plan.lessons).toHaveLength(2);
+    // Total content duration matches the source — no truncation to 600s.
+    expect(plan.totalDurationSeconds).toBe(1200);
+    // Both lessons get a clip from the splitting fill path.
+    for (const lesson of plan.lessons) {
+      expect(lesson.clips.length).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it("still falls back to 600s when durationSeconds is absent", () => {
+    const basic = [
+      {
+        contentId: "v1",
+        contentTitle: "Unknown duration",
+        contentType: "video" as const,
+        keyConcepts: ["topic"],
+        skillsIntroduced: [],
+        memorableExamples: [],
+        difficultyLevel: "intermediate",
+        summary: "unknown",
+      },
+    ];
+    const plan = distributeClipsToLessons([], basic, 1);
+    expect(plan.totalDurationSeconds).toBe(600);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Lower MIN_DURATION_FOR_SPLIT_SECONDS (was 8 min, now 5 min): a 6-min
+// multi-topic video should now split rather than collapse to one clip.
+// ---------------------------------------------------------------------------
+
+describe("distributeClipsToLessons — 5-min split threshold", () => {
+  it("splits a 6-min video with two distinct topics", () => {
+    const enriched = [
+      makeEnrichedDigest(
+        "v1",
+        "Quick demo",
+        [
+          { label: "Setup", startSeconds: 0, endSeconds: 180 },
+          { label: "Execution", startSeconds: 180, endSeconds: 360 },
+        ],
+        360,
+      ),
+    ];
+    const plan = distributeClipsToLessons(enriched, [], 2);
+    expect(plan.lessons).toHaveLength(2);
+    // 2 distinct topics → 2 per-topic clips → 1 per lesson
+    for (const lesson of plan.lessons) {
+      expect(lesson.clips.length).toBeGreaterThanOrEqual(1);
+    }
+    expect(plan.totalClips).toBe(2);
+  });
+});
+
 describe("formatDistributionPlanForPrompt", () => {
   it("formats a plan as readable text", () => {
     // Duration ≥ 480s and two distinct topic labels → distributor splits into

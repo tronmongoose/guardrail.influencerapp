@@ -23,26 +23,6 @@ export function StepReview({ state, programId, skinId, onSkinChange }: StepRevie
         </p>
       </div>
 
-      {/* Compact summary strip */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 bg-surface-dark border border-surface-border rounded-lg text-sm">
-        <span className="text-white font-medium truncate max-w-[200px]">
-          {state.basics.title || "Untitled"}
-        </span>
-        <span className="text-gray-500">·</span>
-        <span className="text-gray-400">{state.duration.weeks}w program</span>
-        <span className="text-gray-500">·</span>
-        <span className="text-gray-400">
-          {state.content.videos.length} video{state.content.videos.length !== 1 ? "s" : ""}
-          {state.content.artifacts.length > 0 && `, ${state.content.artifacts.length} doc${state.content.artifacts.length !== 1 ? "s" : ""}`}
-        </span>
-        {state.vibe.vibePrompt && (
-          <>
-            <span className="text-gray-500">·</span>
-            <span className="text-gray-400 italic truncate max-w-[180px]">{state.vibe.vibePrompt}</span>
-          </>
-        )}
-      </div>
-
       {/* Skin picker — hero feature */}
       <SkinPicker value={skinId} onChange={onSkinChange} thumbnailUrl={firstThumbnail} programId={programId} programTitle={state.basics.title} />
     </div>

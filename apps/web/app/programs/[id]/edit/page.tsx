@@ -254,11 +254,20 @@ export default function ProgramEditPage() {
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.status === "PENDING" || data?.status === "PROCESSING") {
-          setAsyncGenerating(true);
-          setAsyncStage(data.stage);
-          setAsyncProgress(data.progress || 0);
-        } else if (data?.status === "FAILED" && data.error) {
-          setLastGenError(data.error);
+          // Stuck job: background task likely died without writing FAILED. Surface
+          // the failed-panel + retry button instead of starting polling that will
+          // never resolve (and instead of falling through and re-opening the wizard).
+          if (data.isStale) {
+            setLastGenError("Generation appears to have stalled. Please try again.");
+          } else {
+            setAsyncGenerating(true);
+            setAsyncStage(data.stage);
+            setAsyncProgress(data.progress || 0);
+          }
+        } else if (data?.status === "FAILED") {
+          // Always set lastGenError — even if `error` is null/empty — so the auto-wizard
+          // effect doesn't fire and silently re-throw the user back into the wizard.
+          setLastGenError(data.error || "Generation failed without an error message. Please try again.");
         } else if (data?.status === "COMPLETED" && data.completedAt) {
           // Generation finished recently - reload program to pick up persisted weeks.
           const completedAt = new Date(data.completedAt);

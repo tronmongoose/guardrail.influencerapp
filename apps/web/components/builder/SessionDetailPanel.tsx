@@ -20,7 +20,7 @@ import { KeyTakeawaysEditor } from "./KeyTakeawaysEditor";
 import { Spinner } from "@/components/ui/spinner";
 import { AiAssistButton } from "@/components/ui/AiAssistButton";
 import type { SessionData, YouTubeVideoData, WeekData } from "./StructureBuilder";
-import { getVideoThumbnailUrl } from "@/lib/video-thumbnail";
+import { VideoThumbnail } from "@/components/VideoThumbnail";
 
 function isUploadedVideo(video: YouTubeVideoData): boolean {
   return (
@@ -28,50 +28,6 @@ function isUploadedVideo(video: YouTubeVideoData): boolean {
     video.url.startsWith("mux-upload://") ||
     !!video.muxUploadId
   );
-}
-
-// Extracts a thumbnail from an uploaded video URL by loading it into a hidden
-// <video> element, seeking to ~2 s, and drawing to canvas.
-function UploadedVideoThumbnail({ url, className }: { url: string; className?: string }) {
-  const [thumb, setThumb] = useState<string | null>(null);
-
-  const extract = useCallback(() => {
-    const video = document.createElement("video");
-    video.preload = "metadata";
-    video.muted = true;
-    video.playsInline = true;
-    video.crossOrigin = "anonymous";
-
-    video.onloadedmetadata = () => {
-      video.currentTime = Math.min(2, video.duration * 0.1);
-    };
-    video.onseeked = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        const aspect = video.videoHeight / (video.videoWidth || 1);
-        canvas.width = 320;
-        canvas.height = Math.round(320 * aspect) || 180;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        setThumb(canvas.toDataURL("image/jpeg", 0.7));
-      } catch { /* cross-origin block — leave placeholder */ }
-    };
-    video.src = url;
-  }, [url]);
-
-  useEffect(() => { extract(); }, [extract]);
-
-  if (!thumb) {
-    return (
-      <div className={`bg-gray-800 flex items-center justify-center ${className ?? ""}`}>
-        <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-        </svg>
-      </div>
-    );
-  }
-  return <img src={thumb} alt="" className={`object-cover ${className ?? ""}`} />;
 }
 
 interface VideoSuggestions {
@@ -546,18 +502,17 @@ export function SessionDetailPanel({
             <div className="space-y-1.5">
               {clips.map((clip, i) => {
                 const clipVideo = clip.youtubeVideo ?? videos.find((v) => v.id === clip.youtubeVideoId);
-                const clipThumb = getVideoThumbnailUrl(clipVideo);
                 return (
                   <div
                     key={clip.id}
                     className="flex items-center gap-3 px-3 py-2 bg-gray-800 rounded-lg border border-gray-700"
                   >
                     <span className="text-xs text-gray-400 w-5 text-right flex-shrink-0">{i + 1}</span>
-                    {clipThumb ? (
-                      <img src={clipThumb} alt="" className="w-10 h-6 object-cover rounded flex-shrink-0" />
-                    ) : (
-                      <div className="w-10 h-6 bg-gray-700 rounded flex-shrink-0" />
-                    )}
+                    <VideoThumbnail
+                      video={clipVideo}
+                      className="w-10 h-6 rounded flex-shrink-0"
+                      iconSize="w-3 h-3"
+                    />
                     {clip.transitionType && clip.transitionType !== "NONE" && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-200 flex-shrink-0">
                         {clip.transitionType}
@@ -582,22 +537,11 @@ export function SessionDetailPanel({
         ) : video ? (
           /* Video card */
           <div className="flex items-center gap-4 p-4 bg-gray-900 border border-gray-700 rounded-xl">
-            {(() => {
-              const thumbUrl = getVideoThumbnailUrl(video);
-              if (thumbUrl) {
-                return <img src={thumbUrl} alt="" className="w-28 h-16 rounded-lg object-cover flex-shrink-0" />;
-              }
-              if (isUploadedVideo(video)) {
-                return <UploadedVideoThumbnail url={video.url} className="w-28 h-16 rounded-lg flex-shrink-0" />;
-              }
-              return (
-                <div className="w-28 h-16 rounded-lg bg-gray-800 flex-shrink-0 flex items-center justify-center">
-                  <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                  </svg>
-                </div>
-              );
-            })()}
+            <VideoThumbnail
+              video={video}
+              className="w-28 h-16 rounded-lg flex-shrink-0"
+              iconSize="w-6 h-6"
+            />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-white truncate">
                 {video.title || "Untitled Video"}

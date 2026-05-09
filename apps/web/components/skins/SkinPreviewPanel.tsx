@@ -436,7 +436,7 @@ function MarketingLanderSection({ viewMode = "mobile", thumbnailUrl, displayTitl
             fontWeight: "var(--token-text-heading-xl-weight)",
             color: "var(--token-color-text-primary)",
             marginBottom: "8px",
-          }}>$149</p>
+          }}>[Your price here]</p>
           <button style={{
             width: "100%",
             padding: "8px",
@@ -555,7 +555,7 @@ function MarketingLanderSection({ viewMode = "mobile", thumbnailUrl, displayTitl
             fontSize: "var(--token-text-heading-lg-size)",
             fontWeight: "var(--token-text-heading-xl-weight)",
             color: "var(--token-color-text-primary)",
-          }}>$149</p>
+          }}>[Your price here]</p>
         </div>
         <button style={{
           padding: "8px 20px",
