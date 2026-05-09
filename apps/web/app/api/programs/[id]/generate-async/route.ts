@@ -498,13 +498,30 @@ async function processGenerationJob(jobId: string, programId: string) {
     // Lesson count: aiStructured runs duration-aware guardrails (1–12 lessons,
     // tuned for the 1–3 × ~20 min video case). Otherwise honor the creator's
     // explicit choice (already clamped to 12 at the PATCH route).
+    //
+    // For segmented parents (Gemini split a long video into N topic chunks),
+    // feed the children to the heuristic so a 20-min/3-segment input lands on
+    // the multi-video path (3 lessons) instead of the single-video duration path.
+    const segmentsByParent = new Map<string, typeof program.videos>();
+    for (const v of program.videos) {
+      if (v.isSegment && v.parentVideoId) {
+        const arr = segmentsByParent.get(v.parentVideoId) ?? [];
+        arr.push(v);
+        segmentsByParent.set(v.parentVideoId, arr);
+      }
+    }
+    const lessonCountInputs = videosForPipeline.flatMap((v) => {
+      const segs = segmentsByParent.get(v.id);
+      return segs && segs.length > 0
+        ? segs.map((s) => ({ durationSeconds: s.durationSeconds }))
+        : [{ durationSeconds: v.durationSeconds }];
+    });
+
     const effectiveWeeks = program.aiStructured
-      ? computeGuardrailedLessonCount(
-          videosForPipeline.map((v) => ({ durationSeconds: v.durationSeconds })),
-        )
+      ? computeGuardrailedLessonCount(lessonCountInputs)
       : program.durationWeeks;
     console.info(
-      `[generate-async] aiStructured=${program.aiStructured} videos=${videosForPipeline.length} → effectiveWeeks=${effectiveWeeks}`,
+      `[generate-async] aiStructured=${program.aiStructured} videos=${videosForPipeline.length} segmentExpandedCount=${lessonCountInputs.length} → effectiveWeeks=${effectiveWeeks}`,
     );
 
     if (enrichedOnly.length > 0) {
