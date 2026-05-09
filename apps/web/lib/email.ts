@@ -5,6 +5,7 @@ import { WelcomeLearner } from "@/emails/WelcomeLearner";
 import { CreatorEnrollment } from "@/emails/CreatorEnrollment";
 import { MagicLinkResend } from "@/emails/MagicLinkResend";
 import { ProgramCompletion } from "@/emails/ProgramCompletion";
+import { ProgramReady } from "@/emails/ProgramReady";
 import {
   getProgramPreview,
   getCreatorLifetimeStats,
@@ -430,47 +431,39 @@ export async function sendProgramReadyEmail(
   programId: string,
 ): Promise<boolean> {
   const editUrl = absoluteUrl(`/programs/${programId}/edit`);
+  const preview = await getProgramPreview(programId);
 
-  const text = `
-Hi ${firstName}!
+  const html = await render(
+    React.createElement(ProgramReady, {
+      firstName,
+      programTitle: preview?.title ?? programTitle,
+      targetTransformation: preview?.targetTransformation ?? null,
+      lessonCount: preview?.lessonCount ?? 0,
+      totalMinutes: preview?.totalMinutes ?? null,
+      heroImageUrl: preview?.heroImageUrl ?? null,
+      editUrl,
+      brand: preview?.brand ?? { accent: "#06b6d4", accentText: "#ffffff" },
+      appUrl: absoluteUrl("/"),
+    }),
+  );
 
-Great news — your program "${programTitle}" has been generated and is ready for you to review.
+  const greetingName = firstName?.trim() ? firstName.split(" ")[0] : "there";
+  const text = [
+    `Nice work, ${greetingName}.`,
+    "",
+    `${preview?.title ?? programTitle} has been generated and is waiting for your review.`,
+    "",
+    `Open your program: ${editUrl}`,
+    "",
+    "Edit the curriculum, set your price, and publish whenever you're ready.",
+    "",
+    "Heads up — nothing is live until you hit publish.",
+  ].join("\n");
 
-Open it here: ${editUrl}
-
-You can edit the curriculum, set your price, and publish whenever you're ready.
-
-The Journeyline Team
-`.trim();
-
-  const html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; }
-    .container { max-width: 560px; margin: 0 auto; padding: 32px 20px; }
-    .button { display: inline-block; padding: 12px 24px; background-color: #06b6d4; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; }
-    .footer { margin-top: 40px; font-size: 12px; color: #9ca3af; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h2 style="color:#0f172a">Your program is ready, ${firstName}!</h2>
-    <p style="color:#374151">
-      <strong>"${programTitle}"</strong> has been generated. Open it to review your curriculum,
-      set your price, and publish to learners.
-    </p>
-    <p style="margin: 28px 0;">
-      <a href="${editUrl}" class="button">View Your Program →</a>
-    </p>
-    <p class="footer">
-      Journeyline &middot; <a href="${editUrl}" style="color:#9ca3af">${editUrl}</a>
-    </p>
-  </div>
-</body>
-</html>
-`.trim();
-
-  return sendEmail({ to, subject: `Your program "${programTitle}" is ready!`, text, html });
+  return sendEmail({
+    to,
+    subject: `Your program "${preview?.title ?? programTitle}" is ready to review`,
+    text,
+    html,
+  });
 }
