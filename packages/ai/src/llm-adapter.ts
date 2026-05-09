@@ -339,6 +339,7 @@ export async function generateProgramDraft(
     try {
       const json = extractJSON(raw);
       const parsed = JSON.parse(json);
+      clipKeyTakeaways(parsed);
       const validated = ProgramDraftSchema.parse(parsed);
 
       // Log output summary
@@ -369,6 +370,27 @@ export async function generateProgramDraft(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// Trims keyTakeaways to the schema's 200-char cap so the LLM blowing past the
+// limit doesn't fail validation. Mutates in place.
+function clipKeyTakeaways(parsed: unknown): void {
+  const weeks = (parsed as { weeks?: unknown[] })?.weeks;
+  if (!Array.isArray(weeks)) return;
+  for (const week of weeks) {
+    const sessions = (week as { sessions?: unknown[] })?.sessions;
+    if (!Array.isArray(sessions)) continue;
+    for (const session of sessions) {
+      const takeaways = (session as { keyTakeaways?: unknown[] })?.keyTakeaways;
+      if (!Array.isArray(takeaways)) continue;
+      for (let i = 0; i < takeaways.length; i++) {
+        const t = takeaways[i];
+        if (typeof t === "string" && t.length > 200) {
+          takeaways[i] = t.slice(0, 197).trimEnd() + "…";
+        }
+      }
+    }
+  }
+}
 
 function extractJSON(text: string): string {
   // Try to find JSON block in markdown code fence or raw
@@ -669,7 +691,7 @@ CRITICAL REQUIREMENTS:
 ${weekCountRule}
 ${distributionRule}
 3. Each lesson needs an outcome-oriented title (see LESSON TITLE RULES above) and a clear theme building toward the transformation
-4. Each session MUST include keyTakeaways (2-3 items) drawn directly from the transcripts
+4. Each session MUST include keyTakeaways (2-3 items, each ≤ 200 characters) drawn directly from the transcripts
 5. Each session MUST include a "clips" array with video clip segments
 6. Each session MUST include an "overlays" array (at minimum a TITLE_CARD)
 7. Each session MUST include actions: at least one DO action (imperative verb, physical activity) and EXACTLY ONE REFLECT action whose \`reflectionPrompt\` ends with "?" and is open-ended
@@ -881,7 +903,7 @@ ${hasDocs ? `${hasVideos ? "7" : "6"}. For DOCUMENT content: create READ actions
 STRUCTURE EACH LESSON WITH:
 - 1 session per lesson
 - Each session should have:
-  * keyTakeaways: 2-3 concise bullet points summarizing what learners will gain
+  * keyTakeaways: 2-3 concise bullet points (each ≤ 200 characters) summarizing what learners will gain
 ${actionInstructions.join("\n")}
 
 OUTPUT FORMAT (JSON only, no markdown):
