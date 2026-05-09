@@ -17,8 +17,14 @@ export { distributeClipsToLessons, validateAndFixClipDistribution, validateDraft
 export type { TopicClip, LessonAssignment, DistributionPlan } from "./clip-distributor";
 
 // Smart lesson-count presets for the wizard
-export { computeSmartPresets, computeLessonCountFromTopics } from "./lesson-presets";
+export { computeSmartPresets, computeGuardrailedLessonCount } from "./lesson-presets";
 export type { VideoInfo, LessonPreset } from "./lesson-presets";
 
 // AI model constants — single source of truth for model IDs
-export { DEFAULT_GEMINI_MODEL, GEMINI_API_BASE, getGeminiModel } from "./constants";
+export {
+  DEFAULT_GEMINI_TEXT_MODEL,
+  DEFAULT_GEMINI_VIDEO_MODEL,
+  GEMINI_API_BASE,
+  getGeminiTextModel,
+  getGeminiVideoModel,
+} from "./constants";

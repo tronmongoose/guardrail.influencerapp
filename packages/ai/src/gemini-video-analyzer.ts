@@ -6,12 +6,12 @@
  * the video (audio + 1fps visual sampling).
  *
  * Env: GOOGLE_AI_API_KEY (from Google AI Studio, $300 free credit)
- * Model: configurable via GEMINI_MODEL, defaults to gemini-3.1-flash
+ * Model: configurable via GEMINI_VIDEO_MODEL, defaults to DEFAULT_GEMINI_VIDEO_MODEL
  */
 
 import type { VideoAnalysisOutput } from "@guide-rail/shared";
 import { VideoAnalysisOutputSchema } from "@guide-rail/shared";
-import { GEMINI_API_BASE, getGeminiModel } from "./constants";
+import { GEMINI_API_BASE, getGeminiVideoModel } from "./constants";
 
 const GEMINI_TIMEOUT_MS = 300_000; // 5 minutes — uploaded videos need more headroom
 
@@ -269,7 +269,7 @@ export async function analyzeUploadedVideoWithGemini(
     return generateStubAnalysis(videoTitle);
   }
 
-  const model = getGeminiModel();
+  const model = getGeminiVideoModel();
   console.info(`[gemini] Uploading video to Files API: "${videoTitle}"`);
 
   let fileUri: string | null = null;
@@ -355,7 +355,7 @@ export async function analyzeVideoWithGemini(
     return generateStubAnalysis(videoTitle, durationSeconds);
   }
 
-  const model = getGeminiModel();
+  const model = getGeminiVideoModel();
   const youtubeUrl = `https://www.youtube.com/watch?v=${youtubeVideoId}`;
   const prompt = buildVideoAnalysisPrompt(videoTitle);
 

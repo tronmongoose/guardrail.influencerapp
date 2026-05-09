@@ -204,11 +204,11 @@ async function callAnthropicForSkin(prompt: string): Promise<string> {
 // ---------------------------------------------------------------------------
 
 async function callGeminiForSkin(prompt: string): Promise<string> {
-  const { GEMINI_API_BASE, getGeminiModel } = await import("@guide-rail/ai");
+  const { GEMINI_API_BASE, getGeminiTextModel } = await import("@guide-rail/ai");
   const key = process.env.GOOGLE_AI_API_KEY;
   if (!key) throw new Error("GOOGLE_AI_API_KEY not set");
 
-  const model = getGeminiModel();
+  const model = getGeminiTextModel();
   const res = await fetch(
     `${GEMINI_API_BASE}/models/${model}:generateContent?key=${key}`,
     {

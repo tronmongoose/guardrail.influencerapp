@@ -12,7 +12,7 @@
 import { ProgramDraftSchema } from "@guide-rail/shared";
 import type { ProgramDraft } from "@guide-rail/shared";
 import { generateWithStub, generateStubContentDigest } from "./llm-stub";
-import { GEMINI_API_BASE, getGeminiModel } from "./constants";
+import { GEMINI_API_BASE, getGeminiTextModel } from "./constants";
 import type { DistributionPlan } from "./clip-distributor";
 import { formatDistributionPlanForPrompt } from "./clip-distributor";
 
@@ -36,6 +36,12 @@ export interface ContentDigest {
   memorableExamples: string[];
   difficultyLevel: string;
   summary: string;
+  /**
+   * Actual content duration in seconds. Required for videos that fall through
+   * to the basic-digest path (no Gemini analysis) so the clip distributor
+   * doesn't silently truncate them to DEFAULT_VIDEO_DURATION.
+   */
+  durationSeconds?: number | null;
 }
 
 /**
@@ -138,7 +144,7 @@ async function extractSingleDigest(
   } else if (provider === "gemini") {
     const key = process.env.GOOGLE_AI_API_KEY;
     if (!key) throw new Error("GOOGLE_AI_API_KEY not set");
-    const model = getGeminiModel();
+    const model = getGeminiTextModel();
     const res = await fetchWithTimeout(
       `${GEMINI_API_BASE}/models/${model}:generateContent?key=${key}`,
       {
@@ -383,6 +389,14 @@ function buildPrompt(input: GenerateInput): string {
     (input.contentDigests ?? []).map((d) => [d.contentId, d]),
   );
 
+  // Enriched digests carry per-segment timestamped transcripts from Gemini —
+  // we thread them into the assignment plan formatter so the LLM can ground
+  // each clip's chapterTitle in the actual content of that time range.
+  const enrichedDigests = (input.contentDigests ?? []).filter(
+    (d): d is EnrichedContentDigest =>
+      "segments" in d && Array.isArray((d as EnrichedContentDigest).segments),
+  );
+
   // Flatten all content items
   const allContent: { id: string; title: string; text?: string; clusterId: number; type: "video" | "document" }[] = [];
   for (const c of input.clusters) {
@@ -583,11 +597,11 @@ REFLECT RULE:
   if (useSceneMode) {
     const hasPlan = !!input.clipDistributionPlan && input.clipDistributionPlan.lessons.length > 0;
     const planBlock = hasPlan
-      ? `\n${formatDistributionPlanForPrompt(input.clipDistributionPlan!)}\n`
+      ? `\n${formatDistributionPlanForPrompt(input.clipDistributionPlan!, enrichedDigests)}\n`
       : "";
 
     const distributionRule = hasPlan
-      ? `2. Follow the VIDEO ASSIGNMENT PLAN exactly — clip assignments are pre-computed and mandatory. Do NOT change youtubeVideoId, startSeconds, or endSeconds values. You may only add chapterTitle, chapterDescription, transitionType, and overlay details.`
+      ? `2. Follow the VIDEO ASSIGNMENT PLAN exactly — clip assignments are pre-computed and mandatory. Do NOT change youtubeVideoId, startSeconds, or endSeconds values. You may only add chapterTitle, chapterDescription, transitionType, and overlay details. EVERY chapterTitle and chapterDescription MUST describe what actually happens in that clip's timestamped transcript excerpt — never the source video's title, never an adjacent clip's content, never a guess.`
       : `2. Distribute content logically across all ${input.durationWeeks} lessons (~${contentPerWeek} source(s) per lesson)`;
 
     // When a distribution plan exists, it already pre-computed the correct lesson count.
@@ -601,13 +615,13 @@ REFLECT RULE:
     const durationInstruction = hasPlan
       ? `- Duration: EXACTLY ${planWeekCount} lessons with 1 session each, matching the pre-computed video assignment plan below.`
       : input.aiStructured
-        ? `- Duration: Build lessons of 3-8 minutes of clip content each, structured around the natural topic breaks in the source videos. Use ${input.durationWeeks} as a rough starting point but adjust freely up or down to whatever count best fits the content. NEVER produce fewer lessons than the number of source videos — each source video earns its own lesson at minimum.`
+        ? `- Duration: EXACTLY ${input.durationWeeks} lessons of 3-8 minutes of clip content each. Use the natural topic breaks in the source videos to choose lesson boundaries, but the total lesson count is fixed at ${input.durationWeeks}.`
         : `- Duration: EXACTLY ${input.durationWeeks} lessons (you MUST create ${input.durationWeeks} lessons)`;
 
     const weekCountRule = hasPlan
       ? `1. Generate EXACTLY ${planWeekCount} lessons (weekNumber 1 through ${planWeekCount}) with EXACTLY 1 session per lesson — this matches the VIDEO ASSIGNMENT PLAN. Do NOT merge lessons or create multiple sessions per lesson.`
       : input.aiStructured
-        ? `1. Generate the ideal number of lessons based on natural topic structure. Each lesson must have 3-8 minutes of clip content (the sweet spot for completion). Never pad with empty lessons, never merge separate source videos into a single lesson.`
+        ? `1. Generate EXACTLY ${input.durationWeeks} lessons (weekNumber 1 through ${input.durationWeeks}) with EXACTLY 1 session per lesson. Each lesson must have 3-8 minutes of clip content. Use natural topic breaks to choose boundaries, but the lesson count is fixed.`
         : `1. Generate EXACTLY ${input.durationWeeks} lessons (weekNumber 1 through ${input.durationWeeks})`;
 
     const taskInstruction = hasPlan
@@ -763,7 +777,7 @@ QUALITY GUIDELINES:
   // ── Classic prompt (flat actions, no clips) ──
   const hasPlanClassic = !!input.clipDistributionPlan && input.clipDistributionPlan.lessons.length > 0;
   const classicPlanBlock = hasPlanClassic
-    ? `\n${formatDistributionPlanForPrompt(input.clipDistributionPlan!)}\n`
+    ? `\n${formatDistributionPlanForPrompt(input.clipDistributionPlan!, enrichedDigests)}\n`
     : "";
 
   const actionInstructions = [];
@@ -816,13 +830,13 @@ QUALITY GUIDELINES:
   const classicDurationInstruction = hasPlanClassic
     ? `- Duration: EXACTLY ${classicPlanWeekCount} lessons with 1 session each, matching the pre-computed video assignment plan below.`
     : input.aiStructured
-      ? `- Duration: Build lessons of 3-8 minutes of meaningful content each, structured around the natural topic breaks in the source videos. Use ${input.durationWeeks} as a rough starting point but adjust freely up or down to whatever count best fits the content. NEVER produce fewer lessons than the number of source videos — each source video earns its own lesson at minimum.`
+      ? `- Duration: EXACTLY ${input.durationWeeks} lessons of 3-8 minutes of meaningful content each. Use the natural topic breaks in the source videos to choose lesson boundaries, but the total lesson count is fixed at ${input.durationWeeks}.`
       : `- Duration: EXACTLY ${input.durationWeeks} lessons (you MUST create ${input.durationWeeks} lessons)`;
 
   const classicWeekCountRule = hasPlanClassic
     ? `1. Generate EXACTLY ${classicPlanWeekCount} lessons (weekNumber 1 through ${classicPlanWeekCount}) with EXACTLY 1 session per lesson — this matches the VIDEO ASSIGNMENT PLAN. Do NOT merge lessons or create multiple sessions per lesson.`
     : input.aiStructured
-      ? `1. Generate the ideal number of lessons based on natural topic structure. Each lesson must have 3-8 minutes of content. Never pad with empty lessons, never merge separate source videos into a single lesson.`
+      ? `1. Generate EXACTLY ${input.durationWeeks} lessons (weekNumber 1 through ${input.durationWeeks}) with EXACTLY 1 session per lesson. Each lesson must have 3-8 minutes of content. Use natural topic breaks to choose boundaries, but the lesson count is fixed.`
       : `1. Generate EXACTLY ${input.durationWeeks} lessons (weekNumber 1 through ${input.durationWeeks})`;
 
   const classicTaskInstruction = hasPlanClassic
@@ -970,7 +984,7 @@ async function callGemini(input: GenerateInput): Promise<string> {
   const key = process.env.GOOGLE_AI_API_KEY;
   if (!key) throw new Error("GOOGLE_AI_API_KEY not set");
 
-  const model = getGeminiModel();
+  const model = getGeminiTextModel();
   const prompt = buildPrompt(input);
 
   const res = await fetchWithTimeout(
@@ -1076,7 +1090,7 @@ Rewrite the JSON above so every \`weeks[]\` entry has \`title\`, \`weekNumber\`,
 
   if (provider === "gemini") {
     const key = process.env.GOOGLE_AI_API_KEY!;
-    const model = getGeminiModel();
+    const model = getGeminiTextModel();
     const res = await fetchWithTimeout(
       `${GEMINI_API_BASE}/models/${model}:generateContent?key=${key}`,
       {
