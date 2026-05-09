@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { resolveTokens } from "@/lib/resolve-tokens";
 import { isMuxSigningConfigured, signMuxPlaybackId, getMux, isMuxConfigured } from "@/lib/mux";
 import { SkinThemeProvider } from "@/components/skins/SkinThemeProvider";
+import { SkinDecorationLayer } from "@/components/skins/SkinDecorationLayer";
 import { SessionViewer } from "./viewer";
 
 export default async function SessionPage({
@@ -145,6 +146,7 @@ export default async function SessionPage({
 
   return (
     <SkinThemeProvider tokens={tokens}>
+      <SkinDecorationLayer skinId={program.skinId} />
       <SessionViewer
         programId={programId}
         programTitle={program.title}

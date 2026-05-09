@@ -5,6 +5,7 @@ import { LearnerTimeline } from "./timeline";
 import { resolveTokens } from "@/lib/resolve-tokens";
 import { getTokenCSSVars } from "@/lib/skin-bridge";
 import { SkinThemeProvider } from "@/components/skins/SkinThemeProvider";
+import { SkinDecorationLayer } from "@/components/skins/SkinDecorationLayer";
 import { RequestAccessLink } from "@/components/learn/RequestAccessLink";
 
 export default async function LearnPage({ params }: { params: Promise<{ programId: string }> }) {
@@ -121,6 +122,7 @@ export default async function LearnPage({ params }: { params: Promise<{ programI
 
   return (
     <SkinThemeProvider tokens={tokens}>
+      <SkinDecorationLayer skinId={program.skinId} />
       <LearnerTimeline
         program={program}
         userId={user.id}

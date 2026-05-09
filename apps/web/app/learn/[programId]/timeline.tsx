@@ -740,12 +740,12 @@ export function LearnerTimeline({
                                       role="button"
                                       tabIndex={0}
                                       onClick={() => {
-                                        if (!watchDone) setExpandedAction(isWatchExpanded ? null : watchKey);
+                                        setExpandedAction(isWatchExpanded ? null : watchKey);
                                       }}
                                       onKeyDown={(e) => {
                                         if (e.key === "Enter" || e.key === " ") {
                                           e.preventDefault();
-                                          if (!watchDone) setExpandedAction(isWatchExpanded ? null : watchKey);
+                                          setExpandedAction(isWatchExpanded ? null : watchKey);
                                         }
                                       }}
                                       className="w-full flex items-center gap-3 py-3 px-4 text-left cursor-pointer"
@@ -778,19 +778,17 @@ export function LearnerTimeline({
                                         </span>
                                       </div>
 
-                                      {!watchDone && (
-                                        <svg
-                                          className={`w-4 h-4 transition-transform duration-200 ${isWatchExpanded ? "rotate-180" : ""}`}
-                                          style={{ color: "var(--token-color-text-secondary)" }}
-                                          fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                                        >
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                        </svg>
-                                      )}
+                                      <svg
+                                        className={`w-4 h-4 transition-transform duration-200 ${isWatchExpanded ? "rotate-180" : ""}`}
+                                        style={{ color: "var(--token-color-text-secondary)" }}
+                                        fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                      >
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                      </svg>
                                     </div>
 
                                     {/* Expanded: video player + complete button */}
-                                    {isWatchExpanded && !watchDone && (
+                                    {isWatchExpanded && (
                                       <div className="px-3 pb-4 pt-1 space-y-3 animate-fade-in">
                                         {clipVid.muxPlaybackId ? (
                                           <MuxVideoPlayer
@@ -843,18 +841,20 @@ export function LearnerTimeline({
                                           </div>
                                         )}
 
-                                        <button
-                                          onClick={handleWatchComplete}
-                                          className="w-full py-2.5 text-sm font-semibold transition border hover:opacity-80"
-                                          style={{
-                                            borderRadius: "var(--token-comp-btn-primary-radius)",
-                                            backgroundColor: "var(--token-color-accent)",
-                                            color: "var(--token-color-text-on-accent, #fff)",
-                                            borderColor: "var(--token-color-accent)",
-                                          }}
-                                        >
-                                          Mark as watched
-                                        </button>
+                                        {!watchDone && (
+                                          <button
+                                            onClick={handleWatchComplete}
+                                            className="w-full py-2.5 text-sm font-semibold transition border hover:opacity-80"
+                                            style={{
+                                              borderRadius: "var(--token-comp-btn-primary-radius)",
+                                              backgroundColor: "var(--token-color-accent)",
+                                              color: "var(--token-color-text-on-accent, #fff)",
+                                              borderColor: "var(--token-color-accent)",
+                                            }}
+                                          >
+                                            Mark as watched
+                                          </button>
+                                        )}
                                       </div>
                                     )}
                                   </div>
@@ -920,12 +920,12 @@ export function LearnerTimeline({
                               role="button"
                               tabIndex={0}
                               onClick={() => {
-                                if (!done) setExpandedAction(isExpanded ? null : action.id);
+                                setExpandedAction(isExpanded ? null : action.id);
                               }}
                               onKeyDown={(e) => {
                                 if (e.key === "Enter" || e.key === " ") {
                                   e.preventDefault();
-                                  if (!done) setExpandedAction(isExpanded ? null : action.id);
+                                  setExpandedAction(isExpanded ? null : action.id);
                                 }
                               }}
                               className="w-full flex items-center gap-3 py-3 px-4 text-left cursor-pointer"
@@ -980,19 +980,17 @@ export function LearnerTimeline({
                               )}
 
                               {/* Expand chevron */}
-                              {!done && (
-                                <svg
-                                  className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
-                                  style={{ color: "var(--token-color-text-secondary)" }}
-                                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                                >
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                </svg>
-                              )}
+                              <svg
+                                className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
+                                style={{ color: "var(--token-color-text-secondary)" }}
+                                fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                              </svg>
                             </div>
 
                             {/* Expanded detail card */}
-                            {isExpanded && !done && (
+                            {isExpanded && (
                               <div className="px-3 pb-4 pt-1 space-y-3 animate-fade-in">
                                 {/* Instructions */}
                                 {action.instructions && (
@@ -1053,37 +1051,55 @@ export function LearnerTimeline({
                                     <p className="text-xs opacity-80 italic mb-2 px-1">
                                       {action.reflectionPrompt}
                                     </p>
-                                    <textarea
-                                      value={reflections[action.id] ?? ""}
-                                      onChange={(e) =>
-                                        setReflections((r) => ({ ...r, [action.id]: e.target.value }))
-                                      }
-                                      placeholder="Write your reflection..."
-                                      rows={3}
-                                      className="w-full px-3 py-2 text-sm focus:outline-none focus:border-current focus:ring-1 focus:ring-current resize-none"
-                                      style={{
-                                        borderRadius: "var(--token-radius-md)",
-                                        backgroundColor: "var(--token-color-bg-default)",
-                                        border: "1px solid var(--token-color-border-subtle)",
-                                        color: "var(--token-color-text-primary)",
-                                      }}
-                                    />
+                                    {done ? (
+                                      action.progress[0]?.reflectionText ? (
+                                        <p
+                                          className="px-3 py-2 text-sm whitespace-pre-wrap"
+                                          style={{
+                                            borderRadius: "var(--token-radius-md)",
+                                            backgroundColor: "var(--token-color-bg-default)",
+                                            border: "1px solid var(--token-color-border-subtle)",
+                                            color: "var(--token-color-text-primary)",
+                                          }}
+                                        >
+                                          {action.progress[0].reflectionText}
+                                        </p>
+                                      ) : null
+                                    ) : (
+                                      <textarea
+                                        value={reflections[action.id] ?? ""}
+                                        onChange={(e) =>
+                                          setReflections((r) => ({ ...r, [action.id]: e.target.value }))
+                                        }
+                                        placeholder="Write your reflection..."
+                                        rows={3}
+                                        className="w-full px-3 py-2 text-sm focus:outline-none focus:border-current focus:ring-1 focus:ring-current resize-none"
+                                        style={{
+                                          borderRadius: "var(--token-radius-md)",
+                                          backgroundColor: "var(--token-color-bg-default)",
+                                          border: "1px solid var(--token-color-border-subtle)",
+                                          color: "var(--token-color-text-primary)",
+                                        }}
+                                      />
+                                    )}
                                   </div>
                                 )}
 
                                 {/* Complete action button */}
-                                <button
-                                  onClick={() => completeAction(action.id, week.weekNumber, reflections[action.id])}
-                                  disabled={isSaving || !!(action.type === "REFLECT" && action.reflectionPrompt && !reflections[action.id]?.trim())}
-                                  className="w-full py-2.5 text-sm font-semibold transition border hover:opacity-80 disabled:opacity-50"
-                                  style={{
-                                    borderRadius: "var(--token-comp-btn-primary-radius)",
-                                    ...getActionTypeBgWithBorder(action.type),
-                                    ...getActionTypeColor(action.type),
-                                  }}
-                                >
-                                  {isSaving ? "Saving..." : "Mark Complete"}
-                                </button>
+                                {!done && (
+                                  <button
+                                    onClick={() => completeAction(action.id, week.weekNumber, reflections[action.id])}
+                                    disabled={isSaving || !!(action.type === "REFLECT" && action.reflectionPrompt && !reflections[action.id]?.trim())}
+                                    className="w-full py-2.5 text-sm font-semibold transition border hover:opacity-80 disabled:opacity-50"
+                                    style={{
+                                      borderRadius: "var(--token-comp-btn-primary-radius)",
+                                      ...getActionTypeBgWithBorder(action.type),
+                                      ...getActionTypeColor(action.type),
+                                    }}
+                                  >
+                                    {isSaving ? "Saving..." : "Mark Complete"}
+                                  </button>
+                                )}
                               </div>
                             )}
                           </div>
