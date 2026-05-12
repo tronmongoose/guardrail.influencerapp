@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { parseYouTubeVideoId } from "@guide-rail/shared";
 import { extractAudioChunks } from "@/lib/audio-extract";
 import { ContentLegalNotice } from "../ContentLegalNotice";
 
@@ -41,8 +40,6 @@ function isUploadedVideo(video: Video): boolean {
     video.muxUploadId
   );
 }
-
-type ContentTab = "youtube" | "upload";
 
 interface FileExtractionState {
   filename: string;
@@ -146,11 +143,6 @@ export function StepContent({
   onArtifactsChange,
   onUploadingCountChange,
 }: StepContentProps) {
-  const [activeTab, setActiveTab] = useState<ContentTab>(
-    artifacts.length > 0 && videos.length === 0 ? "upload" : videos.length > 0 ? "youtube" : "upload"
-  );
-  const [videoUrl, setVideoUrl] = useState("");
-  const [isAddingVideo, setIsAddingVideo] = useState(false);
   const [extractionStates, setExtractionStates] = useState<FileExtractionState[]>([]);
   const [aiMessageIndex, setAiMessageIndex] = useState(0);
 
@@ -175,12 +167,6 @@ export function StepContent({
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isExtracting]);
-
-  // Batch mode state
-  const [showBatchMode, setShowBatchMode] = useState(false);
-  const [batchUrls, setBatchUrls] = useState("");
-  const [isBatchProcessing, setIsBatchProcessing] = useState(false);
-  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, errors: [] as string[] });
 
   // Segment counts — refreshed after videos change (Gemini analysis is async/fire-and-forget)
   const [segmentCounts, setSegmentCounts] = useState<Record<string, number>>({});
@@ -221,101 +207,8 @@ export function StepContent({
   const totalSegmentCount = Object.values(segmentCounts).reduce((a, b) => a + b, 0);
   const segmentedVideoCount = Object.keys(segmentCounts).length;
 
-  const handleAddVideo = async () => {
-    const videoId = parseYouTubeVideoId(videoUrl);
-    if (!videoId) {
-      alert("Invalid YouTube URL");
-      return;
-    }
-
-    // Check for duplicates
-    if (videos.some((v) => v.videoId === videoId)) {
-      alert("Video already added");
-      setVideoUrl("");
-      return;
-    }
-
-    setIsAddingVideo(true);
-    try {
-      const res = await fetch(`/api/programs/${programId}/videos`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: videoUrl }),
-      });
-
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Failed to add video");
-      }
-
-      const video = await res.json();
-      onVideosChange([...videos, video]);
-      setVideoUrl("");
-    } catch (error) {
-      alert(error instanceof Error ? error.message : "Failed to add video");
-    } finally {
-      setIsAddingVideo(false);
-    }
-  };
-
   const handleRemoveVideo = (videoId: string) => {
     onVideosChange(videos.filter((v) => v.id !== videoId));
-  };
-
-  const handleBatchAdd = async () => {
-    const urls = batchUrls
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-
-    if (urls.length === 0) {
-      alert("Please enter at least one URL");
-      return;
-    }
-
-    if (urls.length > 20) {
-      alert("Maximum 20 videos at a time");
-      return;
-    }
-
-    setIsBatchProcessing(true);
-    setBatchProgress({ current: 0, total: urls.length, errors: [] });
-
-    try {
-      const res = await fetch(`/api/programs/${programId}/videos/batch`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ urls }),
-      });
-
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Batch upload failed");
-      }
-
-      const result = await res.json();
-
-      // Add successful videos
-      if (result.success.length > 0) {
-        onVideosChange([...videos, ...result.success]);
-      }
-
-      // Report errors
-      if (result.errors.length > 0) {
-        setBatchProgress((prev) => ({
-          ...prev,
-          current: urls.length,
-          errors: result.errors.map((e: { url: string; error: string }) => `${e.url}: ${e.error}`),
-        }));
-      } else {
-        setBatchUrls("");
-        setShowBatchMode(false);
-      }
-    } catch (error) {
-      alert(error instanceof Error ? error.message : "Batch upload failed");
-    } finally {
-      setIsBatchProcessing(false);
-    }
   };
 
   function getVideoMimeType(filename: string): string {
@@ -719,162 +612,7 @@ export function StepContent({
         </p>
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-surface-border">
-        <button
-          type="button"
-          onClick={() => setActiveTab("upload")}
-          className={`
-            px-4 py-2.5 text-sm font-medium transition -mb-px
-            ${activeTab === "upload"
-              ? "text-neon-cyan border-b-2 border-neon-cyan"
-              : "text-gray-400 hover:text-gray-300"
-            }
-          `}
-        >
-          Upload Files
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("youtube")}
-          className={`
-            px-4 py-2.5 text-sm font-medium transition -mb-px
-            ${activeTab === "youtube"
-              ? "text-neon-cyan border-b-2 border-neon-cyan"
-              : "text-gray-400 hover:text-gray-300"
-            }
-          `}
-        >
-          YouTube Videos
-        </button>
-      </div>
-
-      {/* YouTube tab */}
-      {activeTab === "youtube" && (
-        <div className="space-y-4">
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-300">
-                YouTube Videos
-              </label>
-              <button
-                type="button"
-                onClick={() => setShowBatchMode(!showBatchMode)}
-                className="text-xs text-neon-cyan hover:text-neon-cyan/80 transition"
-              >
-                {showBatchMode ? "Single URL mode" : "Paste multiple URLs"}
-              </button>
-            </div>
-
-            {showBatchMode ? (
-              <div className="space-y-3">
-                <textarea
-                  value={batchUrls}
-                  onChange={(e) => setBatchUrls(e.target.value)}
-                  placeholder="Paste YouTube URLs (one per line)...&#10;https://youtube.com/watch?v=...&#10;https://youtu.be/..."
-                  rows={6}
-                  disabled={isBatchProcessing}
-                  className="w-full px-4 py-3 bg-surface-dark border border-surface-border rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:border-neon-cyan focus:ring-1 focus:ring-neon-cyan resize-none font-mono text-sm"
-                />
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500">
-                    {batchUrls.split("\n").filter((l) => l.trim()).length} URLs (max 20)
-                  </span>
-                  <button
-                    onClick={handleBatchAdd}
-                    disabled={isBatchProcessing || !batchUrls.trim()}
-                    className="px-4 py-2 bg-neon-cyan/20 border border-neon-cyan text-neon-cyan rounded-lg hover:bg-neon-cyan/30 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isBatchProcessing ? (
-                      <span className="flex items-center gap-2">
-                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                        </svg>
-                        Processing...
-                      </span>
-                    ) : (
-                      "Add All Videos"
-                    )}
-                  </button>
-                </div>
-                {batchProgress.errors.length > 0 && (
-                  <div className="p-3 bg-neon-pink/10 border border-neon-pink/30 rounded-lg">
-                    <p className="text-sm font-medium text-neon-pink mb-1">Some videos failed:</p>
-                    <ul className="text-xs text-gray-400 space-y-1">
-                      {batchProgress.errors.map((error, i) => (
-                        <li key={i} className="truncate">• {error}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={videoUrl}
-                  onChange={(e) => setVideoUrl(e.target.value)}
-                  placeholder="Paste YouTube URL..."
-                  onKeyDown={(e) => e.key === "Enter" && handleAddVideo()}
-                  className="flex-1 px-4 py-2.5 bg-surface-dark border border-surface-border rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:border-neon-cyan focus:ring-1 focus:ring-neon-cyan"
-                />
-                <button
-                  onClick={handleAddVideo}
-                  disabled={isAddingVideo || !videoUrl}
-                  className="px-4 py-2.5 bg-neon-cyan/20 border border-neon-cyan text-neon-cyan rounded-lg hover:bg-neon-cyan/30 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isAddingVideo ? "Adding..." : "Add"}
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* YouTube video list */}
-          {videos.filter((v) => !isUploadedVideo(v)).length > 0 && (
-            <div className="space-y-2">
-              {videos.filter((v) => !isUploadedVideo(v)).map((video) => (
-                <div
-                  key={video.id}
-                  className="flex items-start gap-3 p-2 bg-surface-dark rounded-lg border border-surface-border"
-                >
-                  {video.thumbnailUrl && (
-                    <img
-                      src={video.thumbnailUrl}
-                      alt=""
-                      className="w-16 h-9 object-cover rounded flex-shrink-0 mt-0.5"
-                    />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <span className="block text-sm text-white truncate">
-                      {video.title || video.videoId}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 flex-shrink-0 mt-0.5">
-                    {segmentCounts[video.id] > 0 && (
-                      <span className="text-xs px-2 py-0.5 bg-gray-700/60 text-gray-300 rounded-full">
-                        {segmentCounts[video.id]} parts
-                      </span>
-                    )}
-                    <button
-                      onClick={() => handleRemoveVideo(video.id)}
-                      className="p-1.5 text-gray-400 hover:text-neon-pink transition"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Upload tab */}
-      {activeTab === "upload" && (
-        <div className="space-y-4">
+      <div className="space-y-4">
           <p className="text-xs text-gray-500">
             Add videos from your phone, documents, or audio recordings. AI will analyze everything and build your program.
           </p>
@@ -1045,8 +783,40 @@ export function StepContent({
             </div>
           )}
 
-        </div>
-      )}
+        {/* Legacy YouTube videos — only shown if a draft already has them; can be removed */}
+        {videos.filter((v) => !isUploadedVideo(v)).length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs text-gray-500">Previously added YouTube videos</p>
+            {videos.filter((v) => !isUploadedVideo(v)).map((video) => (
+              <div
+                key={video.id}
+                className="flex items-start gap-3 p-2 bg-surface-dark rounded-lg border border-surface-border"
+              >
+                {video.thumbnailUrl && (
+                  <img
+                    src={video.thumbnailUrl}
+                    alt=""
+                    className="w-16 h-9 object-cover rounded flex-shrink-0 mt-0.5"
+                  />
+                )}
+                <div className="flex-1 min-w-0">
+                  <span className="block text-sm text-white truncate">
+                    {video.title || video.videoId}
+                  </span>
+                </div>
+                <button
+                  onClick={() => handleRemoveVideo(video.id)}
+                  className="p-1.5 text-gray-400 hover:text-neon-pink transition flex-shrink-0 mt-0.5"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Legal notice */}
       <ContentLegalNotice />
