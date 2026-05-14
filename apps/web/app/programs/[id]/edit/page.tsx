@@ -158,6 +158,8 @@ export default function ProgramEditPage() {
   const [hoveredSkinId, setHoveredSkinId] = useState<string | null>(null);
 
   const [generating, setGenerating] = useState(false);
+  const [showRegenModal, setShowRegenModal] = useState(false);
+  const [regenInstructions, setRegenInstructions] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
   const [publishErrors, setPublishErrors] = useState<{ field: string; message: string }[] | null>(null);
@@ -414,11 +416,15 @@ export default function ProgramEditPage() {
     }
   }
 
-  async function generateStructure() {
+  async function generateStructure(instructions?: string) {
     setGenerating(true);
     setLastGenError(null);
     try {
-      const res = await fetch(`/api/programs/${id}/generate-async`, { method: "POST" });
+      const res = await fetch(`/api/programs/${id}/generate-async`, {
+        method: "POST",
+        headers: instructions ? { "Content-Type": "application/json" } : undefined,
+        body: instructions ? JSON.stringify({ instructions }) : undefined,
+      });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Generation failed");
@@ -1182,7 +1188,7 @@ export default function ProgramEditPage() {
                   : "Let AI analyze your content and create a structured program."}
               </p>
               <button
-                onClick={generateStructure}
+                onClick={() => generateStructure()}
                 disabled={generating}
                 className="px-8 py-3 rounded-xl bg-pink-500 text-white font-semibold hover:bg-pink-600 transition disabled:opacity-50 flex items-center gap-2 mx-auto"
               >
@@ -1209,6 +1215,8 @@ export default function ProgramEditPage() {
               onUpdate={load}
               pacingMode={program.pacingMode}
               programTransitionMode={program.transitionMode ?? "NONE"}
+              onRegenerate={program.videos.length > 0 ? () => setShowRegenModal(true) : undefined}
+              regenerating={generating || asyncGenerating}
             />
           )}
         </main>
@@ -1324,38 +1332,10 @@ export default function ProgramEditPage() {
               )}
             </div>
 
-            <div className="flex items-center justify-between pt-2 border-t border-gray-800">
-              {program.videos.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (program.weeks.length > 0) {
-                      if (!confirm("This will replace your current structure. Continue?")) return;
-                    }
-                    generateStructure();
-                    setActiveTab("curriculum");
-                  }}
-                  disabled={generating}
-                  className="flex items-center gap-2 text-sm px-4 py-2 rounded-lg font-medium bg-pink-900/20 text-pink-400 border border-pink-800 hover:bg-pink-900/40 transition disabled:opacity-50"
-                >
-                  {generating ? (
-                    <>
-                      <Spinner size="sm" />
-                      Generating...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                      </svg>
-                      {program.weeks.length > 0 ? "Regenerate Program" : "Generate with AI"}
-                    </>
-                  )}
-                </button>
-              )}
+            <div className="flex items-center justify-end pt-2 border-t border-gray-800">
               <button
                 type="submit"
-                className="ml-auto px-5 py-2 bg-gradient-to-r from-teal-500 to-pink-500 text-gray-900 font-semibold rounded-lg hover:opacity-90 transition text-sm"
+                className="px-5 py-2 bg-gradient-to-r from-teal-500 to-pink-500 text-gray-900 font-semibold rounded-lg hover:opacity-90 transition text-sm"
               >
                 Save Changes
               </button>
@@ -1857,6 +1837,85 @@ export default function ProgramEditPage() {
           </div>
         )
       )}
+
+    {showRegenModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 max-w-lg w-full">
+          <div className="flex items-start gap-3 mb-4">
+            <div className="w-10 h-10 rounded-full bg-pink-900/30 border border-pink-700/50 flex items-center justify-center flex-shrink-0">
+              <svg className="w-5 h-5 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-white">Regenerate program</h2>
+              <p className="text-sm text-gray-400 mt-1">
+                Tell the AI what to change. Leave blank to regenerate from scratch.
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-red-950/40 border border-red-900/60 rounded-lg p-3 mb-4">
+            <p className="text-xs text-red-300">
+              <strong className="font-semibold">Heads up:</strong> this replaces your entire curriculum.
+              Any edits you&apos;ve made to lessons, sessions, or actions will be lost.
+            </p>
+          </div>
+
+          <label className="block">
+            <span className="block text-xs font-medium text-gray-300 mb-1.5">
+              Instructions <span className="text-gray-500 font-normal">(optional)</span>
+            </span>
+            <textarea
+              value={regenInstructions}
+              onChange={(e) => setRegenInstructions(e.target.value)}
+              rows={5}
+              maxLength={2000}
+              placeholder={'e.g. "Make 4 lessons instead of 2" or "Move the strength video before the cardio one"'}
+              className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-pink-500 placeholder:text-gray-600 resize-none"
+            />
+            <span className="block text-[10px] text-gray-600 mt-1 text-right">
+              {regenInstructions.length} / 2000
+            </span>
+          </label>
+
+          <div className="flex gap-3 mt-5">
+            <button
+              type="button"
+              onClick={() => {
+                setShowRegenModal(false);
+                setRegenInstructions("");
+              }}
+              disabled={generating}
+              className="flex-1 px-4 py-2 text-sm font-medium text-gray-300 bg-gray-800 border border-gray-700 rounded-lg hover:bg-gray-700 transition disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                const trimmed = regenInstructions.trim();
+                setShowRegenModal(false);
+                setActiveTab("curriculum");
+                await generateStructure(trimmed.length > 0 ? trimmed : undefined);
+                setRegenInstructions("");
+              }}
+              disabled={generating}
+              className="flex-1 px-4 py-2 text-sm font-semibold text-white bg-pink-600 rounded-lg hover:bg-pink-500 transition disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {generating ? (
+                <>
+                  <Spinner size="sm" />
+                  Starting…
+                </>
+              ) : (
+                "Regenerate"
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
 
     </div>
     </>

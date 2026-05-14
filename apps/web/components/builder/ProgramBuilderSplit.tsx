@@ -12,6 +12,8 @@ interface ProgramBuilderSplitProps {
   onUpdate: () => void;
   pacingMode: "DRIP_BY_WEEK" | "UNLOCK_ON_COMPLETE";
   programTransitionMode?: "NONE" | "SIMPLE" | "BRANDED";
+  onRegenerate?: () => void;
+  regenerating?: boolean;
 }
 
 export function ProgramBuilderSplit({
@@ -21,6 +23,8 @@ export function ProgramBuilderSplit({
   onUpdate,
   pacingMode,
   programTransitionMode = "NONE",
+  onRegenerate,
+  regenerating = false,
 }: ProgramBuilderSplitProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -72,6 +76,22 @@ export function ProgramBuilderSplit({
     }
   };
 
+  const regenerateButton = onRegenerate ? (
+    <div className="px-3 py-2 border-b border-gray-800 bg-gray-950">
+      <button
+        type="button"
+        onClick={onRegenerate}
+        disabled={regenerating}
+        className="w-full flex items-center justify-center gap-2 text-xs px-3 py-2 rounded-lg font-medium bg-pink-900/20 text-pink-400 border border-pink-800 hover:bg-pink-900/40 transition disabled:opacity-50"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+        {regenerating ? "Regenerating…" : "Regenerate with AI"}
+      </button>
+    </div>
+  ) : null;
+
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] rounded-xl overflow-hidden border border-gray-800">
       {/* Mobile: Program Structure breadcrumb bar */}
@@ -119,37 +139,43 @@ export function ProgramBuilderSplit({
             onClick={() => setSidebarOpen(false)}
           />
           <div
-            className="absolute left-0 top-0 bottom-0 w-80 shadow-xl"
+            className="absolute left-0 top-0 bottom-0 w-80 shadow-xl flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <TreeNavigation
-              programId={programId}
-              weeks={weeks}
-              videos={videos}
-              selectedSessionId={selectedSessionId}
-              onSelectSession={(id) => {
-                setSelectedSessionId(id);
-                setSidebarOpen(false);
-              }}
-              onUpdate={handleUpdate}
-              pacingMode={pacingMode}
-            />
+            {regenerateButton}
+            <div className="flex-1 min-h-0">
+              <TreeNavigation
+                programId={programId}
+                weeks={weeks}
+                videos={videos}
+                selectedSessionId={selectedSessionId}
+                onSelectSession={(id) => {
+                  setSelectedSessionId(id);
+                  setSidebarOpen(false);
+                }}
+                onUpdate={handleUpdate}
+                pacingMode={pacingMode}
+              />
+            </div>
           </div>
         </div>
       )}
 
       <div className="flex flex-1 min-h-0">
         {/* Left panel - Tree Navigation (desktop only) */}
-        <div className="hidden md:block w-80 flex-shrink-0">
-          <TreeNavigation
-            programId={programId}
-            weeks={weeks}
-            videos={videos}
-            selectedSessionId={selectedSessionId}
-            onSelectSession={setSelectedSessionId}
-            onUpdate={handleUpdate}
-            pacingMode={pacingMode}
-          />
+        <div className="hidden md:flex md:flex-col w-80 flex-shrink-0">
+          {regenerateButton}
+          <div className="flex-1 min-h-0">
+            <TreeNavigation
+              programId={programId}
+              weeks={weeks}
+              videos={videos}
+              selectedSessionId={selectedSessionId}
+              onSelectSession={setSelectedSessionId}
+              onUpdate={handleUpdate}
+              pacingMode={pacingMode}
+            />
+          </div>
         </div>
 
         {/* Right panel - Session Detail */}
