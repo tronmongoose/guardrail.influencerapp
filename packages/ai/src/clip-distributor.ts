@@ -392,9 +392,15 @@ export function distributeClipsToLessons(
     );
     let safetyIterations = totalLessons * 4; // guard against pathological inputs
     while (clips.length < totalLessons && safetyIterations-- > 0) {
-      // Pick the longest clip that can still be halved above MIN_CLIP_DURATION
-      clips.sort((a, b) => b.durationSeconds - a.durationSeconds);
-      const source = clips[0];
+      // Pick the longest clip that can still be halved above MIN_CLIP_DURATION.
+      // Use a linear argmax instead of an in-place sort so the surrounding
+      // clip order (collected in source-video / source-time sequence) is
+      // preserved for downstream bin-packing.
+      let longestIdx = 0;
+      for (let k = 1; k < clips.length; k++) {
+        if (clips[k].durationSeconds > clips[longestIdx].durationSeconds) longestIdx = k;
+      }
+      const source = clips[longestIdx];
       if (source.durationSeconds < MIN_CLIP_DURATION_SECONDS * 2) {
         // No clip is long enough to split further — stop filling.
         // Downstream code will handle short lesson counts gracefully.
@@ -438,8 +444,13 @@ export function distributeClipsToLessons(
         startSeconds: mid,
         durationSeconds: secondDur,
       };
-      clips[0] = firstHalf;
-      clips.push(secondHalf);
+      // Insert the second half immediately after the first half so split
+      // siblings stay adjacent in the queue. Pushing to the end (the old
+      // behavior) let the bin-packer place the halves into non-contiguous
+      // lessons, breaking within-video source order on programs that
+      // needed split-to-fill.
+      clips[longestIdx] = firstHalf;
+      clips.splice(longestIdx + 1, 0, secondHalf);
     }
   }
 

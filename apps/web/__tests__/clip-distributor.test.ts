@@ -442,6 +442,61 @@ describe("distributeClipsToLessons — time-based fallback for non-distinct topi
     expect(boundaries).not.toContain(1000);
   });
 
+  it("preserves source order when split-to-fill creates clip halves for under-clipped programs", () => {
+    // Repro of workout-like-a-champ live-DB scenario: 5 clips for 6 lessons,
+    // so the distributor splits the longest clip into halves. The old code
+    // sorted the clips array by duration and pushed the new half to the
+    // end, separating the two halves and letting the bin-packer drop them
+    // into non-contiguous lessons (observed L1=part1, L6=part2). Both
+    // halves must land in monotonically non-decreasing lessons.
+    const enriched = [
+      makeEnrichedDigest(
+        "v_chest",
+        "Chest and Triceps",
+        [
+          { label: "Chest", startSeconds: 0, endSeconds: 1024 },
+          { label: "Triceps", startSeconds: 1024, endSeconds: 1702 },
+        ],
+        1702,
+      ),
+      makeEnrichedDigest(
+        "v_mob",
+        "Mobility",
+        [{ label: "Mobility Routine", startSeconds: 0, endSeconds: 501 }],
+        501,
+      ),
+      makeEnrichedDigest(
+        "v_abs",
+        "Abs",
+        [{ label: "Standing Abs", startSeconds: 0, endSeconds: 451 }],
+        451,
+      ),
+      makeEnrichedDigest(
+        "v_legs",
+        "Legs",
+        [{ label: "Leg Workout", startSeconds: 0, endSeconds: 290 }],
+        290,
+      ),
+    ];
+    const plan = distributeClipsToLessons(enriched, [], 6);
+
+    // Find clips from v_chest and check monotonic lesson placement
+    const chestPlacements: { start: number; lessonIdx: number }[] = [];
+    for (const lesson of plan.lessons) {
+      for (const clip of lesson.clips) {
+        if (clip.videoId === "v_chest") {
+          chestPlacements.push({ start: clip.startSeconds, lessonIdx: lesson.lessonIndex });
+        }
+      }
+    }
+    chestPlacements.sort((a, b) => a.start - b.start);
+    for (let k = 1; k < chestPlacements.length; k++) {
+      expect(chestPlacements[k].lessonIdx).toBeGreaterThanOrEqual(
+        chestPlacements[k - 1].lessonIdx,
+      );
+    }
+  });
+
   it("preserves within-video source order when distributing across lessons", () => {
     // Repro of workout-like-a-champ scramble: a source video with 4 clips
     // (Press → Cable Fly → Chest Fly → Crossover) and one sibling video had
