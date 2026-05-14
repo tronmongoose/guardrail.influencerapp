@@ -19,10 +19,21 @@ export const maxDuration = 800; // Vercel Pro (Fluid Compute): keep function ali
  * Returns immediately with the job ID for polling.
  */
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: programId } = await params;
+
+  let instructions: string | undefined;
+  try {
+    const body = (await req.json().catch(() => null)) as { instructions?: unknown } | null;
+    if (body && typeof body.instructions === "string") {
+      const trimmed = body.instructions.trim();
+      if (trimmed.length > 0) instructions = trimmed.slice(0, 2000);
+    }
+  } catch {
+    // empty / non-JSON body is fine — instructions are optional
+  }
 
   const user = await getOrCreateUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -105,7 +116,7 @@ export async function POST(
   // after() tells Vercel to keep the function alive for background work (up to maxDuration).
   after(async () => {
     try {
-      await processGenerationJob(job.id, programId);
+      await processGenerationJob(job.id, programId, instructions);
     } catch (err) {
       console.error("[generate-async] Background job failed:", err);
     }
@@ -125,9 +136,38 @@ export async function POST(
  * Updates job status/progress as it runs.
  * Processes both YouTube videos and uploaded artifacts (PDFs, DOCXs, etc.).
  */
-const JOB_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes (within Vercel Pro 800s maxDuration with buffer)
+const JOB_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes (within Vercel Pro 800s maxDuration with buffer). Parallel Gemini analysis (below) keeps multi-video programs comfortably within this budget — a 15-video program completes in ~3 min on cached renditions.
 
-async function processGenerationJob(jobId: string, programId: string) {
+/** Max concurrent Gemini analysis tasks. Each task waits on Mux MP4 rendition then calls Gemini Files API. Bumping this from 1 (serial) to 4 cuts wall-clock by ~4x on multi-video programs. Gemini's per-key RPM limits handle 4-way comfortably for our workload. */
+const ANALYSIS_CONCURRENCY = 4;
+
+/**
+ * Bounded-concurrency runner. Runs at most `limit` tasks in parallel, pulling
+ * from the items queue as each worker finishes. Used to parallelize Gemini
+ * video analysis without blowing up rate limits or memory.
+ */
+async function runWithBoundedConcurrency<T>(
+  items: T[],
+  limit: number,
+  task: (item: T, idx: number) => Promise<void>,
+): Promise<void> {
+  if (items.length === 0) return;
+  let next = 0;
+  async function worker() {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      await task(items[i], i);
+    }
+  }
+  const workers = Array.from(
+    { length: Math.min(limit, items.length) },
+    () => worker(),
+  );
+  await Promise.all(workers);
+}
+
+async function processGenerationJob(jobId: string, programId: string, instructions?: string) {
   const timer = createTimer();
   const deadline = Date.now() + JOB_TIMEOUT_MS;
 
@@ -256,9 +296,15 @@ async function processGenerationJob(jobId: string, programId: string) {
       const MUX_RENDITION_POLL_MS = 5_000;
       const MUX_RENDITION_MAX_MS = 5 * 60_000; // 5 min max wait for renditions (Mux MP4 transcode for 20-min videos commonly takes 2-4 min)
 
-      for (let i = 0; i < videosNeedingAnalysis.length; i++) {
+      // Run video analyses in parallel (bounded by ANALYSIS_CONCURRENCY). Each
+      // task is independent: separate Mux MP4 poll, separate Gemini call,
+      // separate VideoAnalysis upsert. The in-memory mutation of `v.analysis`
+      // is write-only per object and the objects are distinct, so no race.
+      // Progress counts completions rather than indices so the bar advances
+      // smoothly even when tasks finish out of order.
+      let completedAnalyses = 0;
+      await runWithBoundedConcurrency(videosNeedingAnalysis, ANALYSIS_CONCURRENCY, async (v) => {
         checkDeadline("fetching_transcripts");
-        const v = videosNeedingAnalysis[i];
         const mp4Url = `https://stream.mux.com/${v.muxPlaybackId}/capped-1080p.mp4`;
 
         // Wait for the MP4 static rendition to be accessible before sending to Gemini
@@ -283,7 +329,8 @@ async function processGenerationJob(jobId: string, programId: string) {
 
         if (!mp4Ready) {
           console.warn(`[generate-async] [GEMINI] ✗ MP4 not available after ${MUX_RENDITION_MAX_MS / 1000}s for "${v.title}" — skipping`);
-          continue;
+          completedAnalyses++;
+          return;
         }
 
         console.info(`[generate-async] [GEMINI] Analyzing "${v.title}" via ${mp4Url}`);
@@ -344,12 +391,13 @@ async function processGenerationJob(jobId: string, programId: string) {
           console.error(`[generate-async] [GEMINI] ✗ "${v.title}" failed:`, err instanceof Error ? err.message : err);
         }
 
-        const analysisProgress = 5 + Math.round(((i + 1) / videosNeedingAnalysis.length) * 20);
+        completedAnalyses++;
+        const analysisProgress = 5 + Math.round((completedAnalyses / videosNeedingAnalysis.length) * 20);
         await prisma.generationJob.update({
           where: { id: jobId },
           data: { progress: analysisProgress },
         });
-      }
+      });
     } else if (videosNeedingAnalysis.length > 0) {
       console.warn(`[generate-async] ${videosNeedingAnalysis.length} video(s) need analysis but GOOGLE_AI_API_KEY is not set`);
     }
@@ -628,6 +676,13 @@ async function processGenerationJob(jobId: string, programId: string) {
     });
 
     const llmTimer = createTimer();
+    const combinedVibePrompt = [
+      program.vibePrompt,
+      instructions ? `IMPORTANT REGENERATION INSTRUCTIONS FROM CREATOR: ${instructions}` : null,
+    ]
+      .filter((s): s is string => Boolean(s))
+      .join("\n\n") || undefined;
+
     const draft = await generateProgramDraft({
       programId,
       programTitle: program.title,
@@ -635,7 +690,7 @@ async function processGenerationJob(jobId: string, programId: string) {
       outcomeStatement: program.outcomeStatement ?? undefined,
       targetAudience: program.targetAudience ?? undefined,
       targetTransformation: program.targetTransformation ?? undefined,
-      vibePrompt: program.vibePrompt ?? undefined,
+      vibePrompt: combinedVibePrompt,
       durationWeeks: effectiveWeeks,
       clusters: clusterData,
       contentDigests: enrichedDigests,

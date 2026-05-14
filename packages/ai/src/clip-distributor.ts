@@ -85,14 +85,26 @@ function timeBasedSlices(
   duration: number,
   topics: { label: string; startSeconds: number; endSeconds: number }[],
   count: number,
+  segments?: { startSeconds: number; endSeconds: number }[],
 ): { startSeconds: number; endSeconds: number; label: string }[] {
   if (count <= 1 || duration <= 0) {
     return [{ startSeconds: 0, endSeconds: duration, label: topics[0]?.label ?? "Part 1" }];
   }
 
-  const boundaries = topics
-    .map((t) => t.endSeconds)
-    .filter((e) => e > 0 && e < duration);
+  // Snap candidates: topic endSeconds + segment endSeconds, deduped. When a
+  // long video has only one broad topic (no thematic distinctness) the topic
+  // boundaries alone yield no candidates and we'd cut at arithmetic midpoints,
+  // straddling — or worse, splitting — Gemini segments. Including segments
+  // gives the snapper finer-grained candidates so cuts land at real
+  // exercise/topic transitions instead of mid-segment.
+  const candidateSet = new Set<number>();
+  for (const t of topics) {
+    if (t.endSeconds > 0 && t.endSeconds < duration) candidateSet.add(t.endSeconds);
+  }
+  for (const s of segments ?? []) {
+    if (s.endSeconds > 0 && s.endSeconds < duration) candidateSet.add(s.endSeconds);
+  }
+  const boundaries = Array.from(candidateSet);
 
   const idealBreaks: number[] = [];
   for (let i = 1; i < count; i++) {
@@ -159,6 +171,38 @@ function topicsAreDistinct(a: string, b: string): boolean {
   const union = ga.size + gb.size - intersection;
   const jaccard = union === 0 ? 0 : intersection / union;
   return jaccard < 0.3;
+}
+
+/**
+ * When the emergency-fill loop needs to halve a clip, prefer cutting at a
+ * Gemini segment boundary near the arithmetic midpoint instead of bisecting
+ * blindly. Only returns a snap point that leaves both halves at least
+ * `minHalfDuration` seconds long; otherwise returns null so the caller falls
+ * back to the arithmetic mid. Mirrors the snap behaviour of `timeBasedSlices`.
+ */
+function findSegmentSnapForSplit(
+  arithmeticMid: number,
+  clipStart: number,
+  clipEnd: number,
+  segments: { startSeconds: number; endSeconds: number }[] | undefined,
+  windowSec: number,
+  minHalfDuration: number,
+): number | null {
+  if (!segments || segments.length === 0) return null;
+  let best: number | null = null;
+  let bestDist = Infinity;
+  for (const seg of segments) {
+    const candidate = seg.endSeconds;
+    if (candidate <= clipStart || candidate >= clipEnd) continue;
+    if (candidate - clipStart < minHalfDuration) continue;
+    if (clipEnd - candidate < minHalfDuration) continue;
+    const dist = Math.abs(candidate - arithmeticMid);
+    if (dist <= windowSec && dist < bestDist) {
+      best = candidate;
+      bestDist = dist;
+    }
+  }
+  return best;
 }
 
 // ---------------------------------------------------------------------------
@@ -228,7 +272,7 @@ function collectClips(
     if (longEnoughToSplit) {
       const chunkCount = chooseChunkCount(fullDuration, topics.length);
       if (chunkCount > 1) {
-        const slices = timeBasedSlices(fullDuration, topics, chunkCount);
+        const slices = timeBasedSlices(fullDuration, topics, chunkCount, digest.segments);
         for (const slice of slices) {
           const dur = slice.endSeconds - slice.startSeconds;
           if (dur < MIN_CLIP_DURATION_SECONDS) continue;
@@ -340,7 +384,17 @@ export function distributeClipsToLessons(
         );
         break;
       }
-      const mid = source.startSeconds + Math.floor(source.durationSeconds / 2);
+      const arithmeticMid = source.startSeconds + Math.floor(source.durationSeconds / 2);
+      const sourceDigest = enrichedDigests.find((d) => d.contentId === source.videoId);
+      const snapped = findSegmentSnapForSplit(
+        arithmeticMid,
+        source.startSeconds,
+        source.endSeconds,
+        sourceDigest?.segments as { startSeconds: number; endSeconds: number }[] | undefined,
+        SNAP_WINDOW_SECONDS,
+        MIN_CLIP_DURATION_SECONDS,
+      );
+      const mid = snapped !== null ? snapped : arithmeticMid;
       const firstDur = mid - source.startSeconds;
       const secondDur = source.endSeconds - mid;
       // Refuse to emit a zero-duration part. If either half collapses, leave
@@ -605,35 +659,64 @@ function formatTime(s: number): string {
 }
 
 /**
- * Per-clip transcript excerpt rendering — keeps prompt budget reasonable while
- * giving the LLM a concrete time-aligned reference for chapterTitle generation.
+ * Per-clip transcript excerpt rendering — exposes the underlying Gemini
+ * segment structure so the LLM can ground its chapterTitle/summary in *all*
+ * sub-topics inside a clip, not just whatever happened to appear in the first
+ * 600 characters of a flat concatenation. Each overlapping segment is
+ * returned separately so the prompt-builder can render them as a labeled
+ * list, making sub-topic count and timestamps explicit to the model.
  */
-const TRANSCRIPT_EXCERPT_MAX_CHARS = 600;
+const TRANSCRIPT_TOTAL_BUDGET_CHARS = 1800;
+const TRANSCRIPT_PER_SEGMENT_MAX_CHARS = 400;
+const TRANSCRIPT_PER_SEGMENT_MIN_CHARS = 80;
 
-function buildTranscriptExcerpt(
+interface TranscriptSegmentExcerpt {
+  startSeconds: number;
+  endSeconds: number;
+  text: string;
+}
+
+function buildTranscriptExcerpts(
   videoId: string,
   clipStart: number,
   clipEnd: number,
   enrichedDigests: EnrichedContentDigest[] | undefined,
-): string | null {
-  if (!enrichedDigests || enrichedDigests.length === 0) return null;
+): TranscriptSegmentExcerpt[] {
+  if (!enrichedDigests || enrichedDigests.length === 0) return [];
   const digest = enrichedDigests.find((d) => d.contentId === videoId);
-  if (!digest || !digest.segments || digest.segments.length === 0) return null;
+  if (!digest || !digest.segments || digest.segments.length === 0) return [];
   // A segment overlaps the clip if any part of its [start, end] intersects
   // [clipStart, clipEnd]. Strict containment is too restrictive — Gemini's
   // segment boundaries rarely line up exactly with our chunk cuts.
   const overlapping = digest.segments.filter(
     (s) => s.endSeconds > clipStart && s.startSeconds < clipEnd,
   );
-  if (overlapping.length === 0) return null;
-  const joined = overlapping
-    .map((s) => s.text)
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!joined) return null;
-  if (joined.length <= TRANSCRIPT_EXCERPT_MAX_CHARS) return joined;
-  return joined.slice(0, TRANSCRIPT_EXCERPT_MAX_CHARS - 1).trimEnd() + "…";
+  if (overlapping.length === 0) return [];
+
+  // Distribute the total budget evenly across segments, clamped per-segment.
+  const perSegment = Math.min(
+    TRANSCRIPT_PER_SEGMENT_MAX_CHARS,
+    Math.max(
+      TRANSCRIPT_PER_SEGMENT_MIN_CHARS,
+      Math.floor(TRANSCRIPT_TOTAL_BUDGET_CHARS / overlapping.length),
+    ),
+  );
+
+  const result: TranscriptSegmentExcerpt[] = [];
+  for (const seg of overlapping) {
+    const cleaned = (seg.text ?? "").replace(/\s+/g, " ").trim();
+    if (!cleaned) continue;
+    const snippet =
+      cleaned.length <= perSegment
+        ? cleaned
+        : cleaned.slice(0, perSegment - 1).trimEnd() + "…";
+    result.push({
+      startSeconds: seg.startSeconds,
+      endSeconds: seg.endSeconds,
+      text: snippet,
+    });
+  }
+  return result;
 }
 
 /**
@@ -653,7 +736,7 @@ export function formatDistributionPlanForPrompt(
     `The following clip assignments have been pre-computed. You MUST follow them exactly.`,
     `Do NOT reassign, omit, or add video clips beyond this plan.`,
     `Your job is to write great titles, summaries, takeaways, DO/REFLECT actions, and overlay details for each lesson — but the video clips are fixed.`,
-    `For each clip, base its chapterTitle and chapterDescription on the timestamped transcript excerpt below it (when present) — never on the source video title or on adjacent clips.`,
+    `For each clip, base its chapterTitle and chapterDescription on the timestamped transcript excerpts below it. When a clip lists multiple segments, your chapterTitle and summary MUST reflect every segment — do not name only the first one or two. Never ground titles in the source video title or in adjacent clips.`,
     ``,
   ];
 
@@ -665,16 +748,25 @@ export function formatDistributionPlanForPrompt(
       lines.push(
         `  Clip ${i + 1}: Video "${clip.videoTitle}" (ID: ${clip.videoId}) @ ${formatTime(clip.startSeconds)}-${formatTime(clip.endSeconds)} — "${clip.topicLabel}"`,
       );
-      const excerpt = buildTranscriptExcerpt(
+      const excerpts = buildTranscriptExcerpts(
         clip.videoId,
         clip.startSeconds,
         clip.endSeconds,
         enrichedDigests,
       );
-      if (excerpt) {
+      if (excerpts.length === 1) {
         lines.push(
-          `    Transcript (${formatTime(clip.startSeconds)}-${formatTime(clip.endSeconds)}): "${excerpt}"`,
+          `    Transcript (${formatTime(clip.startSeconds)}-${formatTime(clip.endSeconds)}): "${excerpts[0].text}"`,
         );
+      } else if (excerpts.length > 1) {
+        lines.push(
+          `    Transcript (${formatTime(clip.startSeconds)}-${formatTime(clip.endSeconds)}) — ${excerpts.length} segments; chapterTitle and summary MUST reflect all of them:`,
+        );
+        for (const ex of excerpts) {
+          lines.push(
+            `      [${formatTime(ex.startSeconds)}-${formatTime(ex.endSeconds)}] "${ex.text}"`,
+          );
+        }
       }
     }
 
@@ -689,6 +781,44 @@ export function formatDistributionPlanForPrompt(
 // ---------------------------------------------------------------------------
 // Post-Validation
 // ---------------------------------------------------------------------------
+
+/**
+ * Tolerance (seconds) when comparing LLM-generated clip ranges to the
+ * distributor's planned ranges. The LLM is allowed to snap to nearby segment
+ * boundaries within this window without being flagged as drift.
+ */
+const CLIP_COVERAGE_TOL_SECONDS = 15;
+
+/**
+ * Decide whether an array of LLM clips is a legitimate subdivision of a single
+ * planned clip range: clips must be ordered, non-overlapping, internally
+ * gap-free, and their union must match `[rangeStart, rangeEnd]` within
+ * `tolSeconds`. Used to preserve LLM sub-clipping (the Ticket #2 win) only
+ * when it actually honours the distributor plan.
+ */
+function isValidSubdivision(
+  clips: { startSeconds: number; endSeconds: number }[],
+  rangeStart: number,
+  rangeEnd: number,
+  tolSeconds: number,
+): boolean {
+  if (clips.length === 0) return false;
+  const sorted = [...clips].sort((a, b) => a.startSeconds - b.startSeconds);
+  // Boundaries must match the plan within tolerance
+  if (Math.abs(sorted[0].startSeconds - rangeStart) > tolSeconds) return false;
+  if (
+    Math.abs(sorted[sorted.length - 1].endSeconds - rangeEnd) > tolSeconds
+  ) {
+    return false;
+  }
+  // No overlap and no internal gaps between consecutive clips
+  for (let i = 1; i < sorted.length; i++) {
+    const gap = sorted[i].startSeconds - sorted[i - 1].endSeconds;
+    if (gap < -tolSeconds) return false; // overlap
+    if (gap > tolSeconds) return false; // gap
+  }
+  return true;
+}
 
 /**
  * Validate that an LLM-generated draft follows the distribution plan.
@@ -765,6 +895,56 @@ export function validateAndFixClipDistribution(
       if (dur && clip.endSeconds > dur + 5) { // 5s tolerance
         errors.push(
           `Session ${i + 1} clip for video ${clip.youtubeVideoId} has endSeconds=${clip.endSeconds} exceeding duration=${dur}`,
+        );
+      }
+    }
+  }
+
+  // Check 6: Per-(session, planned-range) clip coverage and non-overlap.
+  // The LLM may subdivide a planned clip into multiple sub-clips along Gemini
+  // segment boundaries (Ticket #2 encourages this), but the resulting sub-clips
+  // must (a) not overlap each other, (b) leave no internal gaps, and (c) have
+  // their union match the planned range within CLIP_COVERAGE_TOL_SECONDS. This
+  // catches the post-Ticket-#2 drift classes: overlap, coverage gap, and
+  // mid-segment straddle.
+  for (let i = 0; i < draftSessions.length; i++) {
+    if (i >= plan.lessons.length) break;
+    const session = draftSessions[i];
+    const planLesson = plan.lessons[i];
+
+    for (const planClip of planLesson.clips) {
+      if (planClip.endSeconds <= planClip.startSeconds) continue;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const llmClipsForRange = ((session.clips ?? []) as any[]).filter(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (c: any) =>
+          c.youtubeVideoId === planClip.videoId &&
+          typeof c.startSeconds === "number" &&
+          typeof c.endSeconds === "number" &&
+          c.endSeconds > c.startSeconds &&
+          c.startSeconds >= planClip.startSeconds - CLIP_COVERAGE_TOL_SECONDS &&
+          c.endSeconds <= planClip.endSeconds + CLIP_COVERAGE_TOL_SECONDS,
+      );
+
+      if (
+        !isValidSubdivision(
+          llmClipsForRange,
+          planClip.startSeconds,
+          planClip.endSeconds,
+          CLIP_COVERAGE_TOL_SECONDS,
+        )
+      ) {
+        const llmDesc = llmClipsForRange.length === 0
+          ? "no LLM clips found in range"
+          : llmClipsForRange
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              .map((c: any) => `${c.startSeconds}-${c.endSeconds}`)
+              .join(", ");
+        errors.push(
+          `Session ${i + 1} clip subdivision for video ${planClip.videoId.slice(-6)} ` +
+            `(planned ${planClip.startSeconds}-${planClip.endSeconds}) ` +
+            `drifted from plan: ${llmDesc}`,
         );
       }
     }
@@ -862,32 +1042,86 @@ export function validateAndFixClipDistribution(
 
       const planLesson = plan.lessons[planLessonIdx];
 
-      // Build replacement clips from the plan. Skip any plan clip whose range
-      // collapsed to zero duration — the distributor's final pass should have
-      // already removed these, but this is a belt-and-suspenders guard so the
-      // learner viewer never sees a phantom WATCH item.
+      // Build replacement clips per planned clip. For each planned range we
+      // either (a) preserve the LLM's segment-aligned sub-clipping when it's a
+      // valid subdivision of the plan range, or (b) fall back to a single
+      // clip matching the plan exactly. This keeps the Ticket #2 wins in
+      // well-formed lessons and only resets the broken (videoId, range)
+      // groups.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const llmClipsSnapshot: any[] = (session.clips ?? []) as any[];
       const usablePlanClips = planLesson.clips.filter(
         (c) => c.endSeconds > c.startSeconds,
       );
-      session.clips = usablePlanClips.map((planClip, idx) => {
-        // Try to preserve chapterTitle/chapterDescription from existing LLM output
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const newClips: any[] = [];
+      let nextOrderIndex = 0;
+
+      for (const planClip of usablePlanClips) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const existingClip = (session.clips ?? []).find(
+        const llmClipsInRange = llmClipsSnapshot.filter(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (c: any) => c.youtubeVideoId === planClip.videoId && c.orderIndex === idx,
+          (c: any) =>
+            c.youtubeVideoId === planClip.videoId &&
+            typeof c.startSeconds === "number" &&
+            typeof c.endSeconds === "number" &&
+            c.endSeconds > c.startSeconds &&
+            c.startSeconds >= planClip.startSeconds - CLIP_COVERAGE_TOL_SECONDS &&
+            c.endSeconds <= planClip.endSeconds + CLIP_COVERAGE_TOL_SECONDS,
         );
 
-        return {
-          youtubeVideoId: planClip.videoId,
-          startSeconds: planClip.startSeconds,
-          endSeconds: planClip.endSeconds,
-          orderIndex: idx,
-          transitionType: idx === 0 ? "NONE" : "FADE",
-          transitionDurationMs: 500,
-          chapterTitle: existingClip?.chapterTitle ?? planClip.topicLabel,
-          chapterDescription: existingClip?.chapterDescription ?? planClip.subtopics?.join(", "),
-        };
-      });
+        if (
+          llmClipsInRange.length > 0 &&
+          isValidSubdivision(
+            llmClipsInRange,
+            planClip.startSeconds,
+            planClip.endSeconds,
+            CLIP_COVERAGE_TOL_SECONDS,
+          )
+        ) {
+          // Preserve the LLM's segment-aligned subdivision.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const sorted = [...llmClipsInRange].sort(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (a: any, b: any) => a.startSeconds - b.startSeconds,
+          );
+          for (const c of sorted) {
+            newClips.push({
+              youtubeVideoId: c.youtubeVideoId,
+              startSeconds: c.startSeconds,
+              endSeconds: c.endSeconds,
+              orderIndex: nextOrderIndex,
+              transitionType: nextOrderIndex === 0 ? "NONE" : "FADE",
+              transitionDurationMs: c.transitionDurationMs ?? 500,
+              chapterTitle: c.chapterTitle ?? planClip.topicLabel,
+              chapterDescription:
+                c.chapterDescription ?? planClip.subtopics?.join(", "),
+            });
+            nextOrderIndex++;
+          }
+        } else {
+          // Fall back to a single clip matching the plan exactly.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const existingClip = llmClipsSnapshot.find(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (c: any) => c.youtubeVideoId === planClip.videoId,
+          );
+          newClips.push({
+            youtubeVideoId: planClip.videoId,
+            startSeconds: planClip.startSeconds,
+            endSeconds: planClip.endSeconds,
+            orderIndex: nextOrderIndex,
+            transitionType: nextOrderIndex === 0 ? "NONE" : "FADE",
+            transitionDurationMs: 500,
+            chapterTitle: existingClip?.chapterTitle ?? planClip.topicLabel,
+            chapterDescription:
+              existingClip?.chapterDescription ?? planClip.subtopics?.join(", "),
+          });
+          nextOrderIndex++;
+        }
+      }
+
+      session.clips = newClips;
 
       // Ensure overlays exist (at minimum a TITLE_CARD)
       if (!session.overlays || session.overlays.length === 0) {

@@ -19,7 +19,7 @@ import { formatDistributionPlanForPrompt } from "./clip-distributor";
 export type LLMProvider = "anthropic" | "openai" | "gemini" | "stub";
 
 const LLM_TIMEOUT_MS = 60_000; // 60s for content extraction
-const GENERATION_TIMEOUT_MS = 120_000; // 120s for curriculum generation
+const GENERATION_TIMEOUT_MS = 600_000; // 10min for curriculum generation
 
 function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
@@ -569,6 +569,22 @@ Worked example (beat production, upload order was wrong):
   arrangement shapes the full track; mixing finalizes. This pattern
   generalizes: creation before shaping before finishing.)
 
+WITHIN-VIDEO ORDER RULE — preserve source sequence (non-negotiable):
+When multiple lessons draw clips from the SAME source video, those lessons
+MUST appear in the program in the same order the clips appear in the
+source video (earlier startSeconds → earlier lesson number). A creator who
+filmed Press → Cable Fly → Chest Fly → Decline Crossover within one video
+expects learners to experience those exercises in that order. Do not
+scatter clips from one source video across non-adjacent lessons in
+arbitrary order, even when the workflow-sequencing rule above might
+suggest reshuffling. The creator's intra-video ordering is their
+pedagogical signal.
+
+This rule constrains the workflow-sequencing rule: workflow sequencing
+applies BETWEEN source videos, while within-video order applies WITHIN a
+source video. When in conflict (rare), source order wins for clips from
+the same video.
+
 LESSON TOPIC COHERENCE RULE:
 - Each lesson must have a single governing concept. When distributing clips
   across lessons, only include clips whose content directly supports that
@@ -623,7 +639,7 @@ REFLECT RULE:
       : "";
 
     const distributionRule = hasPlan
-      ? `2. Follow the VIDEO ASSIGNMENT PLAN exactly — clip assignments are pre-computed and mandatory. Do NOT change youtubeVideoId, startSeconds, or endSeconds values. You may only add chapterTitle, chapterDescription, transitionType, and overlay details. EVERY chapterTitle and chapterDescription MUST describe what actually happens in that clip's timestamped transcript excerpt — never the source video's title, never an adjacent clip's content, never a guess.`
+      ? `2. Follow the VIDEO ASSIGNMENT PLAN exactly — clip assignments are pre-computed and mandatory. Do NOT change youtubeVideoId, startSeconds, or endSeconds values. You may only add chapterTitle, chapterDescription, transitionType, and overlay details. EVERY chapterTitle and chapterDescription MUST describe what actually happens in that clip's timestamped transcript excerpt — never the source video's title, never an adjacent clip's content, never a guess. **NEVER UNDERSELL**: if the clip range spans multiple distinct exercises, topics, sub-topics, or segments in the source, the chapterTitle MUST name them all (or summarize them collectively — e.g., "Press, Cable Fly, Chest Fly, and Decline Crossover" or "All four chest exercises"). It is wrong to title a multi-topic clip after only its first topic. The chapterDescription must enumerate every distinct activity inside the clip's time range — anything visible in the transcript excerpts is in-scope and must be reflected.`
       : `2. Distribute content logically across all ${input.durationWeeks} lessons (~${contentPerWeek} source(s) per lesson)`;
 
     // When a distribution plan exists, it already pre-computed the correct lesson count.

@@ -171,12 +171,18 @@ export type CompositeSessionInput = z.infer<typeof CompositeSessionSchema>;
 
 // --- Video Analysis (Gemini-generated structured analysis) ---
 
+// Gemini frequently returns `null` for fields it couldn't infer (e.g.,
+// speakerName on a segment where no speaker is identifiable). Treating those
+// as schema violations rejects the entire analysis — catastrophic for an
+// optional, low-stakes field. Every optional field below uses `.nullish()`
+// so we accept both `null` and `undefined`. Consumers already handle both via
+// `?? []` and equality checks.
 export const TimestampedSegmentSchema = z.object({
   startSeconds: z.number().min(0),
   endSeconds: z.number().min(0),
   text: z.string(),
-  topic: z.string().optional(),
-  speakerName: z.string().optional(),
+  topic: z.string().nullish(),
+  speakerName: z.string().nullish(),
 });
 export type TimestampedSegment = z.infer<typeof TimestampedSegmentSchema>;
 
@@ -184,31 +190,31 @@ export const VideoTopicSchema = z.object({
   label: z.string(),
   startSeconds: z.number().min(0),
   endSeconds: z.number().min(0),
-  subtopics: z.array(z.string()).optional(),
+  subtopics: z.array(z.string()).nullish(),
 });
 export type VideoTopic = z.infer<typeof VideoTopicSchema>;
 
 export const VideoKeyMomentSchema = z.object({
   timestampSeconds: z.number().min(0),
   description: z.string(),
-  significance: z.enum(["high", "medium", "low"]).optional(),
-  type: z.enum(["insight", "example", "exercise", "transition", "summary"]).optional(),
+  significance: z.enum(["high", "medium", "low"]).nullish(),
+  type: z.enum(["insight", "example", "exercise", "transition", "summary"]).nullish(),
 });
 export type VideoKeyMoment = z.infer<typeof VideoKeyMomentSchema>;
 
 export const VideoPersonSchema = z.object({
   name: z.string(),
-  role: z.string().optional(),
+  role: z.string().nullish(),
 });
 export type VideoPerson = z.infer<typeof VideoPersonSchema>;
 
 export const VideoAnalysisOutputSchema = z.object({
   summary: z.string(),
-  fullTranscript: z.string().optional(),
+  fullTranscript: z.string().nullish(),
   segments: z.array(TimestampedSegmentSchema),
   topics: z.array(VideoTopicSchema),
-  keyMoments: z.array(VideoKeyMomentSchema).optional(),
-  people: z.array(VideoPersonSchema).optional(),
-  durationSeconds: z.number().optional(),
+  keyMoments: z.array(VideoKeyMomentSchema).nullish(),
+  people: z.array(VideoPersonSchema).nullish(),
+  durationSeconds: z.number().nullish(),
 });
 export type VideoAnalysisOutput = z.infer<typeof VideoAnalysisOutputSchema>;

@@ -137,6 +137,70 @@ describe("distributeClipsToLessons", () => {
     expect(uniqueKeys.size).toBe(clipKeys.length);
   });
 
+  it("emergency-fill snaps cuts to nearest Gemini segment boundary within ±60s", () => {
+    // Single 226s video, one topic spanning the whole video, four
+    // finer-grained segments. With 2 lessons, the emergency-fill loop must
+    // halve the only clip. Arithmetic midpoint is 113s, but the real
+    // carbs→protein segment boundary at 143s is 30s away — inside the snap
+    // window — so the cut should land at 143s, not 113s.
+    const digest: EnrichedContentDigest = {
+      contentId: "macros",
+      contentTitle: "Macronutrients",
+      contentType: "video",
+      keyConcepts: ["macros"],
+      skillsIntroduced: [],
+      memorableExamples: [],
+      difficultyLevel: "intermediate",
+      summary: "...",
+      segments: [
+        { startSeconds: 0, endSeconds: 35, text: "intro", topic: "intro" },
+        { startSeconds: 35, endSeconds: 143, text: "carbs", topic: "carbs" },
+        { startSeconds: 143, endSeconds: 217, text: "protein", topic: "protein" },
+        { startSeconds: 217, endSeconds: 226, text: "fats", topic: "fats" },
+      ],
+      topics: [{ label: "Macronutrients", startSeconds: 0, endSeconds: 226 }],
+      keyMoments: [],
+      durationSeconds: 226,
+    };
+
+    const plan = distributeClipsToLessons([digest], [], 2);
+
+    expect(plan.lessons).toHaveLength(2);
+    expect(plan.warnings.some((w) => w.includes("splitting"))).toBe(true);
+
+    const firstClip = plan.lessons[0].clips[0];
+    const secondClip = plan.lessons[1].clips[0];
+    expect(firstClip.endSeconds).toBe(143);
+    expect(secondClip.startSeconds).toBe(143);
+  });
+
+  it("emergency-fill falls back to arithmetic midpoint when no segment boundary lies within ±60s", () => {
+    // Same shape but with the only viable segment boundary (200s) well outside
+    // the ±60s window of the arithmetic midpoint (113s). The cut should fall
+    // back to 113s.
+    const digest: EnrichedContentDigest = {
+      contentId: "vid",
+      contentTitle: "Video",
+      contentType: "video",
+      keyConcepts: ["x"],
+      skillsIntroduced: [],
+      memorableExamples: [],
+      difficultyLevel: "intermediate",
+      summary: "...",
+      segments: [
+        { startSeconds: 0, endSeconds: 30, text: "a", topic: "a" },
+        { startSeconds: 30, endSeconds: 200, text: "b", topic: "b" },
+      ],
+      topics: [{ label: "Topic", startSeconds: 0, endSeconds: 226 }],
+      keyMoments: [],
+      durationSeconds: 226,
+    };
+
+    const plan = distributeClipsToLessons([digest], [], 2);
+    const firstClip = plan.lessons[0].clips[0];
+    expect(firstClip.endSeconds).toBe(113);
+  });
+
   it("handles many clips in few lessons by merging", () => {
     const enriched = [
       makeEnrichedDigest("v1", "Long Video", [
@@ -332,6 +396,51 @@ describe("distributeClipsToLessons — time-based fallback for non-distinct topi
     // The 590s topic boundary should appear (snapped) somewhere in the cuts.
     expect(allBoundaries).toContain(590);
   });
+
+  it("falls back to Gemini segment boundaries when topics are too coarse to provide snap candidates", () => {
+    // 1500s video with a SINGLE big topic 0-1500 (no thematic distinctness),
+    // but the underlying Gemini segments mark exercise transitions at 510,
+    // 775, and 1024. Without segment-aware snapping, time-based slicing
+    // would cut at arithmetic ~500 and ~1000, mid-segment. With segments
+    // threaded into timeBasedSlices, the cuts must land at the segment
+    // boundaries 510 and 1024.
+    const digest: EnrichedContentDigest = {
+      contentId: "v1",
+      contentTitle: "Long single-topic workout",
+      contentType: "video",
+      keyConcepts: ["workout"],
+      skillsIntroduced: [],
+      memorableExamples: [],
+      difficultyLevel: "intermediate",
+      summary: "...",
+      segments: [
+        { startSeconds: 0, endSeconds: 258, text: "press", topic: "press" },
+        { startSeconds: 258, endSeconds: 510, text: "cable fly", topic: "cable fly" },
+        { startSeconds: 510, endSeconds: 775, text: "chest fly", topic: "chest fly" },
+        { startSeconds: 775, endSeconds: 1024, text: "crossover", topic: "crossover" },
+        { startSeconds: 1024, endSeconds: 1500, text: "triceps", topic: "triceps" },
+      ],
+      topics: [
+        { label: "Full Workout", startSeconds: 0, endSeconds: 1500 },
+      ],
+      keyMoments: [],
+      durationSeconds: 1500,
+    };
+
+    const plan = distributeClipsToLessons([digest], [], 3);
+
+    const boundaries = plan.lessons.flatMap((l) =>
+      l.clips.flatMap((c) => [c.startSeconds, c.endSeconds]),
+    );
+    // The arithmetic 3-way cuts would be ~500, ~1000. Segment boundaries
+    // 510 and 1024 sit within the ±60s snap window and must win.
+    expect(boundaries).toContain(510);
+    expect(boundaries).toContain(1024);
+    // And NO clip should end at the arithmetic 500 or 1000 — those were the
+    // bug cases.
+    expect(boundaries).not.toContain(500);
+    expect(boundaries).not.toContain(1000);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -432,6 +541,72 @@ describe("formatDistributionPlanForPrompt", () => {
     expect(text).toContain("Intro");
     expect(text).toContain("Main");
     expect(text).toContain("MUST follow them exactly");
+  });
+
+  it("enumerates each Gemini segment when a clip spans more than one", () => {
+    // Single 226s video, single topic spanning the whole video, four finer
+    // segments. The distributor leaves it as one full-video clip (under
+    // MIN_DURATION_FOR_SPLIT_SECONDS). The prompt-builder should expose all
+    // four segments separately so the LLM knows there are four distinct
+    // sub-topics to reflect in chapterTitle/summary.
+    const digest: EnrichedContentDigest = {
+      contentId: "macros",
+      contentTitle: "Macronutrients",
+      contentType: "video",
+      keyConcepts: ["macros"],
+      skillsIntroduced: [],
+      memorableExamples: [],
+      difficultyLevel: "intermediate",
+      summary: "...",
+      segments: [
+        { startSeconds: 0, endSeconds: 35, text: "intro by Alexis Hawes about macronutrients", topic: "intro" },
+        { startSeconds: 35, endSeconds: 143, text: "carbs are the body's preferred fuel source", topic: "carbs" },
+        { startSeconds: 143, endSeconds: 217, text: "protein deficit is fiber not protein", topic: "protein" },
+        { startSeconds: 217, endSeconds: 226, text: "fats are unsaturated and saturated", topic: "fats" },
+      ],
+      topics: [{ label: "Macronutrients", startSeconds: 0, endSeconds: 226 }],
+      keyMoments: [],
+      durationSeconds: 226,
+    };
+
+    const plan = distributeClipsToLessons([digest], [], 1);
+    const text = formatDistributionPlanForPrompt(plan, [digest]);
+
+    // Multi-segment header signals the count explicitly
+    expect(text).toContain("4 segments");
+    expect(text).toContain("MUST reflect all of them");
+    // Each segment's text appears, with its own timestamp
+    expect(text).toContain("[0:00-0:35]");
+    expect(text).toContain("intro by Alexis Hawes");
+    expect(text).toContain("[0:35-2:23]");
+    expect(text).toContain("carbs are the body");
+    expect(text).toContain("[2:23-3:37]");
+    expect(text).toContain("protein deficit");
+    expect(text).toContain("[3:37-3:46]");
+    expect(text).toContain("fats are unsaturated");
+  });
+
+  it("falls back to single-line excerpt when only one segment overlaps", () => {
+    const digest: EnrichedContentDigest = {
+      contentId: "v1",
+      contentTitle: "Single",
+      contentType: "video",
+      keyConcepts: ["x"],
+      skillsIntroduced: [],
+      memorableExamples: [],
+      difficultyLevel: "intermediate",
+      summary: "...",
+      segments: [
+        { startSeconds: 0, endSeconds: 240, text: "one continuous segment", topic: "one" },
+      ],
+      topics: [{ label: "One", startSeconds: 0, endSeconds: 240 }],
+      keyMoments: [],
+      durationSeconds: 240,
+    };
+    const plan = distributeClipsToLessons([digest], [], 1);
+    const text = formatDistributionPlanForPrompt(plan, [digest]);
+    expect(text).toContain('Transcript (0:00-4:00): "one continuous segment"');
+    expect(text).not.toContain("segments;");
   });
 });
 
@@ -569,5 +744,186 @@ describe("validateAndFixClipDistribution", () => {
     const result = validateAndFixClipDistribution(draft, plan, enriched);
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.includes("no clips"))).toBe(true);
+  });
+
+  // ─── Coverage / overlap / drift checks (Ticket 86e1cgy5q) ───
+  // These exercise the post-Ticket-#2 failure modes: the LLM is free to
+  // subdivide a planned clip into multiple segment-aligned sub-clips, but
+  // the union must stay within ±15s of the plan's range and the sub-clips
+  // must not overlap or leave internal gaps.
+
+  it("accepts a valid LLM subdivision of a single planned range", () => {
+    // Plan has one clip 0-300; LLM split it into [0-150, 150-300]. No overlap,
+    // no gap, union matches the plan. Should be considered valid and the
+    // subdivision preserved.
+    const enriched = [
+      makeEnrichedDigest("v1", "Video 1", [
+        { label: "Topic A", startSeconds: 0, endSeconds: 300 },
+      ], 300),
+    ];
+    const plan = distributeClipsToLessons(enriched, [], 1);
+
+    const draft = {
+      weeks: [{
+        weekNumber: 1,
+        title: "Week 1",
+        summary: "",
+        sessions: [{
+          title: "Session 1",
+          summary: "",
+          keyTakeaways: ["a"],
+          orderIndex: 0,
+          actions: [],
+          clips: [
+            { youtubeVideoId: "v1", startSeconds: 0, endSeconds: 150, orderIndex: 0, chapterTitle: "First half" },
+            { youtubeVideoId: "v1", startSeconds: 150, endSeconds: 300, orderIndex: 1, chapterTitle: "Second half" },
+          ],
+          overlays: [{ type: "TITLE_CARD", content: {}, position: "CENTER", durationMs: 4000, orderIndex: 0, triggerAtSeconds: 0 }],
+        }],
+      }],
+    };
+
+    const result = validateAndFixClipDistribution(draft, plan, enriched);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("detects overlapping sub-clips and repairs to a single plan clip", () => {
+    // Plan has one clip 0-300; LLM produced [0-225, 216-225] — clip #2 sits
+    // inside clip #1 (the get-well-soon L1 failure mode).
+    const enriched = [
+      makeEnrichedDigest("v1", "Video 1", [
+        { label: "Topic A", startSeconds: 0, endSeconds: 300 },
+      ], 300),
+    ];
+    const plan = distributeClipsToLessons(enriched, [], 1);
+
+    const draft = {
+      weeks: [{
+        weekNumber: 1,
+        title: "Week 1",
+        summary: "",
+        sessions: [{
+          title: "Session 1",
+          summary: "",
+          keyTakeaways: ["a"],
+          orderIndex: 0,
+          actions: [],
+          clips: [
+            { youtubeVideoId: "v1", startSeconds: 0, endSeconds: 225, orderIndex: 0, chapterTitle: "Main" },
+            { youtubeVideoId: "v1", startSeconds: 216, endSeconds: 225, orderIndex: 1, chapterTitle: "Tail" },
+          ],
+        }],
+      }],
+    };
+
+    const result = validateAndFixClipDistribution(draft, plan, enriched);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("drifted from plan"))).toBe(true);
+    expect(result.fixedDraft).toBeDefined();
+    const fixedClips = result.fixedDraft!.weeks[0].sessions[0].clips;
+    expect(fixedClips).toHaveLength(1);
+    expect(fixedClips[0].startSeconds).toBe(0);
+    expect(fixedClips[0].endSeconds).toBe(300);
+  });
+
+  it("detects coverage gaps and repairs to the plan range", () => {
+    // 250s video (below MIN_DURATION_FOR_SPLIT_SECONDS=300) → distributor
+    // produces ONE clip 0-250. LLM persisted [0-80, 200-250] — leaves 80-200
+    // unassigned (the upper-body-workout video1 failure mode in miniature).
+    const enriched = [
+      makeEnrichedDigest("v1", "Video 1", [
+        { label: "Topic A", startSeconds: 0, endSeconds: 250 },
+      ], 250),
+    ];
+    const plan = distributeClipsToLessons(enriched, [], 1);
+    expect(plan.lessons[0].clips).toHaveLength(1); // sanity-check the setup
+
+    const draft = {
+      weeks: [{
+        weekNumber: 1,
+        title: "Week 1",
+        summary: "",
+        sessions: [{
+          title: "Session 1",
+          summary: "",
+          keyTakeaways: ["a"],
+          orderIndex: 0,
+          actions: [],
+          clips: [
+            { youtubeVideoId: "v1", startSeconds: 0, endSeconds: 80, orderIndex: 0, chapterTitle: "First" },
+            { youtubeVideoId: "v1", startSeconds: 200, endSeconds: 250, orderIndex: 1, chapterTitle: "Third" },
+          ],
+        }],
+      }],
+    };
+
+    const result = validateAndFixClipDistribution(draft, plan, enriched);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("drifted from plan"))).toBe(true);
+    const fixedClips = result.fixedDraft!.weeks[0].sessions[0].clips;
+    expect(fixedClips).toHaveLength(1);
+    expect(fixedClips[0].startSeconds).toBe(0);
+    expect(fixedClips[0].endSeconds).toBe(250);
+  });
+
+  it("repairs only the broken (videoId, range) groups and keeps valid sub-clipping elsewhere", () => {
+    // Plan has two clips in the same lesson, one per video.
+    // LLM produces:
+    //   - v1: valid 3-way subdivision [0-100, 100-200, 200-300] — should be preserved
+    //   - v2: broken overlap [0-150, 100-200] — should be repaired to plan [0-200]
+    // Distinct topic labels so the distributor doesn't merge clips.
+    const enriched = [
+      makeEnrichedDigest("v1", "Press Mechanics", [
+        { label: "Press Mechanics", startSeconds: 0, endSeconds: 300 },
+      ], 300),
+      makeEnrichedDigest("v2", "Cable Crossover", [
+        { label: "Cable Crossover", startSeconds: 0, endSeconds: 200 },
+      ], 200),
+    ];
+    // 1 lesson, 2 videos → distributor assigns one clip per video to lesson 1.
+    const plan = distributeClipsToLessons(enriched, [], 1);
+
+    const draft = {
+      weeks: [{
+        weekNumber: 1,
+        title: "Week 1",
+        summary: "",
+        sessions: [{
+          title: "Session 1",
+          summary: "",
+          keyTakeaways: ["a"],
+          orderIndex: 0,
+          actions: [],
+          clips: [
+            // v1: clean 3-way subdivision of the 0-300 plan clip
+            { youtubeVideoId: "v1", startSeconds: 0, endSeconds: 100, orderIndex: 0, chapterTitle: "Press setup" },
+            { youtubeVideoId: "v1", startSeconds: 100, endSeconds: 200, orderIndex: 1, chapterTitle: "Press form" },
+            { youtubeVideoId: "v1", startSeconds: 200, endSeconds: 300, orderIndex: 2, chapterTitle: "Press finish" },
+            // v2: overlap on the 0-200 plan clip
+            { youtubeVideoId: "v2", startSeconds: 0, endSeconds: 150, orderIndex: 3, chapterTitle: "Cross A" },
+            { youtubeVideoId: "v2", startSeconds: 100, endSeconds: 200, orderIndex: 4, chapterTitle: "Cross B" },
+          ],
+        }],
+      }],
+    };
+
+    const result = validateAndFixClipDistribution(draft, plan, enriched);
+    expect(result.valid).toBe(false);
+    // Only the v2 group should be flagged as drifted
+    expect(result.errors.filter((e) => e.includes("drifted")).length).toBe(1);
+    expect(result.errors.some((e) => e.includes("drifted"))).toBe(true);
+
+    const fixedClips = result.fixedDraft!.weeks[0].sessions[0].clips;
+    // v1 sub-clipping preserved (3 clips), v2 collapsed to single plan clip (1)
+    const v1Clips = fixedClips.filter((c: { youtubeVideoId: string }) => c.youtubeVideoId === "v1");
+    const v2Clips = fixedClips.filter((c: { youtubeVideoId: string }) => c.youtubeVideoId === "v2");
+    expect(v1Clips).toHaveLength(3);
+    expect(v1Clips.map((c: { startSeconds: number; endSeconds: number }) => [c.startSeconds, c.endSeconds]))
+      .toEqual([[0, 100], [100, 200], [200, 300]]);
+    expect(v1Clips.map((c: { chapterTitle?: string }) => c.chapterTitle))
+      .toEqual(["Press setup", "Press form", "Press finish"]);
+    expect(v2Clips).toHaveLength(1);
+    expect([v2Clips[0].startSeconds, v2Clips[0].endSeconds]).toEqual([0, 200]);
   });
 });
