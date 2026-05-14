@@ -313,7 +313,13 @@ export function SessionViewer({
               chapterTitle: c.chapterTitle,
               chapterDescription: c.chapterDescription,
               thumbnailUrl: c.thumbnailUrl,
-              durationSeconds: c.durationSeconds,
+              // Prefer the clip-range duration (endSeconds - startSeconds)
+              // over the source asset's full durationSeconds — otherwise a
+              // 30s slice of a 28-min video displays "28:22" in the rail.
+              durationSeconds:
+                c.startSeconds != null && c.endSeconds != null
+                  ? Math.max(0, c.endSeconds - c.startSeconds)
+                  : c.durationSeconds,
             }))}
             currentIndex={currentClipIndex}
             onJump={handleChapterJump}
@@ -390,7 +396,13 @@ export function SessionViewer({
               chapterTitle: c.chapterTitle,
               chapterDescription: c.chapterDescription,
               thumbnailUrl: c.thumbnailUrl,
-              durationSeconds: c.durationSeconds,
+              // Prefer the clip-range duration (endSeconds - startSeconds)
+              // over the source asset's full durationSeconds — otherwise a
+              // 30s slice of a 28-min video displays "28:22" in the rail.
+              durationSeconds:
+                c.startSeconds != null && c.endSeconds != null
+                  ? Math.max(0, c.endSeconds - c.startSeconds)
+                  : c.durationSeconds,
             }))}
             currentIndex={currentClipIndex}
             onJump={handleChapterJump}

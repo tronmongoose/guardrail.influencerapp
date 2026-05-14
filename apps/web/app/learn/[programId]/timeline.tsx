@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/components/ui/toast";
 import { MuxVideoPlayer } from "@/components/viewer/MuxVideoPlayer";
+import { InlineChainedPlayer } from "@/components/viewer/InlineChainedPlayer";
 import { ACTION_TYPE_LABELS, getActionTypeColor, getActionTypeBgWithBorder } from "@/lib/action-type-styles";
 import { stripWrappingQuotes } from "@/lib/strip-quotes";
 
@@ -103,8 +104,35 @@ export function LearnerTimeline({
   // Track which action is expanded (for mobile detail view)
   const [expandedAction, setExpandedAction] = useState<string | null>(null);
 
-  // Track which sessions' composite videos have been watched (local state)
+  // Track which sessions' composite videos have been watched. Local-only:
+  // completion semantics for the timeline live in `completedActions`. This
+  // Set only drives the visual "visited" state for the WATCH card. Persisted
+  // to localStorage scoped per-program-per-user so it survives navigating
+  // into the focused viewer and back.
+  const watchedStorageKey = `journeyline:watchedSessions:${userId}:${program.id}`;
   const [watchedSessions, setWatchedSessions] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(watchedStorageKey);
+      if (raw) setWatchedSessions(new Set(JSON.parse(raw) as string[]));
+    } catch {
+      // ignore parse / quota errors — visited state is a UX nicety, not load-bearing
+    }
+  }, [watchedStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        watchedStorageKey,
+        JSON.stringify(Array.from(watchedSessions)),
+      );
+    } catch {
+      // ignore
+    }
+  }, [watchedSessions, watchedStorageKey]);
 
   // Celebration overlay state (week milestones only — not final week)
   const [celebration, setCelebration] = useState<{
@@ -673,9 +701,11 @@ export function LearnerTimeline({
                     )}
 
                     <div className="space-y-2">
-                      {/* WATCH step: one card per session that links to the
-                          focused viewer at /learn/[programId]/[sessionId],
-                          which plays all clips chained with chapter markers.
+                      {/* WATCH step: one card per lesson session — collapsed
+                          row shows title + "Watch · N parts · X min"; expanded
+                          shows a single chained player that plays all clips
+                          back-to-back with chapter navigation, plus an
+                          "Open in focus mode" link to the dedicated viewer.
                           Replaces an earlier per-clip rendering that produced
                           N "Part X of N · WATCH" cards per lesson — a single
                           continuous video was being presented as N separate
@@ -687,6 +717,7 @@ export function LearnerTimeline({
 
                           const watchKey = `watch:session:${session.id}`;
                           const watchDone = watchedSessions.has(watchKey);
+                          const isWatchExpanded = expandedAction === watchKey;
                           const totalSeconds = clips.reduce((sum, c) => {
                             if (c.startSeconds != null && c.endSeconds != null) {
                               return sum + Math.max(0, c.endSeconds - c.startSeconds);
@@ -706,6 +737,18 @@ export function LearnerTimeline({
                             clips[0].youtubeVideo?.title ||
                             session.title;
 
+                          const markWatched = () => {
+                            setWatchedSessions((prev) => new Set(prev).add(watchKey));
+                          };
+                          const toggleWatched = () => {
+                            setWatchedSessions((prev) => {
+                              const next = new Set(prev);
+                              if (watchDone) next.delete(watchKey);
+                              else next.add(watchKey);
+                              return next;
+                            });
+                          };
+
                           return (
                             <div
                               className={`border transition-all duration-300 overflow-hidden ${
@@ -719,10 +762,15 @@ export function LearnerTimeline({
                                 borderColor: "var(--token-color-border-subtle)",
                               }}
                             >
-                              <Link
-                                href={`/learn/${program.id}/${session.id}`}
-                                onClick={() => {
-                                  setWatchedSessions((prev) => new Set(prev).add(watchKey));
+                              <div
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => setExpandedAction(isWatchExpanded ? null : watchKey)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault();
+                                    setExpandedAction(isWatchExpanded ? null : watchKey);
+                                  }
                                 }}
                                 className="w-full flex items-center gap-3 py-3 px-4 text-left cursor-pointer"
                               >
@@ -730,14 +778,8 @@ export function LearnerTimeline({
                                   done={watchDone}
                                   isSaving={false}
                                   onClick={(e) => {
-                                    e.preventDefault();
                                     e.stopPropagation();
-                                    setWatchedSessions((prev) => {
-                                      const next = new Set(prev);
-                                      if (watchDone) next.delete(watchKey);
-                                      else next.add(watchKey);
-                                      return next;
-                                    });
+                                    toggleWatched();
                                   }}
                                 />
 
@@ -761,13 +803,54 @@ export function LearnerTimeline({
                                 </div>
 
                                 <svg
-                                  className="w-4 h-4"
+                                  className={`w-4 h-4 transition-transform duration-200 ${isWatchExpanded ? "rotate-180" : ""}`}
                                   style={{ color: "var(--token-color-text-secondary)" }}
                                   fill="none" stroke="currentColor" viewBox="0 0 24 24"
                                 >
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                 </svg>
-                              </Link>
+                              </div>
+
+                              {isWatchExpanded && (
+                                <div className="px-3 pb-4 pt-1 space-y-3 animate-fade-in">
+                                  <InlineChainedPlayer
+                                    clips={clips.map((c) => ({
+                                      id: c.id,
+                                      chapterTitle: c.chapterTitle ?? "",
+                                      startSeconds: c.startSeconds,
+                                      endSeconds: c.endSeconds,
+                                      youtubeVideo: c.youtubeVideo!,
+                                    }))}
+                                    sessionTitle={session.title}
+                                    onAllComplete={markWatched}
+                                  />
+
+                                  <div className="flex items-center justify-between gap-2 pt-1">
+                                    <Link
+                                      href={`/learn/${program.id}/${session.id}`}
+                                      className="text-xs underline-offset-2 hover:underline transition"
+                                      style={{ color: "var(--token-color-text-secondary)" }}
+                                    >
+                                      Open in focus mode →
+                                    </Link>
+                                    {!watchDone && (
+                                      <button
+                                        type="button"
+                                        onClick={markWatched}
+                                        className="px-3 py-1.5 text-xs font-semibold transition border hover:opacity-80"
+                                        style={{
+                                          borderRadius: "var(--token-comp-btn-primary-radius)",
+                                          backgroundColor: "var(--token-color-accent)",
+                                          color: "var(--token-color-text-on-accent, #fff)",
+                                          borderColor: "var(--token-color-accent)",
+                                        }}
+                                      >
+                                        Mark as watched
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })()}
