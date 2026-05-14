@@ -1,0 +1,5 @@
+{
+  "name": "get-well-soon",
+  "programId": "cmp21vqmp0001ita5yh8zk0kr",
+  "notes": "2-video program generated 2026-05-12 against Anthropic claude-sonnet-4-6. Source videos: Alexis Hawes 'Everyday Health Hacks' (225s) and 'Macronutrients' (226s). Each video has a single Gemini topic spanning the full duration; LLM split each into two clips assigned to separate lessons — a Dimension 6 stress case worth observing."
+}

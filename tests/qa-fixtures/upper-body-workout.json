@@ -1,0 +1,5 @@
+{
+  "name": "upper-body-workout",
+  "programId": "cmp4tlgsw0010itaz7toh93l7",
+  "notes": "2 longish fitness videos ('16 - Chest and Triceps A', '17 - Chest and Triceps B') generated 2026-05-13. Different domain (movement/training) from get-well-soon (nutrition) — tests generalization of both fixes across content domains. Depending on durations, may exercise Ticket #1's emergency-fill segment-snap and/or Ticket #2's multi-segment prompt enumeration."
+}

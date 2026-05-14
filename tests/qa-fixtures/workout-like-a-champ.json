@@ -1,0 +1,5 @@
+{
+  "name": "workout-like-a-champ",
+  "programId": "cmp4yqlvv0001it8hip72dqk2",
+  "notes": "4-video fresh-upload fixture generated 2026-05-14 to validate the parallel-Gemini fix. Concurrency=4, 4 videos → ideally all 4 analyses run simultaneously, wall-clock ≈ slowest single video instead of 4× sum. Same content domain (fitness shorts) as earlier upper-body-workout; one of the videos is a fresh upload of '17 - Chest and Triceps B' to avoid cache hits on previously-analyzed assets."
+}

@@ -1,0 +1,19 @@
+{
+  "program_title": "Power yoga",
+  "scores": {
+    "lesson_boundaries": 3,
+    "lesson_count": 4,
+    "title_clarity": 5,
+    "step_flow": 3,
+    "source_faithfulness": 5,
+    "topic_boundary_respect": 5
+  },
+  "overall": 4.25,
+  "pass": true,
+  "critical_issues": [
+    "Lesson 1 yokes Headstand and Warrior I together without a real thematic thread",
+    "Every session uses only DO + REFLECT — no WATCH step and no setup→practice→integration progression",
+    "Legs-Up-The-Wall (restorative) is bolted onto an active standing-pose lesson"
+  ],
+  "top_recommendation": "Restructure Lesson 1 and Lesson 2 so inversions, warriors, and restorative poses each group with their kin instead of being packaged for lesson balance."
+}

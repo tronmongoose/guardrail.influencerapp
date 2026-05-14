@@ -1,0 +1,21 @@
+{
+  "program_title": "Upper body workout",
+  "scores": {
+    "lesson_boundaries": 2,
+    "lesson_count": 3,
+    "title_clarity": 4,
+    "step_flow": 3,
+    "source_faithfulness": 1,
+    "topic_boundary_respect": 2
+  },
+  "overall": 2.13,
+  "pass": false,
+  "critical_issues": [
+    "Lesson 2 references a videoId and 'Chest and Triceps A' workout not present in the source material (hallucination)",
+    "Lesson 3 has overlapping clips: 1024-1502 and 1267-1702 double-cover 1267-1502",
+    "Chest topic (0-1024) is fragmented across Lessons 1 and 4 with unrelated content between",
+    "Dumbbell Triceps Kickback (1506-1702) is missing from the curriculum despite being a labeled subtopic",
+    "Program title and target transformation mention shoulders, which do not appear in the source"
+  ],
+  "top_recommendation": "Remove the hallucinated Lesson 2 and reorder remaining lessons to follow the Gemini topic structure: all chest exercises (0-1024) first, then all triceps exercises (1024-1702)."
+}

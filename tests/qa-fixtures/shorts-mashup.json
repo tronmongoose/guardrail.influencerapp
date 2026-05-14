@@ -1,0 +1,5 @@
+{
+  "name": "shorts-mashup",
+  "programId": "cmp4wpqdd001pitji5fx7l6dj",
+  "notes": "Multi-video bundle of short clips, generated 2026-05-13 with Tickets #1+#2 fixes + per-(session, planned-range) validator (86e1cgy5q) live. Designed to stress-test lesson-count heuristic, multi-video distribution, and segment-enumeration in the prompt when many small clips are bin-packed across lessons."
+}

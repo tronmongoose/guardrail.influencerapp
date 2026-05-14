@@ -1,0 +1,360 @@
+{
+  "videoAnalyses": [
+    {
+      "videoId": "cmp4tzbsx0012itazx5g1w393",
+      "title": "16 - Chest and Triceps A",
+      "summary": "This video presents a 20-minute chest and triceps workout routine. It features five different exercises, each performed for multiple sets of 10 repetitions, with 60-second rest intervals between sets.",
+      "fullTranscript": "[No spoken dialogue. Upbeat electronic music plays throughout the video.]",
+      "segments": [
+        {
+          "text": "[No spoken dialogue. Demonstration of Flat Bench Dumbbell Press for 3 sets of 10 repetitions, interspersed with 60-second rest periods.]",
+          "topic": "Flat Bench Dumbbell Press",
+          "endSeconds": 267,
+          "speakerName": null,
+          "startSeconds": 0
+        },
+        {
+          "text": "[No spoken dialogue. Demonstration of Dumbbell Flyes for 3 sets of 10 repetitions, interspersed with 60-second rest periods.]",
+          "topic": "Dumbbell Flyes",
+          "endSeconds": 542,
+          "speakerName": null,
+          "startSeconds": 267
+        },
+        {
+          "text": "[No spoken dialogue. Demonstration of Low Pulley Cable Fly for 3 sets of 10 repetitions, interspersed with 60-second rest periods.]",
+          "topic": "Low Pulley Cable Fly",
+          "endSeconds": 794,
+          "speakerName": null,
+          "startSeconds": 542
+        },
+        {
+          "text": "[No spoken dialogue. Demonstration of Bench Push-Ups for 3 sets of 10 repetitions, interspersed with 60-second rest periods.]",
+          "topic": "Bench Push-Up",
+          "endSeconds": 1033,
+          "speakerName": null,
+          "startSeconds": 794
+        },
+        {
+          "text": "[No spoken dialogue. Demonstration of Decline Cable Crossover for 3 sets of 10 repetitions, interspersed with 60-second rest periods.]",
+          "topic": "Decline Cable Crossover",
+          "endSeconds": 1231,
+          "speakerName": null,
+          "startSeconds": 1033
+        }
+      ],
+      "topics": [
+        {
+          "label": "Chest and Triceps Workout Routine",
+          "subtopics": [
+            "Flat Bench Dumbbell Press",
+            "Dumbbell Flyes",
+            "Low Pulley Cable Fly",
+            "Bench Push-Up",
+            "Decline Cable Crossover"
+          ],
+          "endSeconds": 1231,
+          "startSeconds": 0
+        }
+      ],
+      "keyMoments": [
+        {
+          "type": "exercise",
+          "description": "Demonstration of the Flat Bench Dumbbell Press exercise.",
+          "significance": "high",
+          "timestampSeconds": 12
+        },
+        {
+          "type": "exercise",
+          "description": "Demonstration of the Dumbbell Flyes exercise.",
+          "significance": "high",
+          "timestampSeconds": 267
+        },
+        {
+          "type": "exercise",
+          "description": "Demonstration of the Low Pulley Cable Fly exercise.",
+          "significance": "high",
+          "timestampSeconds": 542
+        },
+        {
+          "type": "exercise",
+          "description": "Demonstration of the Bench Push-Up exercise.",
+          "significance": "high",
+          "timestampSeconds": 794
+        },
+        {
+          "type": "exercise",
+          "description": "Demonstration of the Decline Cable Crossover exercise.",
+          "significance": "high",
+          "timestampSeconds": 1033
+        }
+      ],
+      "people": [
+        {
+          "name": "Fitness Instructor",
+          "role": "host"
+        }
+      ],
+      "durationSeconds": 1231
+    },
+    {
+      "videoId": "cmp4tzhvp0014itazeipcazw6",
+      "title": "17 - Chest and Triceps B",
+      "summary": "This video provides a 30-minute chest and triceps workout routine consisting of seven different exercises. Each exercise is performed for three sets of 10 repetitions, with a 60-second rest period between each set.",
+      "fullTranscript": "",
+      "segments": [
+        {
+          "text": "",
+          "topic": "Machine Chest Press",
+          "endSeconds": 258,
+          "speakerName": "",
+          "startSeconds": 0
+        },
+        {
+          "text": "",
+          "topic": "Low Pulley Cable Fly",
+          "endSeconds": 510,
+          "speakerName": "",
+          "startSeconds": 258
+        },
+        {
+          "text": "",
+          "topic": "Machine Chest Fly",
+          "endSeconds": 775,
+          "speakerName": "",
+          "startSeconds": 510
+        },
+        {
+          "text": "",
+          "topic": "Decline Cable Crossover",
+          "endSeconds": 1024,
+          "speakerName": "",
+          "startSeconds": 775
+        },
+        {
+          "text": "",
+          "topic": "Triceps Bench Dips",
+          "endSeconds": 1267,
+          "speakerName": "",
+          "startSeconds": 1024
+        },
+        {
+          "text": "",
+          "topic": "Cable Rope Pushdown",
+          "endSeconds": 1506,
+          "speakerName": "",
+          "startSeconds": 1267
+        },
+        {
+          "text": "",
+          "topic": "Dumbbell Triceps Kickback",
+          "endSeconds": 1702,
+          "speakerName": "",
+          "startSeconds": 1506
+        }
+      ],
+      "topics": [
+        {
+          "label": "Chest Exercises",
+          "subtopics": [
+            "Machine Chest Press",
+            "Low Pulley Cable Fly",
+            "Machine Chest Fly",
+            "Decline Cable Crossover"
+          ],
+          "endSeconds": 1024,
+          "startSeconds": 0
+        },
+        {
+          "label": "Triceps Exercises",
+          "subtopics": [
+            "Triceps Bench Dips",
+            "Cable Rope Pushdown",
+            "Dumbbell Triceps Kickback"
+          ],
+          "endSeconds": 1702,
+          "startSeconds": 1024
+        }
+      ],
+      "keyMoments": [
+        {
+          "type": "exercise",
+          "description": "Demonstration of the Machine Chest Press exercise.",
+          "significance": "high",
+          "timestampSeconds": 12
+        },
+        {
+          "type": "exercise",
+          "description": "Demonstration of the Low Pulley Cable Fly exercise.",
+          "significance": "high",
+          "timestampSeconds": 258
+        },
+        {
+          "type": "exercise",
+          "description": "Demonstration of the Machine Chest Fly exercise.",
+          "significance": "high",
+          "timestampSeconds": 510
+        },
+        {
+          "type": "exercise",
+          "description": "Demonstration of the Decline Cable Crossover exercise.",
+          "significance": "high",
+          "timestampSeconds": 775
+        },
+        {
+          "type": "exercise",
+          "description": "Demonstration of the Triceps Bench Dips exercise.",
+          "significance": "high",
+          "timestampSeconds": 1024
+        },
+        {
+          "type": "exercise",
+          "description": "Demonstration of the Cable Rope Pushdown exercise.",
+          "significance": "high",
+          "timestampSeconds": 1267
+        },
+        {
+          "type": "exercise",
+          "description": "Demonstration of the Dumbbell Triceps Kickback exercise.",
+          "significance": "high",
+          "timestampSeconds": 1506
+        }
+      ],
+      "people": [
+        {
+          "name": "Fun Fitness Bros",
+          "role": "host"
+        }
+      ],
+      "durationSeconds": 1702
+    }
+  ],
+  "curriculum": {
+    "programTitle": "Upper body workout",
+    "programDescription": "",
+    "targetTransformation": "Build shoulders and chest that actually show",
+    "lessons": [
+      {
+        "lessonNumber": 1,
+        "title": "Master the flat press and dumbbell fly to load your chest from two angles",
+        "summary": "Learners perform the Flat Bench Dumbbell Press and Dumbbell Flyes — the two foundational free-weight chest movements — learning proper set and rep structure before adding machines or cables.",
+        "sessions": [
+          {
+            "title": "Flat Bench Dumbbell Press and Dumbbell Flyes",
+            "summary": "Two foundational free-weight chest exercises performed for 3 sets of 10 reps each with 60-second rest periods — establishing the pressing and fly movement patterns that underpin every lesson ahead.",
+            "steps": [
+              {
+                "type": "DO",
+                "title": "Perform the Flat Bench Dumbbell Press and Dumbbell Flyes exactly as demonstrated"
+              },
+              {
+                "type": "REFLECT",
+                "title": "Reflect on the difference between pressing and flying as chest movements"
+              }
+            ],
+            "clips": [
+              {
+                "videoId": "cmp4tzbsx0012itazx5g1w393",
+                "startSeconds": 0,
+                "endSeconds": 410,
+                "chapterTitle": "Flat Bench Dumbbell Press — 3 sets of 10"
+              },
+              {
+                "videoId": "cmp4tzbsx0012itazx5g1w393",
+                "startSeconds": 410,
+                "endSeconds": 794,
+                "chapterTitle": "Dumbbell Flyes — 3 sets of 10"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "lessonNumber": 2,
+        "title": "Hit your chest from every angle using machines and cables in one complete session",
+        "summary": "Learners work through four machine and cable chest exercises — Machine Chest Press, Low Pulley Cable Fly, Machine Chest Fly, and Decline Cable Crossover — building on the free-weight foundation with guided-path and constant-tension variations.",
+        "sessions": [
+          {
+            "title": "Machine Chest Press, Cable Fly, Machine Chest Fly, and Decline Cable Crossover",
+            "summary": "A 17-minute machine and cable chest circuit covering all four exercises from Video B's chest section — each performed for 3 sets of 10 reps with 60-second rest periods — providing constant tension and guided movement paths that complement the free-weight work from Lesson 1.",
+            "steps": [
+              {
+                "type": "DO",
+                "title": "Complete all four machine and cable chest exercises in sequence"
+              },
+              {
+                "type": "REFLECT",
+                "title": "Reflect on how machine and cable exercises compare to free-weight work"
+              }
+            ],
+            "clips": [
+              {
+                "videoId": "cmp4tzhvp0014itazeipcazw6",
+                "startSeconds": 0,
+                "endSeconds": 1024,
+                "chapterTitle": "Machine Chest Press, Low Pulley Cable Fly, Machine Chest Fly, and Decline Cable Crossover — 3×10 each"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "lessonNumber": 3,
+        "title": "Finish your chest session with bodyweight push-ups and decline cable crossovers",
+        "summary": "Learners complete the chest portion of the Workout A routine with Bench Push-Ups and Decline Cable Crossover — two finishing movements that combine bodyweight endurance with cable-tension detail work to fully exhaust the chest.",
+        "sessions": [
+          {
+            "title": "Bench Push-Ups and Decline Cable Crossover as Chest Finishers",
+            "summary": "The final two exercises of the Chest and Triceps A workout — Bench Push-Ups and Decline Cable Crossover — each performed for 3 sets of 10 reps with 60-second rests. These movements serve as finishers after heavier pressing and fly work, adding bodyweight endurance and cable detail to cap the chest session.",
+            "steps": [
+              {
+                "type": "DO",
+                "title": "Perform Bench Push-Ups and Decline Cable Crossover as a finishing superset"
+              },
+              {
+                "type": "REFLECT",
+                "title": "Reflect on where the Bench Push-Up and Decline Cable Crossover fit in a full chest session"
+              }
+            ],
+            "clips": [
+              {
+                "videoId": "cmp4tzbsx0012itazx5g1w393",
+                "startSeconds": 794,
+                "endSeconds": 1231,
+                "chapterTitle": "Bench Push-Ups and Decline Cable Crossover — Chest Finishers, 3×10 each"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "lessonNumber": 4,
+        "title": "Isolate and exhaust your triceps with bench dips and cable rope pushdowns",
+        "summary": "Learners complete the triceps section of the Workout B routine — Triceps Bench Dips and Cable Rope Pushdown — performed after a full chest session, building the elbow-extension strength and muscle detail that makes pressed movements stronger and upper arms more defined.",
+        "sessions": [
+          {
+            "title": "Triceps Bench Dips and Cable Rope Pushdown",
+            "summary": "The complete triceps block from Workout B — Triceps Bench Dips and Cable Rope Pushdown — each for 3 sets of 10 reps with 60-second rests. Performed after a full chest session, these two exercises isolate the triceps through bodyweight dipping and cable extension patterns to finish the upper-body training cycle.",
+            "steps": [
+              {
+                "type": "DO",
+                "title": "Perform Triceps Bench Dips and Cable Rope Pushdown back-to-back after your chest work"
+              },
+              {
+                "type": "REFLECT",
+                "title": "Reflect on how training triceps after chest changes the effort required"
+              }
+            ],
+            "clips": [
+              {
+                "videoId": "cmp4tzhvp0014itazeipcazw6",
+                "startSeconds": 1024,
+                "endSeconds": 1702,
+                "chapterTitle": "Triceps Bench Dips and Cable Rope Pushdown — 3×10 each"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "program_title": "Get well soon",
+  "scores": {
+    "lesson_boundaries": 4,
+    "lesson_count": 3,
+    "title_clarity": 3,
+    "step_flow": 3,
+    "source_faithfulness": 5,
+    "topic_boundary_respect": 2
+  },
+  "overall": 3.13,
+  "pass": false,
+  "critical_issues": [
+    "Each session uses a single clip spanning the entire source video, ignoring 6 and 5 natural segment boundaries from Gemini",
+    "chapterTitle 'Hacks 1–5: Blood sugar, hydration, eyes, cold showers, and morning light' misrepresents a 0–225s clip that actually covers all 10 hacks",
+    "Program-level metadata is generic and disconnected: empty programDescription, off-tone targetTransformation 'Rewire your brain. Stop fighting yourself.'",
+    "No WATCH steps — learners go straight to DO/REFLECT without a guided viewing step"
+  ],
+  "top_recommendation": "Subdivide each lesson's single full-video clip into multiple session clips aligned to the Gemini `segments` boundaries (e.g., 35–143s for carbs, 143–217s for protein) so the curriculum actually leverages the upstream topic analysis."
+}

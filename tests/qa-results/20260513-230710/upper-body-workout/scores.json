@@ -1,0 +1,21 @@
+{
+  "program_title": "Upper body workout",
+  "scores": {
+    "lesson_boundaries": 3,
+    "lesson_count": 3,
+    "title_clarity": 4,
+    "step_flow": 3,
+    "source_faithfulness": 3,
+    "topic_boundary_respect": 2
+  },
+  "overall": 2.75,
+  "pass": false,
+  "critical_issues": [
+    "Lesson 1 clips (0-410, 410-821) straddle Gemini segment boundaries at 267 and 542, conflating three exercises into two clips",
+    "Lesson 4 clip spans 1024-1702 but lesson only references 2 of 3 exercises; Dumbbell Triceps Kickback (1506-1702) is silently included but unaddressed",
+    "Lesson 3 clip 821-1231 starts mid-Low-Pulley-Cable-Fly segment and mixes three Gemini segments",
+    "Video A is split non-contiguously across Lessons 1 and 3 with Video B inserted between",
+    "targetTransformation references 'shoulders' which are not present in either source video"
+  ],
+  "top_recommendation": "Re-bin all clips to align with Gemini segment boundaries (267, 542, 794, 1033 for Video A; 258, 510, 775, 1024, 1267, 1506 for Video B) and either include or trim out the Dumbbell Triceps Kickback rather than leaving it inside a clip that doesn't reference it."
+}

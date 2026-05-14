@@ -1,0 +1,20 @@
+{
+  "program_title": "workout like a champ",
+  "scores": {
+    "lesson_boundaries": 2,
+    "lesson_count": 3,
+    "title_clarity": 4,
+    "step_flow": 2,
+    "source_faithfulness": 4,
+    "topic_boundary_respect": 3
+  },
+  "overall": 3.0,
+  "pass": false,
+  "critical_issues": [
+    "Chest workout fragmented non-sequentially across Lessons 1, 3, and 8",
+    "Cable Rope Pushdown Gemini segment (1267-1506) split between Lessons 5 and 7",
+    "All steps collapse to DO+REFLECT — no WATCH/PRACTICE variety",
+    "Lesson 6 clip spans 3 Gemini topics but is titled as one exercise"
+  ],
+  "top_recommendation": "Re-sequence so each source video's exercises appear contiguously and in original order; stop interleaving unrelated workouts and stop splitting single Gemini topics across lessons."
+}

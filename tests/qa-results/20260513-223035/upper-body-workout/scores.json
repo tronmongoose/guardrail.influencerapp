@@ -1,0 +1,21 @@
+{
+  "program_title": "Upper body workout",
+  "scores": {
+    "lesson_boundaries": 3,
+    "lesson_count": 4,
+    "title_clarity": 4,
+    "step_flow": 3,
+    "source_faithfulness": 4,
+    "topic_boundary_respect": 3
+  },
+  "overall": 3.43,
+  "pass": false,
+  "critical_issues": [
+    "Video A's chest workout is split across Lessons 1 and 3 with Video B's chest work wedged between, creating incoherent video-hopping order",
+    "Low Pulley Cable Fly (Video A, 542-794s) is entirely unassigned to any lesson — a full Gemini segment is dropped",
+    "Lesson 1 clip ends at 410s, straddling the Dumbbell Flyes segment boundary at 542s",
+    "Dumbbell Triceps Kickback (1506-1702s) is in Lesson 4's clip range but missing from the lesson narrative",
+    "targetTransformation mentions 'shoulders' but no shoulder work exists in either source video"
+  ],
+  "top_recommendation": "Restructure to 3 lessons grouped by source video (Video A full workout, Video B chest, Video B triceps) to respect natural video and topic boundaries and eliminate the A→B→A→B hop"
+}

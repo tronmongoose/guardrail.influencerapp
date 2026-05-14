@@ -1,0 +1,19 @@
+{
+  "program_title": "Get well soon",
+  "scores": {
+    "lesson_boundaries": 5,
+    "lesson_count": 4,
+    "title_clarity": 4,
+    "step_flow": 3,
+    "source_faithfulness": 5,
+    "topic_boundary_respect": 3
+  },
+  "overall": 4.0,
+  "pass": false,
+  "critical_issues": [
+    "Lesson 1 uses a single clip spanning the entire video (0–225) plus a redundant overlapping sub-clip (216–225), ignoring the six Gemini segments",
+    "Program title 'Get well soon' and transformation 'Rewire your brain. Stop fighting yourself.' are generic and unrelated to the actual health-hacks + macronutrients content",
+    "No WATCH step despite the curriculum being clip-anchored — only DO and REFLECT"
+  ],
+  "top_recommendation": "Break Lesson 1's full-video clip into segment-aligned sub-clips (walking/water, eye/cold, sunlight/vinegar, oil/sleep/portion, legs-up-the-wall) so the lesson structure actually rides the Gemini topic boundaries instead of bypassing them."
+}

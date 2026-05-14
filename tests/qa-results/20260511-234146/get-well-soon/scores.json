@@ -1,0 +1,19 @@
+{
+  "program_title": "Get well soon",
+  "scores": {
+    "lesson_boundaries": 3,
+    "lesson_count": 4,
+    "title_clarity": 4,
+    "step_flow": 3,
+    "source_faithfulness": 5,
+    "topic_boundary_respect": 4
+  },
+  "overall": 3.88,
+  "pass": true,
+  "critical_issues": [
+    "Program title 'Get well soon' is generic and program description is empty",
+    "Lesson 3 title promises 3 hacks but the clip 112-225s contains 7 hacks (under-promise vs. content)",
+    "No WATCH-typed steps despite clips being attached; only DO and REFLECT present"
+  ],
+  "top_recommendation": "Rewrite Lesson 3's title and summary to cover all seven hacks in its 112-225s clip (eye, cold shower, morning light, vinegar, oil pulling, sleep, legs-up-the-wall), or split it into two lessons that match the actual content density."
+}

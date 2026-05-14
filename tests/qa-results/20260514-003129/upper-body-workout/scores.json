@@ -1,0 +1,21 @@
+{
+  "program_title": "Upper body workout",
+  "scores": {
+    "lesson_boundaries": 3,
+    "lesson_count": 4,
+    "title_clarity": 4,
+    "step_flow": 3,
+    "source_faithfulness": 4,
+    "topic_boundary_respect": 2
+  },
+  "overall": 3.13,
+  "pass": false,
+  "critical_issues": [
+    "Lesson 1 clips straddle Gemini segment boundaries (0–410 crosses Press→Flyes at 267; 410–794 crosses Flyes→Low Pulley Cable Fly at 542)",
+    "Lesson 1 silently includes Low Pulley Cable Fly footage (542–794) without mentioning it in title, summary, or steps",
+    "Lesson 4 clip 1024–1702 includes Dumbbell Triceps Kickback but title/summary claim only bench dips and pushdowns",
+    "targetTransformation promises 'shoulders' content not present in either source video",
+    "programDescription is empty"
+  ],
+  "top_recommendation": "Re-cut Lesson 1's clips on the Gemini segment boundaries (0–267 Press, 267–542 Flyes) and explicitly account for Low Pulley Cable Fly (542–794) rather than burying it inside a mislabeled clip."
+}
