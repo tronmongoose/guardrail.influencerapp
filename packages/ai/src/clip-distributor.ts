@@ -67,7 +67,24 @@ const MIN_DURATION_FOR_SPLIT_SECONDS = 5 * 60;
 const TARGET_CHUNK_MIN_SECONDS = 5 * 60;
 const TARGET_CHUNK_MAX_SECONDS = 10 * 60;
 const SNAP_WINDOW_SECONDS = 60;
+const ADAPTIVE_SNAP_CEILING_SECONDS = 240;
+const ADAPTIVE_SNAP_FRACTION = 0.35;
 const MAX_TIME_SLICES = 8;
+
+/**
+ * Snap-window sizing for time-based slicing. A fixed 60s window is fine for
+ * 5-min chunks but too tight when a long single-topic video gets cut into
+ * just 2 slices — the nearest segment boundary can sit >100s from the
+ * arithmetic mid (observed: 132s on upper-body-workout fixture). Scale the
+ * window with the slice spacing so longer slices tolerate longer snaps,
+ * capped at 240s to keep cuts within reach of their ideal location.
+ */
+function adaptiveSnapWindow(idealSpacing: number): number {
+  return Math.min(
+    ADAPTIVE_SNAP_CEILING_SECONDS,
+    Math.max(SNAP_WINDOW_SECONDS, Math.round(idealSpacing * ADAPTIVE_SNAP_FRACTION)),
+  );
+}
 
 function chooseChunkCount(duration: number, topicCount: number): number {
   const minCount = Math.max(1, Math.ceil(duration / TARGET_CHUNK_MAX_SECONDS));
@@ -111,6 +128,8 @@ function timeBasedSlices(
     idealBreaks.push((duration * i) / count);
   }
 
+  const snapWindow = adaptiveSnapWindow(duration / count);
+
   const used = new Set<number>();
   const resolved: number[] = [];
   for (const ideal of idealBreaks) {
@@ -119,7 +138,7 @@ function timeBasedSlices(
     for (const b of boundaries) {
       if (used.has(b)) continue;
       const dist = Math.abs(b - ideal);
-      if (dist <= SNAP_WINDOW_SECONDS && dist < bestDist) {
+      if (dist <= snapWindow && dist < bestDist) {
         best = b;
         bestDist = dist;
       }
@@ -472,17 +491,33 @@ export function distributeClipsToLessons(
       // with the same source video that dominated this one. If the next
       // clip in the queue shares a videoId with the clip we just placed,
       // swap it forward with the first clip from a different video.
+      //
+      // GUARD: the swap pushes clips[nextIdx] *back* past clips[swapIdx].
+      // If clips[nextIdx] has more same-video siblings later in the queue,
+      // pushing it back would also push it past those siblings — breaking
+      // the source-video sequence within its own video. Only swap when the
+      // displaced clip has no later same-video siblings.
       const nextIdx = i + 1;
       if (nextIdx < clips.length && clips[nextIdx].videoId === clip.videoId) {
-        let swapIdx = -1;
+        const displacedVideoId = clips[nextIdx].videoId;
+        let hasLaterSibling = false;
         for (let j = nextIdx + 1; j < clips.length; j++) {
-          if (clips[j].videoId !== clip.videoId) {
-            swapIdx = j;
+          if (clips[j].videoId === displacedVideoId) {
+            hasLaterSibling = true;
             break;
           }
         }
-        if (swapIdx !== -1) {
-          [clips[nextIdx], clips[swapIdx]] = [clips[swapIdx], clips[nextIdx]];
+        if (!hasLaterSibling) {
+          let swapIdx = -1;
+          for (let j = nextIdx + 1; j < clips.length; j++) {
+            if (clips[j].videoId !== clip.videoId) {
+              swapIdx = j;
+              break;
+            }
+          }
+          if (swapIdx !== -1) {
+            [clips[nextIdx], clips[swapIdx]] = [clips[swapIdx], clips[nextIdx]];
+          }
         }
       }
       currentLesson++;

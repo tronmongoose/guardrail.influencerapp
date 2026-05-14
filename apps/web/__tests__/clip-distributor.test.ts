@@ -441,6 +441,90 @@ describe("distributeClipsToLessons — time-based fallback for non-distinct topi
     expect(boundaries).not.toContain(500);
     expect(boundaries).not.toContain(1000);
   });
+
+  it("preserves within-video source order when distributing across lessons", () => {
+    // Repro of workout-like-a-champ scramble: a source video with 4 clips
+    // (Press → Cable Fly → Chest Fly → Crossover) and one sibling video had
+    // its clips placed in non-source order across lessons (observed
+    // L1→L3→L3→L8 against actual source order). Cause was the
+    // different-video-first swap pushing same-video clips past their own
+    // later siblings. Fix: skip the swap when the displaced clip still has
+    // later same-video siblings.
+    const enriched = [
+      makeEnrichedDigest(
+        "v1",
+        "Chest & Triceps",
+        [
+          { label: "Press", startSeconds: 0, endSeconds: 300 },
+          { label: "Cable Fly", startSeconds: 300, endSeconds: 600 },
+          { label: "Chest Fly", startSeconds: 600, endSeconds: 900 },
+          { label: "Crossover", startSeconds: 900, endSeconds: 1200 },
+        ],
+        1200,
+      ),
+      makeEnrichedDigest(
+        "v2",
+        "Cardio",
+        [{ label: "Run", startSeconds: 0, endSeconds: 600 }],
+        600,
+      ),
+    ];
+    const plan = distributeClipsToLessons(enriched, [], 5);
+
+    // For each clip from v1, gather (sourceStart, lessonIdx). After sorting
+    // by sourceStart, the lessonIdx sequence must be non-decreasing — i.e.,
+    // the clip that comes first in the source video appears in an earlier
+    // (or equal) lesson than the next.
+    const v1Order: { start: number; lessonIdx: number }[] = [];
+    for (const lesson of plan.lessons) {
+      for (const clip of lesson.clips) {
+        if (clip.videoId === "v1") {
+          v1Order.push({ start: clip.startSeconds, lessonIdx: lesson.lessonIndex });
+        }
+      }
+    }
+    v1Order.sort((a, b) => a.start - b.start);
+    for (let k = 1; k < v1Order.length; k++) {
+      expect(v1Order[k].lessonIdx).toBeGreaterThanOrEqual(v1Order[k - 1].lessonIdx);
+    }
+  });
+
+  it("uses an adaptive snap window proportional to slice spacing", () => {
+    // Repro of the upper-body-workout case: 820s single-topic video being cut
+    // into 2 slices. Arithmetic mid lands at 410s; the nearest Gemini segment
+    // boundaries sit at 267 and 542 — 143s and 132s away. Under the legacy
+    // fixed 60s snap window, neither qualifies and the cut straddles a
+    // segment. With an adaptive window proportional to the 410s slice
+    // spacing, the closer (132s) boundary wins.
+    const digest: EnrichedContentDigest = {
+      contentId: "v1",
+      contentTitle: "Upper-body workout",
+      contentType: "video",
+      keyConcepts: ["workout"],
+      skillsIntroduced: [],
+      memorableExamples: [],
+      difficultyLevel: "intermediate",
+      summary: "...",
+      segments: [
+        { startSeconds: 0, endSeconds: 267, text: "warmup", topic: "warmup" },
+        { startSeconds: 267, endSeconds: 542, text: "bench", topic: "bench press" },
+        { startSeconds: 542, endSeconds: 820, text: "rows", topic: "rows" },
+      ],
+      topics: [{ label: "Full Upper-Body Workout", startSeconds: 0, endSeconds: 820 }],
+      keyMoments: [],
+      durationSeconds: 820,
+    };
+
+    const plan = distributeClipsToLessons([digest], [], 2);
+    const boundaries = plan.lessons.flatMap((l) =>
+      l.clips.flatMap((c) => [c.startSeconds, c.endSeconds]),
+    );
+
+    // 542 is 132s from the arithmetic 410 — outside the old 60s window,
+    // inside the adaptive window. It must win over the arithmetic 410.
+    expect(boundaries).toContain(542);
+    expect(boundaries).not.toContain(410);
+  });
 });
 
 // ---------------------------------------------------------------------------
