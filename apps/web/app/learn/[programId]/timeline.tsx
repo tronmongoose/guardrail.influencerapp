@@ -673,195 +673,104 @@ export function LearnerTimeline({
                     )}
 
                     <div className="space-y-2">
-                      {/* Watch steps: one card per SessionClip — preserves time
-                          ranges so a 20-min video split into 3 clips renders as
-                          3 distinct cards, each playing only its assigned range. */}
+                      {/* WATCH step: one card per session that links to the
+                          focused viewer at /learn/[programId]/[sessionId],
+                          which plays all clips chained with chapter markers.
+                          Replaces an earlier per-clip rendering that produced
+                          N "Part X of N · WATCH" cards per lesson — a single
+                          continuous video was being presented as N separate
+                          steps with N separate Mark-as-watched checkboxes. */}
                       {session.compositeSession?.clips?.length &&
-                        !session.actions.some((a) => a.type === "WATCH" && a.youtubeVideo) && (
-                          <>
-                            {session.compositeSession.clips
-                              .filter((c) => c.youtubeVideo)
-                              .map((clip, clipIdx, allClips) => {
-                                const clipVid = clip.youtubeVideo!;
-                                const watchKey = `watch:${clip.id}`;
-                                const watchDone = watchedSessions.has(watchKey);
-                                const isWatchExpanded = expandedAction === watchKey;
-                                const hasMultiple = allClips.length > 1;
+                        !session.actions.some((a) => a.type === "WATCH" && a.youtubeVideo) && (() => {
+                          const clips = session.compositeSession.clips.filter((c) => c.youtubeVideo);
+                          if (clips.length === 0) return null;
 
-                                const handleWatchComplete = () => {
+                          const watchKey = `watch:session:${session.id}`;
+                          const watchDone = watchedSessions.has(watchKey);
+                          const totalSeconds = clips.reduce((sum, c) => {
+                            if (c.startSeconds != null && c.endSeconds != null) {
+                              return sum + Math.max(0, c.endSeconds - c.startSeconds);
+                            }
+                            return sum;
+                          }, 0);
+                          const fmtTotal = (s: number) => {
+                            const m = Math.floor(s / 60);
+                            const sec = Math.floor(s % 60);
+                            return m > 0 ? `${m} min` : `${sec}s`;
+                          };
+                          const partsLabel = clips.length > 1 ? `${clips.length} parts` : null;
+                          const totalLabel = totalSeconds > 0 ? fmtTotal(totalSeconds) : null;
+                          const subtitleParts = [partsLabel, totalLabel].filter(Boolean);
+                          const titleText =
+                            clips[0].chapterTitle?.trim() ||
+                            clips[0].youtubeVideo?.title ||
+                            session.title;
+
+                          return (
+                            <div
+                              className={`border transition-all duration-300 overflow-hidden ${
+                                watchDone ? "opacity-70" : ""
+                              }`}
+                              style={{
+                                borderRadius: "var(--token-radius-lg)",
+                                backgroundColor: watchDone
+                                  ? "var(--token-color-bg-default)"
+                                  : "var(--token-color-bg-elevated)",
+                                borderColor: "var(--token-color-border-subtle)",
+                              }}
+                            >
+                              <Link
+                                href={`/learn/${program.id}/${session.id}`}
+                                onClick={() => {
                                   setWatchedSessions((prev) => new Set(prev).add(watchKey));
-                                  setExpandedAction(null);
-                                };
+                                }}
+                                className="w-full flex items-center gap-3 py-3 px-4 text-left cursor-pointer"
+                              >
+                                <CompletionCircle
+                                  done={watchDone}
+                                  isSaving={false}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setWatchedSessions((prev) => {
+                                      const next = new Set(prev);
+                                      if (watchDone) next.delete(watchKey);
+                                      else next.add(watchKey);
+                                      return next;
+                                    });
+                                  }}
+                                />
 
-                                const fmt = (s: number) =>
-                                  `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-                                // Show the clip's own duration, not its position in
-                                // the source asset — learners see the slice they're
-                                // about to watch, never the original timestamps.
-                                const rangeLabel =
-                                  clip.startSeconds != null && clip.endSeconds != null
-                                    ? fmt(Math.max(0, clip.endSeconds - clip.startSeconds))
-                                    : null;
-                                const titleText =
-                                  clip.chapterTitle?.trim() || clipVid.title || session.title;
-                                const partLabel = hasMultiple
-                                  ? `Part ${clipIdx + 1} of ${allClips.length}`
-                                  : null;
-
-                                // Build URLs that respect time ranges for each fallback path:
-                                // - Mux: handled inside MuxVideoPlayer (seek + onClipEnd pause)
-                                // - Blob: HTML5 media fragments (#t=start,end) handle the start;
-                                //   end is enforced by the onTimeUpdate handler below.
-                                // - YouTube embed: ?start= & ?end= are honored by the iframe.
-                                const blobSrc = clipVid.url.includes("blob.vercel-storage.com")
-                                  ? clip.startSeconds != null && clip.endSeconds != null
-                                    ? `${clipVid.url}#t=${Math.floor(clip.startSeconds)},${Math.ceil(clip.endSeconds)}`
-                                    : clipVid.url
-                                  : null;
-                                const ytStart = clip.startSeconds != null ? `&start=${Math.floor(clip.startSeconds)}` : "";
-                                const ytEnd = clip.endSeconds != null ? `&end=${Math.ceil(clip.endSeconds)}` : "";
-
-                                return (
-                                  <div
-                                    key={clip.id}
-                                    className={`border transition-all duration-300 overflow-hidden ${
-                                      watchDone ? "opacity-70" : ""
-                                    }`}
+                                <div className="flex-1 min-w-0">
+                                  <p
+                                    className={`text-sm font-medium truncate ${watchDone ? "line-through" : ""}`}
                                     style={{
-                                      borderRadius: "var(--token-radius-lg)",
-                                      backgroundColor: watchDone
-                                        ? "var(--token-color-bg-default)"
-                                        : "var(--token-color-bg-elevated)",
-                                      borderColor: "var(--token-color-border-subtle)",
+                                      color: watchDone
+                                        ? "var(--token-color-text-secondary)"
+                                        : "var(--token-color-text-primary)",
                                     }}
                                   >
-                                    {/* Compact row — same layout as action cards */}
-                                    <div
-                                      role="button"
-                                      tabIndex={0}
-                                      onClick={() => {
-                                        setExpandedAction(isWatchExpanded ? null : watchKey);
-                                      }}
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter" || e.key === " ") {
-                                          e.preventDefault();
-                                          setExpandedAction(isWatchExpanded ? null : watchKey);
-                                        }
-                                      }}
-                                      className="w-full flex items-center gap-3 py-3 px-4 text-left cursor-pointer"
-                                    >
-                                      <CompletionCircle
-                                        done={watchDone}
-                                        isSaving={false}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          if (!watchDone) handleWatchComplete();
-                                        }}
-                                      />
+                                    {titleText}
+                                  </p>
+                                  <span
+                                    className="text-[10px] uppercase tracking-wider font-semibold"
+                                    style={getActionTypeColor("WATCH")}
+                                  >
+                                    {["Watch", ...subtitleParts].join(" · ")}
+                                  </span>
+                                </div>
 
-                                      <div className="flex-1 min-w-0">
-                                        <p
-                                          className={`text-sm font-medium truncate ${watchDone ? "line-through" : ""}`}
-                                          style={{
-                                            color: watchDone
-                                              ? "var(--token-color-text-secondary)"
-                                              : "var(--token-color-text-primary)",
-                                          }}
-                                        >
-                                          {partLabel ? `${partLabel} · ${titleText}` : titleText}
-                                        </p>
-                                        <span
-                                          className="text-[10px] uppercase tracking-wider font-semibold"
-                                          style={getActionTypeColor("WATCH")}
-                                        >
-                                          Watch{rangeLabel ? ` · ${rangeLabel}` : ""}
-                                        </span>
-                                      </div>
-
-                                      <svg
-                                        className={`w-4 h-4 transition-transform duration-200 ${isWatchExpanded ? "rotate-180" : ""}`}
-                                        style={{ color: "var(--token-color-text-secondary)" }}
-                                        fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                                      >
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                      </svg>
-                                    </div>
-
-                                    {/* Expanded: video player + complete button */}
-                                    {isWatchExpanded && (
-                                      <div className="px-3 pb-4 pt-1 space-y-3 animate-fade-in">
-                                        {clipVid.muxPlaybackId ? (
-                                          <MuxVideoPlayer
-                                            playbackId={clipVid.muxPlaybackId}
-                                            title={titleText}
-                                            startSeconds={clip.startSeconds ?? undefined}
-                                            endSeconds={clip.endSeconds ?? undefined}
-                                            onClipEnd={handleWatchComplete}
-                                          />
-                                        ) : blobSrc ? (
-                                          <div
-                                            className="aspect-video overflow-hidden"
-                                            style={{
-                                              borderRadius: "var(--token-comp-video-radius)",
-                                              border: "var(--token-comp-video-border)",
-                                            }}
-                                          >
-                                            <video
-                                              src={blobSrc}
-                                              title={titleText}
-                                              className="w-full h-full"
-                                              controls
-                                              playsInline
-                                              onTimeUpdate={(e) => {
-                                                if (clip.endSeconds == null) return;
-                                                const v = e.currentTarget;
-                                                if (v.currentTime >= clip.endSeconds) {
-                                                  v.pause();
-                                                  handleWatchComplete();
-                                                }
-                                              }}
-                                              onEnded={handleWatchComplete}
-                                            />
-                                          </div>
-                                        ) : (
-                                          <div
-                                            className="aspect-video overflow-hidden"
-                                            style={{
-                                              borderRadius: "var(--token-comp-video-radius)",
-                                              border: "var(--token-comp-video-border)",
-                                            }}
-                                          >
-                                            <iframe
-                                              src={`https://www.youtube.com/embed/${clipVid.videoId}?rel=0&modestbranding=1&iv_load_policy=3${ytStart}${ytEnd}`}
-                                              title={titleText}
-                                              className="w-full h-full"
-                                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                              allowFullScreen
-                                            />
-                                          </div>
-                                        )}
-
-                                        {!watchDone && (
-                                          <button
-                                            onClick={handleWatchComplete}
-                                            className="w-full py-2.5 text-sm font-semibold transition border hover:opacity-80"
-                                            style={{
-                                              borderRadius: "var(--token-comp-btn-primary-radius)",
-                                              backgroundColor: "var(--token-color-accent)",
-                                              color: "var(--token-color-text-on-accent, #fff)",
-                                              borderColor: "var(--token-color-accent)",
-                                            }}
-                                          >
-                                            Mark as watched
-                                          </button>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                          </>
-                        )}
+                                <svg
+                                  className="w-4 h-4"
+                                  style={{ color: "var(--token-color-text-secondary)" }}
+                                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                >
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                              </Link>
+                            </div>
+                          );
+                        })()}
                       {session.actions.map((action) => {
                         const done = completedActions.has(action.id);
                         const isNext = action.id === nextActionId;

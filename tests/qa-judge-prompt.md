@@ -30,6 +30,8 @@ The Journeyline pipeline output. Structure includes:
 - Steps (each typed as WATCH / PRACTICE / REFLECT, with content)
 - `SessionClip` references — `{videoId, startSeconds, endSeconds}` pointing back into the source videos
 
+**On the WATCH step:** lessons that have `clips` (a non-empty array of `SessionClip` references) provide their watching experience through those clips, not through a typed `WATCH` action. The learner UI plays those clips chained together as one continuous WATCH step with chapter markers. **Treat the presence of `clips` as a satisfied WATCH step for the lesson.** Do not penalize a lesson for "missing a WATCH step" if it has clips.
+
 ---
 
 ## RUBRIC
