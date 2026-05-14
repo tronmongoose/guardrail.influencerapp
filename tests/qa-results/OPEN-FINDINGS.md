@@ -26,17 +26,17 @@ Running list of QA-session findings that aren't fully resolved. Replaces the per
 
 ---
 
-## 🚧 Clip-range straddle still present at the *plan* layer — confirmed on 2 fixtures
+## ✅ Clip-range straddle at the *plan* layer — RESOLVED 2026-05-14 (upper-body-workout half)
 
-**Severity:** medium/high — addressed half of ticket 86e1cgy5q. Straddle remains, and now confirmed on a second fixture.
+**Severity:** medium/high — addressed half of ticket 86e1cgy5q. Snap-window root cause now fixed for the upper-body-workout case; `workout-like-a-champ` Cable Rope Pushdown case to re-verify after the within-video order fix landed.
 
 **Symptom (2 instances observed):**
-- `upper-body-workout` L1 cuts at 410s; segments end at 267, 542 (mid-segment cut)
-- `workout-like-a-champ` Cable Rope Pushdown segment (1267–1506s) split at 1363s across L5 and L7 — same Gemini segment in two different lessons
+- `upper-body-workout` L1 cuts at 410s; segments end at 267, 542 (mid-segment cut) — **now cuts at 542 (boundary)** ✅
+- `workout-like-a-champ` Cable Rope Pushdown segment (1267–1506s) split at 1363s across L5 and L7 — same Gemini segment in two different lessons — needs re-run
 
-**Root cause:** [packages/ai/src/clip-distributor.ts:84](packages/ai/src/clip-distributor.ts#L84) — `timeBasedSlices` only uses **topic** boundaries for snapping, not segments. When a long video has one big topic (no thematic distinctness), there are no snap candidates → arithmetic cuts straddle (and worse, split) the finer-grained segments.
+**Root cause:** [packages/ai/src/clip-distributor.ts:84](packages/ai/src/clip-distributor.ts#L84) — `timeBasedSlices` had segments as snap candidates after the 2026-05-13 fix, but the fixed 60s snap window was too tight when slice spacing was much larger than 60s (e.g. 2-way 800s-video split has 400s spacing; nearest boundary sat 132s away, outside the window).
 
-**Fix scoped but deferred (user asked to park):** extend `timeBasedSlices` to accept segments as additional snap candidates, dedupe with topics, snap to whichever is closer within ±60s. ~20 LOC, mirrors the segment-snap approach already in `findSegmentSnapForSplit`. With 2 distinct fixtures hitting this, the parking is worth revisiting.
+**Fix shipped 2026-05-14 (commit fb8a457):** adaptive snap window = `clamp(60, sliceSpacing * 0.35, 240)`. For a 400s spacing → 140s window. For a 5-min chunk → still 60s (unchanged behavior). +1 test.
 
 ---
 
@@ -61,17 +61,22 @@ Most likely both prompt + UI changes. Worth digging in once parallelization is i
 
 ---
 
-## 🆕 LLM ignores source-video sequence when grouping into lessons
+## ✅ LLM ignores source-video sequence when grouping into lessons — RESOLVED 2026-05-14
 
-**Severity:** medium. New finding from `workout-like-a-champ` 2026-05-14.
+**Severity:** medium. New finding from `workout-like-a-champ` 2026-05-14. **Resolved same day.**
 
 **Symptom:** Source video "Chest and Triceps B" has exercises in order: Machine Chest Press (0-258) → Low Pulley Cable Fly (258-510) → Machine Chest Fly (510-775) → Decline Cable Crossover (775-1024). The LLM put these into Lessons **3, 3, 1, 8** respectively — i.e., a learner doing the program in order goes Machine Chest Fly (L1) → mobility stuff → Press + Cable Fly (L3) → … → Decline Crossover (L8).
 
-**Root cause hypothesis:** The curriculum prompt has strong workflow-sequencing rules ("foundational → refinement") but doesn't have an explicit "preserve source-video order within a single video" rule. When the LLM clusters exercises across multiple source videos, it ranks them on workflow-difficulty rather than source-video order, scrambling each video's internal arc.
+**Actual root cause (not the LLM):** Two bugs in `distributeClipsToLessons` were locking the scramble in BEFORE the LLM ever saw it. The within-video prompt rule shipped 2026-05-13 couldn't fix it because the clip-to-bag mapping was already fixed.
 
-**Suggested fix:** Add a prompt instruction: *"When multiple lessons draw clips from the same source video, the lesson ordering must place those lessons in the order the clips appear in the source video. Do not reorder exercises within a single video."*
+1. **Bin-packer different-video-first swap** ([packages/ai/src/clip-distributor.ts:489](packages/ai/src/clip-distributor.ts#L489)) pushed same-video clips *back* past their own later siblings, scrambling source order within a single video.
+2. **Split-to-fill** ([packages/ai/src/clip-distributor.ts:389](packages/ai/src/clip-distributor.ts#L389)) sorted the clips array by duration and pushed new split halves to the END of the array, separating split siblings across non-contiguous indices so the bin-packer placed them in non-adjacent lessons.
 
-May also need to look at whether `distributeClipsToLessons` is assigning clips to lessons in a way that allows this scrambling, or whether it's purely the LLM's lesson-ordering layer.
+**Fix shipped 2026-05-14 (commits fb8a457 + 2b4be57):**
+- Guard the swap: skip when the displaced clip still has later same-video siblings.
+- Replace sort-then-push with linear argmax + splice-insert-after, preserving source-video adjacency across split iterations.
+
+Verified live on `workout-like-a-champ` cmp4yqlvv0001it8hip72dqk2: "Chest and Triceps B" 3 split parts now land in L4 → L5 → L6 in source order. +2 tests.
 
 ---
 
@@ -114,3 +119,10 @@ Suggested commit organization when shipping:
 - ✅ Gemini schema rejecting null speakerName (made fields nullish)
 - ✅ LLM clip overlaps & coverage gaps post-Ticket-#2 (added per-(session, planned-range) validator with surgical repair)
 - ✅ Gemini analysis runs serially — bottleneck on multi-video programs (added bounded-concurrency runner with 4-way parallel in `route.ts`, completion-based progress tracking, deadline + error handling preserved per task)
+
+## ✅ Resolved 2026-05-14 session
+
+- ✅ Regenerate-with-instructions UI orphaned without frontend (commit 073b5cb)
+- ✅ `timeBasedSlices` 60s snap window too tight for long-spacing slices — adaptive window scales with slice size (commit fb8a457)
+- ✅ Within-video source-order scramble in bin-packer different-video swap (commit fb8a457)
+- ✅ Split-to-fill broke source-video adjacency when clipsCount < lessonCount (commit 2b4be57)
