@@ -75,6 +75,19 @@ export default async function LearnPage({ params }: { params: Promise<{ programI
 
   if (!program) notFound();
 
+  // Pre-load watched-session IDs so the timeline can render the WATCH card's
+  // visited state on first paint. Drives the in-page Set; updates flow back
+  // through POST /api/progress/session.
+  const watchedSessionRows = await prisma.learnerSessionProgress.findMany({
+    where: {
+      userId: user.id,
+      watched: true,
+      session: { week: { programId } },
+    },
+    select: { sessionId: true },
+  });
+  const watchedSessionIds = watchedSessionRows.map((r) => r.sessionId);
+
   // Creators can always view their own program (even unpublished)
   const isCreator = program.creatorId === user.id;
 
@@ -136,6 +149,7 @@ export default async function LearnPage({ params }: { params: Promise<{ programI
         creatorAvatarUrl={avatarProxyUrl}
         targetTransformation={program.targetTransformation}
         durationWeeks={program.durationWeeks}
+        initialWatchedSessionIds={watchedSessionIds}
       />
     </SkinThemeProvider>
   );

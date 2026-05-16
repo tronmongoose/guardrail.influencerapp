@@ -442,6 +442,47 @@ describe("distributeClipsToLessons — time-based fallback for non-distinct topi
     expect(boundaries).not.toContain(1000);
   });
 
+  it("merges adjacent same-video clips when input exceeds lesson-clip capacity", () => {
+    // Smoke test for mergeAdjacentClips. Construct an over-supplied input
+    // (16 clips for 2 lessons; cap is 2 × MAX_CLIPS_PER_LESSON = 12) so the
+    // merge branch must fire. After distribution:
+    //   - total clip count must drop to within the cap
+    //   - each source video's time coverage must be preserved (no clips lost)
+    //   - within each source video, clips remain in source order
+    const make = (id: string, n: number) =>
+      makeEnrichedDigest(
+        id,
+        `Video ${id}`,
+        Array.from({ length: n }, (_, i) => ({
+          label: `${id}-topic-${i}`,
+          startSeconds: i * 100,
+          endSeconds: (i + 1) * 100,
+        })),
+        n * 100,
+      );
+    const plan = distributeClipsToLessons([make("v1", 8), make("v2", 8)], [], 2);
+
+    const totalClips = plan.lessons.reduce((sum, l) => sum + l.clips.length, 0);
+    expect(totalClips).toBeLessThanOrEqual(12);
+    expect(totalClips).toBeLessThan(16); // merging actually happened
+
+    for (const vid of ["v1", "v2"]) {
+      const clipsForVid = plan.lessons.flatMap((l) =>
+        l.clips.filter((c) => c.videoId === vid),
+      );
+      expect(clipsForVid.length).toBeGreaterThan(0);
+      // Source order preserved: clips sorted by their startSeconds match the
+      // order in which they appear in the plan (lesson-by-lesson).
+      const sortedByStart = [...clipsForVid].sort((a, b) => a.startSeconds - b.startSeconds);
+      expect(clipsForVid.map((c) => c.startSeconds)).toEqual(
+        sortedByStart.map((c) => c.startSeconds),
+      );
+      // No coverage lost: minStart=0, maxEnd=800
+      expect(sortedByStart[0].startSeconds).toBe(0);
+      expect(sortedByStart[sortedByStart.length - 1].endSeconds).toBe(800);
+    }
+  });
+
   it("preserves source order when split-to-fill creates clip halves for under-clipped programs", () => {
     // Repro of workout-like-a-champ live-DB scenario: 5 clips for 6 lessons,
     // so the distributor splits the longest clip into halves. The old code

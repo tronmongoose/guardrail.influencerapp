@@ -63,6 +63,8 @@ interface Props {
   creatorAvatarUrl: string | null;
   targetTransformation: string | null;
   durationWeeks: number;
+  /** Session IDs the learner has marked watched, pre-loaded server-side. */
+  initialWatchedSessionIds: string[];
 }
 
 export function LearnerTimeline({
@@ -76,6 +78,7 @@ export function LearnerTimeline({
   creatorAvatarUrl,
   targetTransformation,
   durationWeeks,
+  initialWatchedSessionIds,
 }: Props) {
   const { showToast } = useToast();
 
@@ -104,35 +107,39 @@ export function LearnerTimeline({
   // Track which action is expanded (for mobile detail view)
   const [expandedAction, setExpandedAction] = useState<string | null>(null);
 
-  // Track which sessions' composite videos have been watched. Local-only:
-  // completion semantics for the timeline live in `completedActions`. This
-  // Set only drives the visual "visited" state for the WATCH card. Persisted
-  // to localStorage scoped per-program-per-user so it survives navigating
-  // into the focused viewer and back.
-  const watchedStorageKey = `journeyline:watchedSessions:${userId}:${program.id}`;
-  const [watchedSessions, setWatchedSessions] = useState<Set<string>>(() => new Set());
+  // Track which sessions' composite videos have been watched. Server-backed
+  // via /api/progress/session — initialWatchedSessionIds hydrates the Set
+  // on first paint, setWatchedForSession optimistically updates it and
+  // fires the POST. On failure the optimistic update is rolled back so the
+  // UI never lies about persisted state.
+  const [watchedSessions, setWatchedSessions] = useState<Set<string>>(
+    () => new Set(initialWatchedSessionIds),
+  );
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem(watchedStorageKey);
-      if (raw) setWatchedSessions(new Set(JSON.parse(raw) as string[]));
-    } catch {
-      // ignore parse / quota errors — visited state is a UX nicety, not load-bearing
-    }
-  }, [watchedStorageKey]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      window.localStorage.setItem(
-        watchedStorageKey,
-        JSON.stringify(Array.from(watchedSessions)),
-      );
-    } catch {
-      // ignore
-    }
-  }, [watchedSessions, watchedStorageKey]);
+  const setWatchedForSession = useCallback(
+    async (sessionId: string, watched: boolean) => {
+      const prev = watchedSessions;
+      // Optimistic update
+      setWatchedSessions((s) => {
+        const next = new Set(s);
+        if (watched) next.add(sessionId);
+        else next.delete(sessionId);
+        return next;
+      });
+      try {
+        const res = await fetch("/api/progress/session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId, watched }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      } catch {
+        // Roll back the optimistic update so the UI matches the server.
+        setWatchedSessions(prev);
+      }
+    },
+    [watchedSessions],
+  );
 
   // Celebration overlay state (week milestones only — not final week)
   const [celebration, setCelebration] = useState<{
@@ -715,7 +722,10 @@ export function LearnerTimeline({
                           const clips = session.compositeSession.clips.filter((c) => c.youtubeVideo);
                           if (clips.length === 0) return null;
 
-                          const watchKey = `watch:session:${session.id}`;
+                          // Server-backed: the Set holds raw session IDs that
+                          // match LearnerSessionProgress.sessionId so the
+                          // POST body and server-fetched hydration agree.
+                          const watchKey = session.id;
                           const watchDone = watchedSessions.has(watchKey);
                           const isWatchExpanded = expandedAction === watchKey;
                           const totalSeconds = clips.reduce((sum, c) => {
@@ -738,15 +748,10 @@ export function LearnerTimeline({
                             session.title;
 
                           const markWatched = () => {
-                            setWatchedSessions((prev) => new Set(prev).add(watchKey));
+                            void setWatchedForSession(watchKey, true);
                           };
                           const toggleWatched = () => {
-                            setWatchedSessions((prev) => {
-                              const next = new Set(prev);
-                              if (watchDone) next.delete(watchKey);
-                              else next.add(watchKey);
-                              return next;
-                            });
+                            void setWatchedForSession(watchKey, !watchDone);
                           };
 
                           return (

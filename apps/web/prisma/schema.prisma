@@ -38,6 +38,7 @@ model User {
   programs            Program[]
   entitlements        Entitlement[]
   progress            LearnerProgress[]
+  sessionProgress     LearnerSessionProgress[]
   followedInfluencers UserInfluencer[]
   magicLinks          MagicLink[]
   promoCodes          PromoCode[]
@@ -162,8 +163,27 @@ model Session {
   hideTransition Boolean  @default(false)
 
   compositeSession CompositeSession?
+  learnerProgress  LearnerSessionProgress[]
 
   @@index([weekId])
+}
+
+// Tracks "user finished watching this session's clips" for sessions backed by
+// a CompositeSession (no typed WATCH Action exists, so LearnerProgress can't
+// represent it). Manual toggles from the learner UI also flow through here.
+model LearnerSessionProgress {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId   String
+  session     Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  watched     Boolean   @default(false)
+  watchedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, sessionId])
+  @@index([userId])
 }
 
 model Action {
