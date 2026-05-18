@@ -58,11 +58,12 @@ async function main() {
     .filter((v) => v.analysis)
     .map((v) => {
       const a = v.analysis!;
+      const title = v.title ?? "Untitled";
       return {
         contentId: v.id,
-        contentTitle: v.title,
+        contentTitle: title,
         contentType: "video" as const,
-        keyConcepts: [v.title],
+        keyConcepts: [title],
         skillsIntroduced: [],
         memorableExamples: [],
         difficultyLevel: "intermediate",

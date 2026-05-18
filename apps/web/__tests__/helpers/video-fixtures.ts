@@ -35,7 +35,15 @@ export function makeEnrichedDigest(args: {
       text: `text for ${t.label}`,
       topic: t.label,
     })),
-    topics,
+    // Normalize subtopics: VideoTopic from @guide-rail/shared has
+    // `subtopics?: string[] | null`, but EnrichedContentDigest.topics
+    // requires `string[] | undefined` (no null). Coerce null → undefined.
+    topics: topics.map((t) => ({
+      label: t.label,
+      startSeconds: t.startSeconds,
+      endSeconds: t.endSeconds,
+      subtopics: t.subtopics ?? undefined,
+    })),
     keyMoments: [],
     durationSeconds,
   };
