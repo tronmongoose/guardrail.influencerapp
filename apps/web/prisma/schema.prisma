@@ -450,9 +450,13 @@ enum EntitlementStatus {
 model LearnerProgress {
   id             String    @id @default(cuid())
   userId         String
-  user           User      @relation(fields: [userId], references: [id])
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   actionId       String
-  action         Action    @relation(fields: [actionId], references: [id])
+  // Cascade so regeneration's Week.deleteMany (which cascades through
+  // Session → Action) doesn't trip the FK constraint when old progress
+  // rows still reference the soon-to-be-deleted Actions. Orphan progress
+  // is useless anyway.
+  action         Action    @relation(fields: [actionId], references: [id], onDelete: Cascade)
   completed      Boolean   @default(false)
   completedAt    DateTime?
   reflectionText String?
