@@ -141,7 +141,16 @@ export const SessionClipSchema = z.object({
   transitionType: TransitionTypeSchema.default("NONE"),
   transitionDurationMs: z.number().int().min(0).max(5000).default(500),
   chapterTitle: z.string().max(200).optional(),
-  chapterDescription: z.string().max(500).optional(),
+  // Raised from 500 → 2000 on 2026-05-17. The 500 cap dated to before the
+  // 2026-05-13 multi-segment prompt enumeration ("chapterDescription must
+  // enumerate every distinct activity inside the clip's time range" — see
+  // llm-adapter.ts WATCH-clip prompt). With that instruction live, the LLM
+  // produces descriptions >500 chars on multi-exercise clips, ProgramDraft
+  // Zod parse fails, repair pass re-tries and eventually blows past the
+  // 10-min wall-clock JOB_TIMEOUT_MS. The learner UI doesn't render
+  // chapterDescription anywhere, so the cap is a safety bound on DB row
+  // size, not a UX constraint.
+  chapterDescription: z.string().max(2000).optional(),
 });
 export type SessionClipInput = z.infer<typeof SessionClipSchema>;
 
