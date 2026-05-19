@@ -51,8 +51,10 @@ async function getLongTimeoutAgent(): Promise<unknown> {
       headersTimeout: GENERATION_TIMEOUT_MS,
       bodyTimeout: GENERATION_TIMEOUT_MS,
     });
-  } catch {
-    _longTimeoutAgent = null; // not available — fall back to default fetch
+    console.info(`[llm-adapter] undici Agent installed with ${GENERATION_TIMEOUT_MS}ms headers/body timeout`);
+  } catch (err) {
+    console.warn(`[llm-adapter] failed to load undici Agent — Anthropic calls will use default 300s timeout:`, err instanceof Error ? err.message : err);
+    _longTimeoutAgent = null;
   }
   return _longTimeoutAgent;
 }
