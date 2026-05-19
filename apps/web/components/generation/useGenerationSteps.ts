@@ -32,99 +32,121 @@ interface UseGenerationStepsResult {
   displayProgress: number;
 }
 
-// Per-stage ceiling for the simulated progress value. The simulation is clamped
-// to the ceiling of the CURRENT stage so it never overruns reality. Real backend
-// progress always wins if it's higher than the simulated value.
+// Per-stage simulation: each stage has a ceiling (max % it can reach) and an
+// expectedSeconds (how long it typically takes). The bar advances smoothly
+// from the previous stage's ceiling toward the current stage's ceiling over
+// expectedSeconds, easing out so long stages don't park at the ceiling too
+// hard. When the backend advances `progress`, the displayed bar uses it as a
+// floor (so real progress always wins).
 //
-// Ranges are sized roughly proportional to wall-clock time spent in each stage.
-// fetching_transcripts (Gemini) is by far the longest in practice, so it owns
-// the largest slice — otherwise the bar parks at the ceiling for a minute+
-// while Gemini runs, then races forward when the stage finally flips.
-const STAGE_CEILING: Record<string, number> = {
-  queued: 3,
-  preparing: 8,
-  fetching_transcripts: 50,
-  analyzing: 68,
-  generating: 92,
-  validating: 94,
-  persisting: 97,
-  generating_skin: 99,
-  complete: 100,
+// Total expected wall-clock at the upper end:
+//   2s + 4s + 120s + 8s + 120s + 5s + 10s + 30s = ~5 min for a 10-video program.
+// Smaller programs finish faster — real progress pulls the bar forward.
+//
+// Ceilings are sized so the slowest stages (fetching_transcripts, generating)
+// own the biggest contiguous slices and the short stages don't jump much.
+const STAGES: Record<string, { ceiling: number; expectedSeconds: number }> = {
+  queued: { ceiling: 2, expectedSeconds: 2 },
+  preparing: { ceiling: 6, expectedSeconds: 4 },
+  fetching_transcripts: { ceiling: 48, expectedSeconds: 120 },
+  analyzing: { ceiling: 54, expectedSeconds: 8 },
+  generating: { ceiling: 86, expectedSeconds: 120 },
+  validating: { ceiling: 90, expectedSeconds: 5 },
+  persisting: { ceiling: 94, expectedSeconds: 10 },
+  generating_skin: { ceiling: 98, expectedSeconds: 30 },
+  complete: { ceiling: 100, expectedSeconds: 0 },
 };
 
-// Expected total runtime used to shape the easing curve. Actual jobs may finish
-// faster (real progress pulls the bar forward) or slower (simulation asymptotes
-// at the current stage ceiling until the backend advances).
-const EXPECTED_TOTAL_MS = 4 * 60 * 1000;
+// Bubble step → bar-% threshold. 8 bubbles evenly distributed every 12.5% so
+// each one lights up as the bar crosses its slice — decouples cadence from
+// stage names entirely (which was the original "races through 4 bubbles in
+// 5 seconds" bug, since `analyzing` stage was tiny but owned 2 bubbles).
+const STEP_THRESHOLDS = [0, 12.5, 25, 37.5, 50, 62.5, 75, 87.5];
 
 /**
  * Maps backend generation {stage, progress} to 8 rich frontend steps.
  *
- * Backend stages: preparing(2-5) → fetching_transcripts(5-25) → analyzing(25-45)
- *   → generating(45-85) → validating(85) → persisting(90) → complete(100)
- *
- * A single continuous, time-driven simulation drives the bar so it moves
- * evenly even when the backend is stuck inside a long-running stage (Gemini
- * analysis, the LLM extraction call, the generation LLM call). The simulation
- * is clamped to the current stage's ceiling so it can't outrun reality, and
- * the real backend progress acts as a floor so we can never fall behind.
+ * Bar advances via per-stage simulation: each stage runs an ease-out curve
+ * from the prior ceiling to its own ceiling over its expectedSeconds. Real
+ * backend `progress` acts as a floor. Bubbles fire at fixed %-thresholds so
+ * they tick at even visual intervals regardless of which stage is slow.
  */
 export function useGenerationSteps(input: UseGenerationStepsInput): UseGenerationStepsResult {
   const { stage, progress, status } = input;
 
   const [simulatedProgress, setSimulatedProgress] = useState(0);
-  const simulationStartRef = useRef<number | null>(null);
+  // Track the in-flight stage so we can reset the simulation when it changes.
+  const stageRef = useRef<string | null>(null);
+  const stageStartTimeRef = useRef<number>(Date.now());
+  const stageStartProgressRef = useRef<number>(0);
 
-  // Track step completion timestamps for minimum dwell time
+  // Step-completion dwell so bubbles don't visually skip ahead too fast.
   const [displayedActiveIndex, setDisplayedActiveIndex] = useState(0);
   const lastStepChangeRef = useRef<number>(Date.now());
 
-  // Single continuous simulation — ticks the bar forward on wall-clock time so
-  // long stages (Gemini analysis, LLM extraction, generation) still feel alive.
   useEffect(() => {
     if (status !== "PROCESSING") {
-      simulationStartRef.current = null;
+      stageRef.current = null;
       setSimulatedProgress(0);
       return;
     }
 
-    if (!simulationStartRef.current) {
-      simulationStartRef.current = Date.now();
+    const effectiveStage = stage ?? "queued";
+    // Stage transition: lock in the bar's current displayed value as the
+    // simulation's new starting point so the new stage's curve picks up
+    // from where we are (no jumps).
+    if (stageRef.current !== effectiveStage) {
+      stageRef.current = effectiveStage;
+      stageStartTimeRef.current = Date.now();
+      stageStartProgressRef.current = simulatedProgress;
     }
 
     const interval = setInterval(() => {
-      const elapsed = Date.now() - (simulationStartRef.current || Date.now());
-      const t = Math.min(elapsed / EXPECTED_TOTAL_MS, 1);
-      // Ease out toward 95 over the expected duration. Clamping to the stage
-      // ceiling happens at render time, not here — that way when a stage flips,
-      // the simulation already has momentum to carry through the new range.
-      const simulated = 95 * (1 - Math.pow(1 - t, 1.5));
+      const cfg = STAGES[effectiveStage] ?? STAGES.queued;
+      const start = stageStartProgressRef.current;
+      const elapsed = (Date.now() - stageStartTimeRef.current) / 1000;
+      const t = cfg.expectedSeconds > 0 ? Math.min(elapsed / cfg.expectedSeconds, 1) : 1;
+      // Ease-out: fast at first, asymptotes to ceiling. Stage that takes
+      // longer than expectedSeconds just sits at the ceiling waiting on
+      // the real backend progress.
+      const eased = 1 - Math.pow(1 - t, 1.5);
+      const simulated = start + (cfg.ceiling - start) * eased;
       setSimulatedProgress(simulated);
     }, 400);
 
     return () => clearInterval(interval);
-  }, [status]);
+    // simulatedProgress is intentionally not in deps — including it would
+    // re-create the interval on every tick and break the simulation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, status]);
 
-  const stageCeiling = STAGE_CEILING[stage ?? "queued"] ?? 95;
+  // Real backend progress is the floor; simulation is layered on top.
   const displayProgress = stage === "complete"
     ? 100
-    : Math.max(progress, Math.min(simulatedProgress, stageCeiling));
+    : Math.max(progress, simulatedProgress);
 
   const rawSteps = useMemo((): GenerationStep[] => {
-    return STEP_DEFINITIONS.map((def, i) => ({
-      ...def,
-      status: computeStepStatus(i, stage, displayProgress),
-    }));
+    return STEP_DEFINITIONS.map((_, i) => {
+      const threshold = STEP_THRESHOLDS[i];
+      const nextThreshold = STEP_THRESHOLDS[i + 1] ?? 100;
+      let status: GenerationStep["status"];
+      if (stage === "complete") status = "completed";
+      else if (displayProgress >= nextThreshold) status = "completed";
+      else if (displayProgress >= threshold) status = "active";
+      else status = "pending";
+      return { ...STEP_DEFINITIONS[i], status };
+    });
   }, [stage, displayProgress]);
 
   const rawActiveIndex = rawSteps.findIndex((s) => s.status === "active");
 
-  // Enforce minimum 2.5s dwell per step
+  // Enforce minimum 1.5s dwell per bubble so they don't visually flicker
+  // through when the bar advances quickly.
   useEffect(() => {
     const targetIndex = Math.max(rawActiveIndex, 0);
     if (targetIndex > displayedActiveIndex) {
       const elapsed = Date.now() - lastStepChangeRef.current;
-      const minDwell = 2500;
+      const minDwell = 1500;
       if (elapsed >= minDwell) {
         setDisplayedActiveIndex(targetIndex);
         lastStepChangeRef.current = Date.now();
@@ -138,7 +160,6 @@ export function useGenerationSteps(input: UseGenerationStepsInput): UseGeneratio
     }
   }, [rawActiveIndex, displayedActiveIndex]);
 
-  // Apply dwell-adjusted statuses
   const steps = useMemo((): GenerationStep[] => {
     return rawSteps.map((step, i) => {
       if (i < displayedActiveIndex) return { ...step, status: "completed" as const };
@@ -153,63 +174,4 @@ export function useGenerationSteps(input: UseGenerationStepsInput): UseGeneratio
     activeStepIndex: displayedActiveIndex,
     displayProgress,
   };
-}
-
-function computeStepStatus(
-  index: number,
-  stage: string | null,
-  displayProgress: number,
-): "pending" | "active" | "completed" {
-  // After completion, everything is done
-  if (stage === "complete") return "completed";
-
-  // Helper: stage ordering for "is past" checks
-  const stageOrder = ["preparing", "fetching_transcripts", "analyzing", "generating", "validating", "persisting"];
-  const currentStageIdx = stageOrder.indexOf(stage ?? "");
-  const isPast = (s: string) => currentStageIdx > stageOrder.indexOf(s);
-
-  switch (index) {
-    case 0: // Watching your videos — preparing + early fetching_transcripts
-      if (stage === "preparing" || (stage === "fetching_transcripts" && displayProgress < 22)) return "active";
-      if (isPast("preparing") && displayProgress >= 22) return "completed";
-      return isPast("fetching_transcripts") ? "completed" : "pending";
-
-    case 1: // Understanding your expertise — bulk of fetching_transcripts (Gemini)
-      if (stage === "fetching_transcripts" && displayProgress >= 22) return "active";
-      if (isPast("fetching_transcripts")) return "completed";
-      return "pending";
-
-    case 2: // Finding the natural structure — analyzing first half
-      if (stage === "analyzing" && displayProgress < 60) return "active";
-      if ((stage === "analyzing" && displayProgress >= 60) || isPast("analyzing")) return "completed";
-      return "pending";
-
-    case 3: // Extracting key insights — analyzing second half
-      if (stage === "analyzing" && displayProgress >= 60) return "active";
-      if (isPast("analyzing")) return "completed";
-      return "pending";
-
-    case 4: // Mapping the learning journey — generating < 75%
-      if (stage === "generating" && displayProgress < 75) return "active";
-      if ((stage === "generating" && displayProgress >= 75) || isPast("generating")) return "completed";
-      return "pending";
-
-    case 5: // Building scene-based lessons — generating 75-82%
-      if (stage === "generating" && displayProgress >= 75 && displayProgress < 82) return "active";
-      if ((stage === "generating" && displayProgress >= 82) || isPast("generating")) return "completed";
-      return "pending";
-
-    case 6: // Writing each lesson with care — generating 82-88%
-      if (stage === "generating" && displayProgress >= 82 && displayProgress < 88) return "active";
-      if ((stage === "generating" && displayProgress >= 88) || isPast("generating")) return "completed";
-      return "pending";
-
-    case 7: // Adding the finishing touches — generating >= 88% or validating/persisting/skin
-      if (stage === "generating" && displayProgress >= 88) return "active";
-      if (stage === "validating" || stage === "persisting" || stage === "generating_skin") return "active";
-      return "pending";
-
-    default:
-      return "pending";
-  }
 }
