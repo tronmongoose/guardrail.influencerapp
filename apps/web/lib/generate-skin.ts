@@ -12,6 +12,7 @@
 import type { SkinTokens } from "@guide-rail/shared";
 import { getSkinTokens } from "@/lib/skin-bundles/registry";
 import { pickSeedSkin, type SeedMatch } from "@/lib/skin-seed-matcher";
+import { MODIFIERS } from "@/lib/skin-color-library";
 
 export interface SkinVibeContext {
   title: string;
@@ -31,6 +32,26 @@ export interface SkinVibeContext {
 // ---------------------------------------------------------------------------
 // Prompt
 // ---------------------------------------------------------------------------
+
+/** Turn detected modifier words into explicit constraint lines for the LLM. */
+function describeModifiers(vibePrompt: string | null | undefined): string[] {
+  if (!vibePrompt) return [];
+  const lower = vibePrompt.toLowerCase();
+  const lines: string[] = [];
+  for (const [name, mod] of Object.entries(MODIFIERS)) {
+    const re = new RegExp(`\\b${name}\\b`);
+    if (!re.test(lower)) continue;
+    const bits: string[] = [];
+    if (mod.hueRange) bits.push(`hues ${mod.hueRange[0]}°–${mod.hueRange[1]}°`);
+    if (mod.satMul && mod.satMul > 1) bits.push("high-saturation accents");
+    else if (mod.satMul && mod.satMul < 1) bits.push("low-saturation, desaturated accents");
+    if (mod.lightMul && mod.lightMul > 1) bits.push("lighter overall");
+    else if (mod.lightMul && mod.lightMul < 1) bits.push("darker overall");
+    if (bits.length === 0) continue;
+    lines.push(`Lean ${name.toUpperCase()}: ${bits.join(", ")}.`);
+  }
+  return lines;
+}
 
 export function buildSkinPrompt(ctx: SkinVibeContext): string {
   const isRefine = !!(ctx.currentTokens && ctx.refinementPrompt);
@@ -87,6 +108,14 @@ Rules:
   if (ctx.targetTransformation) parts.push(`Goal: ${ctx.targetTransformation}`);
   if (ctx.vibePrompt) parts.push(`Vibe: ${ctx.vibePrompt}`);
   if (ctx.niche) parts.push(`Niche: ${ctx.niche}`);
+
+  // Translate quality words ("warm", "bright", "muted") from the vibe prompt
+  // into explicit constraints so the LLM doesn't hand-wave them away.
+  const modifierLines = describeModifiers(ctx.vibePrompt);
+  if (modifierLines.length > 0) {
+    parts.push("Palette constraints (derived from vibe):");
+    for (const line of modifierLines) parts.push(`  - ${line}`);
+  }
 
   // If we found a close-in-genre preset, anchor Claude on its palette so the
   // output stays in the right neighborhood (especially light vs. dark).

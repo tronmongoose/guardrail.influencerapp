@@ -20,17 +20,18 @@ import { getSkinTokens } from "./skin-bundles/registry";
 export const CATEGORY_SYNONYMS: Record<string, string[]> = {
   classic: [
     "classic", "minimal", "minimalist", "simple", "clean", "timeless",
-    "traditional", "neutral", "elegant", "bold",
+    "traditional", "neutral", "elegant", "bold", "muted", "soft",
   ],
   creative: [
     "creative", "artistic", "art", "retro", "vintage", "pixel", "neon",
     "literary", "writing", "code", "coding", "developer", "chalkboard",
-    "esports", "gaming", "arcade", "cyberpunk",
+    "esports", "gaming", "arcade", "cyberpunk", "vibrant", "bright",
   ],
   lifestyle: [
     "lifestyle", "zen", "mindful", "mindfulness", "wellness", "calm",
     "everyday", "travel", "wanderlust", "glam", "beauty", "podcast",
-    "science", "daily", "chill",
+    "science", "daily", "chill", "warm", "cool", "earthy", "fresh",
+    "pastel",
   ],
   activity: [
     "activity", "fitness", "sports", "workout", "movement", "athletic",

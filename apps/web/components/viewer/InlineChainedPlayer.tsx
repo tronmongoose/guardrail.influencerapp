@@ -133,8 +133,6 @@ export function InlineChainedPlayer({
             ←
           </button>
           <div className="flex-1 min-w-0 text-center">
-            <span className="font-semibold">Part {currentIndex + 1} of {total}</span>
-            <span className="mx-1.5">·</span>
             <span className="truncate">{title}</span>
           </div>
           <button

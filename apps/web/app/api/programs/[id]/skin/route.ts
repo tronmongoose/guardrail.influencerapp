@@ -38,10 +38,14 @@ export async function POST(
 
   // Body is optional — tolerate empty POSTs from the existing editor button.
   let refinementPrompt: string | null = null;
+  let seedPrompt: string | null = null;
   try {
     const body = await req.json().catch(() => null);
     if (body && typeof body.refinementPrompt === "string" && body.refinementPrompt.trim()) {
       refinementPrompt = body.refinementPrompt.trim();
+    }
+    if (body && typeof body.seedPrompt === "string" && body.seedPrompt.trim()) {
+      seedPrompt = body.seedPrompt.trim();
     }
   } catch {
     // no body, fine
@@ -56,7 +60,10 @@ export async function POST(
   const tokens = await generateSkinFromVibe({
     title: program.title,
     targetTransformation: program.targetTransformation,
-    vibePrompt: program.vibePrompt,
+    // In seed mode, the user's fresh prompt overrides the program's stored
+    // vibePrompt — otherwise typing into the Studio's "Describe the vibe" box
+    // would silently fall back to whatever was last saved on the program row.
+    vibePrompt: seedPrompt ?? program.vibePrompt,
     currentTokens: isRefine ? (existing!.tokens as unknown as SkinTokens) : undefined,
     refinementPrompt: isRefine ? refinementPrompt : undefined,
   });

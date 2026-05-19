@@ -85,12 +85,186 @@ export interface DetectedColor {
   summary: string;
 }
 
+// ---------------------------------------------------------------------------
+// Modifier vocabulary — abstract qualities like "warm", "bright", "muted"
+// that don't name a specific color but tweak the palette. Exported so the
+// LLM prompt builder can mirror them in its constraint block.
+// ---------------------------------------------------------------------------
+
+export interface ColorModifier {
+  /** Multiplier applied to HSL saturation. 1 = no change. */
+  satMul?: number;
+  /** Multiplier applied to HSL lightness. 1 = no change. */
+  lightMul?: number;
+  /** Fallback color library entry names when only the modifier is present. */
+  familyHint?: string[];
+  /** Hue range (deg) — surfaced to the LLM, not used for adjustments. */
+  hueRange?: [number, number];
+}
+
+export const MODIFIERS: Record<string, ColorModifier> = {
+  warm:    { hueRange: [10, 60],   familyHint: ["Sunset", "Amber", "Brown", "Coral", "Terracotta", "Orange"] },
+  cool:    { hueRange: [180, 260], familyHint: ["Sky", "Ocean", "Teal", "Sage", "Mint"] },
+  bright:  { satMul: 1.35, lightMul: 1.05, familyHint: ["Orange", "Sky", "Pink"] },
+  vibrant: { satMul: 1.4, familyHint: ["Magenta", "Orange", "Lime"] },
+  muted:   { satMul: 0.55 },
+  soft:    { satMul: 0.7, lightMul: 1.1 },
+  bold:    { satMul: 1.2, lightMul: 0.92 },
+  dark:    { lightMul: 0.7 },
+  light:   { lightMul: 1.25 },
+  pastel:  { satMul: 0.5, lightMul: 1.3, familyHint: ["Pastel", "Lavender", "Mint"] },
+  earthy:  { familyHint: ["Brown", "Earth", "Sage", "Forest", "Autumn", "Terracotta"] },
+  fresh:   { familyHint: ["Spring", "Mint", "Sky", "Lime"] },
+  moody:   { satMul: 0.8, lightMul: 0.65 },
+  saturated: { satMul: 1.4 },
+};
+
+// Word forms that should also be picked up (kept separate so the canonical
+// names above stay clean for the LLM prompt).
+const MODIFIER_ALIASES: Record<string, string> = {
+  warmth: "warm",
+  cooler: "cool",
+  brighter: "bright",
+  darker: "dark",
+  lighter: "light",
+  softer: "soft",
+  bolder: "bold",
+  mutedish: "muted",
+};
+
+// ---------------------------------------------------------------------------
+// Hex + HSL helpers
+// ---------------------------------------------------------------------------
+
+const HEX_RE = /#([0-9a-f]{3}|[0-9a-f]{6})\b/i;
+
+function expandHex(hex: string): string {
+  const h = hex.replace("#", "");
+  if (h.length === 3) {
+    return "#" + h.split("").map((c) => c + c).join("").toLowerCase();
+  }
+  return "#" + h.toLowerCase();
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const h = expandHex(hex).slice(1);
+  return [
+    parseInt(h.slice(0, 2), 16),
+    parseInt(h.slice(2, 4), 16),
+    parseInt(h.slice(4, 6), 16),
+  ];
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  const c = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0");
+  return `#${c(r)}${c(g)}${c(b)}`;
+}
+
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  const rn = r / 255, gn = g / 255, bn = b / 255;
+  const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h = 0;
+  if (max === rn) h = ((gn - bn) / d + (gn < bn ? 6 : 0));
+  else if (max === gn) h = (bn - rn) / d + 2;
+  else h = (rn - gn) / d + 4;
+  return [h * 60, s, l];
+}
+
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  if (s === 0) {
+    const v = l * 255;
+    return [v, v, v];
+  }
+  const hue2rgb = (p: number, q: number, t: number) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const hk = h / 360;
+  return [
+    hue2rgb(p, q, hk + 1 / 3) * 255,
+    hue2rgb(p, q, hk) * 255,
+    hue2rgb(p, q, hk - 1 / 3) * 255,
+  ];
+}
+
+/** Apply a modifier's S/L multipliers to a hex color. */
+export function adjustHsl(hex: string, mods: { satMul?: number; lightMul?: number }): string {
+  if (!mods.satMul && !mods.lightMul) return expandHex(hex);
+  const [r, g, b] = hexToRgb(hex);
+  const [h, s, l] = rgbToHsl(r, g, b);
+  const s2 = Math.max(0, Math.min(1, s * (mods.satMul ?? 1)));
+  const l2 = Math.max(0, Math.min(1, l * (mods.lightMul ?? 1)));
+  const [r2, g2, b2] = hslToRgb(h, s2, l2);
+  return rgbToHex(r2, g2, b2);
+}
+
+/** Lighten by an absolute amount of HSL lightness (0..1). Used to derive a
+ *  secondary from a user-supplied hex. */
+function lightenAbs(hex: string, amount: number): string {
+  const [r, g, b] = hexToRgb(hex);
+  const [h, s, l] = rgbToHsl(r, g, b);
+  const l2 = Math.max(0, Math.min(1, l + amount));
+  const [r2, g2, b2] = hslToRgb(h, s, l2);
+  return rgbToHex(r2, g2, b2);
+}
+
 function tokenize(input: string): string[] {
   return input
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
     .filter(Boolean);
+}
+
+function detectModifiers(prompt: string): { name: string; mod: ColorModifier }[] {
+  const words = tokenize(prompt);
+  const found: { name: string; mod: ColorModifier }[] = [];
+  const seen = new Set<string>();
+  for (const w of words) {
+    const canonical = MODIFIERS[w] ? w : MODIFIER_ALIASES[w];
+    if (canonical && !seen.has(canonical)) {
+      found.push({ name: canonical, mod: MODIFIERS[canonical] });
+      seen.add(canonical);
+    }
+  }
+  return found;
+}
+
+/** Combine multiple modifiers — multiplicative for sat/light, last-wins
+ *  for familyHint/hueRange. */
+function combineModifiers(mods: { name: string; mod: ColorModifier }[]): ColorModifier {
+  const out: ColorModifier = {};
+  let satMul = 1;
+  let lightMul = 1;
+  let touchedSat = false;
+  let touchedLight = false;
+  for (const { mod } of mods) {
+    if (mod.satMul !== undefined) { satMul *= mod.satMul; touchedSat = true; }
+    if (mod.lightMul !== undefined) { lightMul *= mod.lightMul; touchedLight = true; }
+    if (mod.familyHint) out.familyHint = mod.familyHint;
+    if (mod.hueRange) out.hueRange = mod.hueRange;
+  }
+  if (touchedSat) out.satMul = satMul;
+  if (touchedLight) out.lightMul = lightMul;
+  return out;
+}
+
+function findEntryByName(name: string): ColorEntry | undefined {
+  return COLOR_LIBRARY.find((e) => e.name.toLowerCase() === name.toLowerCase());
+}
+
+function titleCase(word: string): string {
+  return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
 }
 
 /**
@@ -132,15 +306,57 @@ function detectColors(prompt: string): { entry: ColorEntry; index: number }[] {
  * Pick a color (and optional gradient) from the prompt. Returns null when
  * nothing matches.
  *
- * - One color detected → returns that color; no gradient.
- * - Two colors detected → returns the first color as primary; if the prompt
- *   contains gradient intent words ("gradient", " to ", "fade", "blend")
- *   emits a linear-gradient CSS string using both colors.
+ * Resolution order:
+ *   1. Hex code (`#rrggbb` or `#rgb`) — wins outright.
+ *   2. Concrete color keyword(s) — possibly tinted by modifiers ("muted ocean").
+ *   3. Modifier-only ("warm", "bright") — falls back to a familyHint default.
+ *
+ * Gradient intent ("ocean to sunset", "<x> to <y>", "fade", "blend",
+ * "gradient") still applies when two concrete colors are present.
  */
 export function pickColorFromPrompt(prompt: string | null | undefined): DetectedColor | null {
   if (!prompt || !prompt.trim()) return null;
-  const hits = detectColors(prompt);
-  if (hits.length === 0) return null;
+
+  // 1. Direct hex — short-circuits everything.
+  const hexMatch = prompt.match(HEX_RE);
+  if (hexMatch) {
+    const primary = expandHex(hexMatch[0]);
+    const secondary = lightenAbs(primary, 0.15);
+    return {
+      name: primary.toUpperCase(),
+      primary,
+      secondary,
+      summary: primary.toUpperCase(),
+    };
+  }
+
+  const modifiers = detectModifiers(prompt);
+  const combined = combineModifiers(modifiers);
+  const modifierLabel = modifiers.map((m) => titleCase(m.name)).join(" ");
+  const modifierWords = new Set(modifiers.map((m) => m.name.toLowerCase()));
+
+  // Drop color hits whose name overlaps with a detected modifier (e.g.
+  // "pastel" is both a modifier and a catalog entry — without this guard
+  // "pastel pink" matches Pastel as the color and Pink gets ignored).
+  const hits = detectColors(prompt).filter(
+    (h) => !modifierWords.has(h.entry.name.toLowerCase()),
+  );
+
+  // 3. Modifier-only path — nothing concrete, but we know the user wants e.g.
+  // "warm" or "bright". Pick a default from the modifier's familyHint.
+  if (hits.length === 0) {
+    if (!combined.familyHint || combined.familyHint.length === 0) return null;
+    let entry: ColorEntry | undefined;
+    for (const name of combined.familyHint) {
+      entry = findEntryByName(name);
+      if (entry) break;
+    }
+    if (!entry) return null;
+    const primary = adjustHsl(entry.primary, combined);
+    const secondary = adjustHsl(entry.secondary, combined);
+    const summary = modifierLabel ? `${modifierLabel} ${entry.name}` : entry.name;
+    return { name: summary, primary, secondary, summary };
+  }
 
   const lower = prompt.toLowerCase();
   const wantsGradient =
@@ -153,19 +369,26 @@ export function pickColorFromPrompt(prompt: string | null | undefined): Detected
   const a = hits[0].entry;
   if (wantsGradient) {
     const b = hits[1].entry;
+    const aPrimary = adjustHsl(a.primary, combined);
+    const bPrimary = adjustHsl(b.primary, combined);
     return {
       name: `${a.name} → ${b.name}`,
-      primary: a.primary,
-      secondary: b.primary,
-      gradient: `linear-gradient(135deg, ${a.primary}, ${b.primary})`,
-      summary: `${a.name} → ${b.name} gradient`,
+      primary: aPrimary,
+      secondary: bPrimary,
+      gradient: `linear-gradient(135deg, ${aPrimary}, ${bPrimary})`,
+      summary: modifierLabel
+        ? `${modifierLabel} ${a.name} → ${b.name} gradient`
+        : `${a.name} → ${b.name} gradient`,
     };
   }
 
+  const primary = adjustHsl(a.primary, combined);
+  const secondary = adjustHsl(a.secondary, combined);
+  const summary = modifierLabel ? `${modifierLabel} ${a.name}` : a.name;
   return {
-    name: a.name,
-    primary: a.primary,
-    secondary: a.secondary,
-    summary: a.name,
+    name: summary,
+    primary,
+    secondary,
+    summary,
   };
 }

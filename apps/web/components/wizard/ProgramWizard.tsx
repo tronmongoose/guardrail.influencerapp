@@ -22,6 +22,7 @@ export interface WizardState {
     weeks: number;
     pacingMode: "drip_by_week" | "unlock_on_complete";
     aiStructured: boolean;
+    followUploadOrder: boolean;
   };
   content: {
     videos: Array<{
@@ -76,6 +77,7 @@ const DEFAULT_STATE: WizardState = {
     weeks: 8,
     pacingMode: "unlock_on_complete", // Default to staged progression for better completion rates
     aiStructured: true,
+    followUploadOrder: false,
   },
   content: {
     videos: [],
@@ -278,6 +280,7 @@ export function ProgramWizard({
           targetTransformation: state.basics.targetTransformation,
           durationWeeks: state.duration.weeks,
           aiStructured: state.duration.aiStructured,
+          followUploadOrder: state.duration.followUploadOrder,
           pacingMode: state.duration.pacingMode,
           vibePrompt: state.vibe.vibePrompt,
           ...skinPatchFields,
@@ -362,8 +365,10 @@ export function ProgramWizard({
             weeks={state.duration.weeks}
             videos={state.content.videos}
             aiStructured={state.duration.aiStructured}
+            followUploadOrder={state.duration.followUploadOrder}
             onWeeksChange={(weeks) => updateState("duration", { weeks })}
             onAiStructuredChange={(aiStructured) => updateState("duration", { aiStructured })}
+            onFollowUploadOrderChange={(followUploadOrder) => updateState("duration", { followUploadOrder })}
           />
         );
       case 3:

@@ -137,12 +137,14 @@ export function SkinStudioModal({
     setError(null);
     const promptUsed = prompt.trim();
     try {
+      const body: Record<string, string> = {};
+      if (promptUsed) {
+        body[isSeedMode ? "seedPrompt" : "refinementPrompt"] = promptUsed;
+      }
       const res = await fetch(`/api/programs/${programId}/skin`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(
-          isSeedMode || !promptUsed ? {} : { refinementPrompt: promptUsed }
-        ),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: { customSkinId: string | null; tokens: SkinTokens | null } = await res.json();

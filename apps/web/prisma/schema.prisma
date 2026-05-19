@@ -77,6 +77,7 @@ model Program {
   outcomeStatement String?     @db.Text
   durationWeeks    Int
   aiStructured     Boolean     @default(false)
+  followUploadOrder Boolean    @default(false)
   pacingMode       PacingMode  @default(UNLOCK_ON_COMPLETE)
   priceInCents     Int         @default(0)
   currency         String      @default("usd")

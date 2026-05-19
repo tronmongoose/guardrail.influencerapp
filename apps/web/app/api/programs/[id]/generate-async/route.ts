@@ -593,11 +593,22 @@ async function processGenerationJob(jobId: string, programId: string, instructio
     );
 
     if (enrichedOnly.length > 0) {
+      // Upload order = videosForPipeline sorted by createdAt asc. Used by the
+      // distributor's clustering pass to either honor the creator's stated
+      // sequence (followUploadOrder=true) or just to break ties when picking
+      // the opening video-block from the LLM's choice.
+      const videoUploadOrder = [...videosForPipeline]
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+        .map((v) => v.id);
       clipDistributionPlan = distributeClipsToLessons(
         enrichedOnly,
         basicOnly,
         effectiveWeeks,
         1, // sessionsPerWeek
+        {
+          followUploadOrder: program.followUploadOrder,
+          videoUploadOrder,
+        },
       );
 
       console.info(`[generate-async] ═══ CLIP DISTRIBUTION ═══`);

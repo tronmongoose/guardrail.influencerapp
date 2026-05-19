@@ -355,11 +355,29 @@ function collectClips(
  *   - Every video appears in at least 1 lesson
  *   - No lesson exceeds MAX_CLIPS_PER_LESSON clips
  */
+export interface DistributeClipsOptions {
+  /**
+   * If true, lesson sequence honors the order videos were uploaded —
+   * video[0]'s clips fill the earliest lessons, then video[1]'s, etc.
+   * If false (default), the LLM-bin-packer's first-occurrence order
+   * decides which video opens the program, but same-video clips are
+   * still always clustered into contiguous lessons.
+   */
+  followUploadOrder?: boolean;
+  /**
+   * Source videos in upload order. Used by the post-process clustering
+   * pass. When omitted, clustering still runs but block order falls back
+   * to first-occurrence in the bin-packed lessons.
+   */
+  videoUploadOrder?: string[];
+}
+
 export function distributeClipsToLessons(
   enrichedDigests: EnrichedContentDigest[],
   basicDigests: ContentDigest[],
   durationWeeks: number,
   sessionsPerWeek: number = 1,
+  opts: DistributeClipsOptions = {},
 ): DistributionPlan {
   const totalLessons = durationWeeks * sessionsPerWeek;
   const warnings: string[] = [];
@@ -638,12 +656,121 @@ export function distributeClipsToLessons(
     }
   }
 
+  // Same-video clips must occupy contiguous lessons. Without this pass, the
+  // bin-packer can produce `videoA · videoA · videoB · videoA · videoB` —
+  // jarring for learners. Observed on reset-menopause 2026-05-19. See
+  // OPEN-FINDINGS.md "Across-video lesson order interleaves source videos".
+  const reorderedLessons = clusterLessonsByVideo(lessons, opts, warnings);
+
   return {
-    lessons,
-    totalClips: lessons.reduce((sum, l) => sum + l.clips.length, 0),
-    totalDurationSeconds: lessons.reduce((sum, l) => sum + l.totalDurationSeconds, 0),
+    lessons: reorderedLessons,
+    totalClips: reorderedLessons.reduce((sum, l) => sum + l.clips.length, 0),
+    totalDurationSeconds: reorderedLessons.reduce(
+      (sum, l) => sum + l.totalDurationSeconds,
+      0,
+    ),
     warnings,
   };
+}
+
+/**
+ * Reorder lessons so all lessons sharing the same dominant source video sit
+ * contiguously. Within a block, the existing lesson order is preserved
+ * (within-video source order was already enforced upstream by the bin-packer).
+ *
+ * Block-ordering rule:
+ *   - opts.followUploadOrder=true → blocks ordered by videoUploadOrder
+ *   - else → blocks ordered by first occurrence in the input `lessons`
+ *
+ * "Dominant video" = the video contributing the most total clip-duration to
+ * that lesson. Ties broken by the first clip's videoId. Lessons with no
+ * clips keep their relative position and are placed after the last block.
+ */
+function clusterLessonsByVideo(
+  lessons: LessonAssignment[],
+  opts: DistributeClipsOptions,
+  warnings: string[],
+): LessonAssignment[] {
+  if (lessons.length < 2) return lessons;
+
+  const dominantVideoFor = (lesson: LessonAssignment): string | null => {
+    if (lesson.clips.length === 0) return null;
+    const totals = new Map<string, number>();
+    for (const c of lesson.clips) {
+      totals.set(c.videoId, (totals.get(c.videoId) ?? 0) + c.durationSeconds);
+    }
+    let bestId = lesson.clips[0].videoId;
+    let bestSec = -1;
+    for (const [id, sec] of totals) {
+      if (sec > bestSec) {
+        bestSec = sec;
+        bestId = id;
+      }
+    }
+    return bestId;
+  };
+
+  // Build the per-block lesson list keyed by dominant videoId. Also track
+  // first-occurrence order so we have a fallback when followUploadOrder=false
+  // or when a videoId isn't in videoUploadOrder.
+  const blocks = new Map<string, LessonAssignment[]>();
+  const firstSeen: string[] = [];
+  const emptyLessons: LessonAssignment[] = [];
+
+  for (const lesson of lessons) {
+    const vid = dominantVideoFor(lesson);
+    if (vid === null) {
+      emptyLessons.push(lesson);
+      continue;
+    }
+    if (!blocks.has(vid)) {
+      blocks.set(vid, []);
+      firstSeen.push(vid);
+    }
+    blocks.get(vid)!.push(lesson);
+  }
+
+  if (blocks.size <= 1) return lessons; // nothing to cluster
+
+  let orderedVideoIds: string[];
+  if (opts.followUploadOrder && opts.videoUploadOrder?.length) {
+    // Place blocks in upload order, then append any blocks whose video isn't
+    // in videoUploadOrder (e.g., a segment with an unexpected parentVideoId).
+    const uploadSet = new Set(opts.videoUploadOrder);
+    const inUpload = opts.videoUploadOrder.filter((id) => blocks.has(id));
+    const orphaned = firstSeen.filter((id) => !uploadSet.has(id));
+    orderedVideoIds = [...inUpload, ...orphaned];
+  } else {
+    orderedVideoIds = firstSeen;
+  }
+
+  const reordered: LessonAssignment[] = [];
+  for (const vid of orderedVideoIds) {
+    const block = blocks.get(vid);
+    if (block) reordered.push(...block);
+  }
+  reordered.push(...emptyLessons);
+
+  // Detect whether the cluster actually changed anything before paying the
+  // cost of rewriting lessonIndex/weekNumber. If input was already clustered,
+  // we'd return identical references — but easier to just always rewrite and
+  // let the indices reflect the new positions.
+  const changed = reordered.some((l, i) => l !== lessons[i]);
+  if (changed) {
+    warnings.push(
+      `Clustered lessons by source video (${orderedVideoIds.length} blocks${opts.followUploadOrder ? ", upload-order" : ""})`,
+    );
+  }
+
+  // Rewrite lesson indices to reflect the new position. weekNumber/sessionIndex
+  // assume sessionsPerWeek=1; this matches the rest of the file's usage but
+  // would need parameterizing if we ever support >1 sessions/week here.
+  return reordered.map((lesson, i) => ({
+    ...lesson,
+    lessonIndex: i,
+    weekNumber: i + 1,
+    sessionIndex: 0,
+  }));
 }
 
 /**

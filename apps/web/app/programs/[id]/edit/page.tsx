@@ -61,6 +61,7 @@ interface Program {
   creatorAvatarUrl: string | null;
   durationWeeks: number;
   pacingMode: "DRIP_BY_WEEK" | "UNLOCK_ON_COMPLETE";
+  followUploadOrder: boolean;
   slug: string;
   published: boolean;
   priceInCents: number;
@@ -613,6 +614,7 @@ export default function ProgramEditPage() {
             weeks: program.durationWeeks,
             pacingMode: program.pacingMode === "DRIP_BY_WEEK" ? "drip_by_week" : "unlock_on_complete",
             aiStructured: true,
+            followUploadOrder: program.followUploadOrder ?? false,
           },
           content: {
             videos: program.videos,

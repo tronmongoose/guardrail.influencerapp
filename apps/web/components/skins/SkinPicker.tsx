@@ -224,6 +224,7 @@ export function SkinPicker({ value, onChange, thumbnailUrl, programId, programTi
         <div
           className="flex flex-col bg-white flex-shrink-0 border-r border-gray-200"
           style={{ width: "25%", minWidth: 180 }}
+          onMouseLeave={() => setHoveredSkinId(null)}
         >
           {/* Search */}
           <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100 bg-white sticky top-0 z-10 flex-shrink-0">
@@ -450,7 +451,11 @@ export function SkinPicker({ value, onChange, thumbnailUrl, programId, programTi
 
         {/* Skin list for active tab — collapses after selection */}
         {!mobileListCollapsed && (
-          <div className="overflow-y-auto bg-white border-b border-gray-200" style={{ maxHeight: 200 }}>
+          <div
+            className="overflow-y-auto bg-white border-b border-gray-200"
+            style={{ maxHeight: 200 }}
+            onMouseLeave={() => setHoveredSkinId(null)}
+          >
             {activeTab === "my-brand" ? (
               <>
                 <button

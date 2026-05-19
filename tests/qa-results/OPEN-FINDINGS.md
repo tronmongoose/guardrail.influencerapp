@@ -80,6 +80,41 @@ Verified live on `workout-like-a-champ` cmp4yqlvv0001it8hip72dqk2: "Chest and Tr
 
 ---
 
+## 🚧 Across-video lesson order interleaves source videos — `reset-menopause` 2026-05-19
+
+**Severity:** medium. Different bug from the resolved 2026-05-14 within-video scramble. That one was clips of *one* video landing in non-source-order across lessons; this one is *whole different videos* being interleaved across lessons.
+
+**Symptom:** Program `cmpc26f3t0001k0041o2t3s4f` ("Reset w manopause") — 4 source videos → 8 lessons. Lesson-to-source-video mapping:
+
+| Lesson | Source video | Clip range (s) |
+|---|---|---|
+| W1 | b8jw8g6o (40/30/30) | 0–289 |
+| W2 | utjfi7ej (Intro) | 0–266 |
+| W3 | mc7xqi6j (Nutrition) | 0–339 |
+| W4 | mc7xqi6j (Nutrition) | 339–687 |
+| **W5** | **hldg8zrc (Science)** | **0–308** |
+| **W6** | **mc7xqi6j (Nutrition)** | **687–898** |
+| W7 | hldg8zrc (Science) | 308–588 |
+| W8 | hldg8zrc (Science) | 588–859 |
+
+mc7xqi6j is split across W3 + W4 + W6 with W5 (a different source video) wedged in the middle. Within-video order is correct (the 2026-05-14 fix held). What's wonky is **across-video** sequencing — a learner gets "nutrition · nutrition · *hormone biology* · nutrition · hormone biology · hormone biology", which is jarring topically and structurally.
+
+**Likely root cause:** The LLM is grouping by curriculum theme, not by source video. mc7xqi6j has too much content for one lesson, so it gets sliced into three. hldg8zrc gets sliced too. Without a constraint requiring same-video lessons to be contiguous, the LLM is free to interleave them however reads best curricularly — but the result feels disjointed in the learner UI.
+
+**Brainstorm — five fixes ranked by effort:**
+
+1. **Post-process pass: cluster same-video lessons (smallest change, mechanical).** After `distributeClipsToLessons` runs, reorder the lessons so every group of same-source-video lessons sits contiguously. Preserve within-video order. Single function in `clip-distributor.ts`, easy to unit-test. Risk: the LLM-chosen lesson titles/objectives were authored assuming a certain narrative arc; reordering may produce a curriculum that pedagogically jumps around (e.g., "advanced nutrition" before "intro to hormones").
+2. **Hard constraint at distribution layer.** Same as (1) but enforced *before* the LLM names lessons — partition clips into per-video bags first, then call LLM per bag for titles. The LLM never sees the global mix, so it can't interleave. More invasive — changes the LLM contract — but produces the right curriculum titles too.
+3. **Soft prompt constraint.** Add a rule to the LLM prompt: "Group all clips from the same source video into contiguous lessons. Do not interleave videos." Cheapest to try, but unreliable — LLMs ignore soft rules under conflicting incentives, and the topic-coherence pull is strong here. Worth A/B testing alongside (1).
+4. **Source-video sequencing pass before LLM call.** Decide source-video order upfront (heuristics: shortest "intro" first, longest "deep dive" last; or first upload timestamp), then feed clips to the LLM in fixed video chunks. Lessons sequence is implicit. Closest to how a human curriculum designer would think.
+5. **Make it a creator choice.** Add a wizard toggle: "Lesson order: follow my video order" vs. "let AI design the flow". Default to the former for safety. Punts the question to the user but legitimizes both behaviors.
+
+**Recommendation:** Start with **(1)** — single-file mechanical pass with a unit test on the menopause shape. If lesson narrative reads broken after reordering, escalate to **(2)**. Skip (3) unless we want a 30-min experiment.
+
+**Verify with:** rerun judge on `cmpc26f3t0001k0041o2t3s4f` after fix; expect mc7xqi6j to occupy W3+W4+W5 and hldg8zrc to occupy W6+W7+W8 (or similar contiguous block).
+
+---
+
 ## 🚧 Lesson 4 chapterTitle doesn't enumerate all subtopics
 
 **Severity:** low. Specific case observed on `upper-body-workout` post-fix run.

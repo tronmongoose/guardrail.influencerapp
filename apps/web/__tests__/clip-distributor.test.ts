@@ -1107,3 +1107,84 @@ describe("validateAndFixClipDistribution", () => {
     expect([v2Clips[0].startSeconds, v2Clips[0].endSeconds]).toEqual([0, 200]);
   });
 });
+
+describe("distributeClipsToLessons — same-video lessons must cluster contiguously", () => {
+  // Mirrors the reset-menopause shape: long videos producing 3+ lessons each,
+  // which the bin-packer used to interleave with other videos. Each lesson
+  // here ends up dominated by a single source video so the clustering pass
+  // can reorder them by block without ambiguity.
+  function menopauseShape() {
+    const nutrition = makeEnrichedDigest(
+      "nutrition",
+      "Nutrition Refinements",
+      [
+        { label: "Protein at breakfast", startSeconds: 0, endSeconds: 339 },
+        { label: "Lowering carbs", startSeconds: 339, endSeconds: 687 },
+        { label: "Front-loading calories", startSeconds: 687, endSeconds: 898 },
+      ],
+      898,
+    );
+    const hormones = makeEnrichedDigest(
+      "hormones",
+      "Science of Hormone Decline",
+      [
+        { label: "The hormonal cliff", startSeconds: 0, endSeconds: 308 },
+        { label: "Body composition + bone", startSeconds: 308, endSeconds: 588 },
+        { label: "Management options", startSeconds: 588, endSeconds: 859 },
+      ],
+      859,
+    );
+    return [nutrition, hormones];
+  }
+
+  it("clusters same-video lessons even when the bin-packer would interleave", () => {
+    const plan = distributeClipsToLessons(menopauseShape(), [], 6);
+    expect(plan.lessons).toHaveLength(6);
+
+    // Every lesson should have at least one clip; the menopause shape has
+    // exactly enough clips that none should be empty.
+    for (const l of plan.lessons) expect(l.clips.length).toBeGreaterThan(0);
+
+    // Walk the dominant-video-per-lesson sequence. The set of unique videos
+    // it visits (in order of first appearance) must equal the count of
+    // distinct dominant-videos — i.e., no video appears, leaves, then comes
+    // back. That's the contiguity property we care about.
+    const dominantSequence = plan.lessons.map((l) => {
+      const totals = new Map<string, number>();
+      for (const c of l.clips) {
+        totals.set(c.videoId, (totals.get(c.videoId) ?? 0) + c.durationSeconds);
+      }
+      return [...totals.entries()].reduce((a, b) => (b[1] > a[1] ? b : a))[0];
+    });
+    const seen: string[] = [];
+    for (const vid of dominantSequence) {
+      if (seen[seen.length - 1] !== vid) seen.push(vid);
+    }
+    const distinct = new Set(dominantSequence);
+    expect(seen).toHaveLength(distinct.size);
+  });
+
+  it("orders blocks by upload order when followUploadOrder=true", () => {
+    // Force upload order opposite of how the bin-packer would naturally lay
+    // them out, so we can prove the option actually controls the result.
+    const plan = distributeClipsToLessons(menopauseShape(), [], 6, 1, {
+      followUploadOrder: true,
+      videoUploadOrder: ["hormones", "nutrition"],
+    });
+    const dominantSequence = plan.lessons.map((l) => {
+      const totals = new Map<string, number>();
+      for (const c of l.clips) {
+        totals.set(c.videoId, (totals.get(c.videoId) ?? 0) + c.durationSeconds);
+      }
+      return [...totals.entries()].reduce((a, b) => (b[1] > a[1] ? b : a))[0];
+    });
+    // First block must be hormones, then nutrition.
+    expect(dominantSequence[0]).toBe("hormones");
+    expect(dominantSequence[dominantSequence.length - 1]).toBe("nutrition");
+    // And blocks are still contiguous.
+    const transitions = dominantSequence.filter(
+      (v, i) => i > 0 && v !== dominantSequence[i - 1],
+    );
+    expect(transitions).toHaveLength(1);
+  });
+});

@@ -9,16 +9,20 @@ interface StepDurationProps {
   weeks: number;
   videos: VideoInfo[];
   aiStructured: boolean;
+  followUploadOrder: boolean;
   onWeeksChange: (weeks: number) => void;
   onAiStructuredChange: (v: boolean) => void;
+  onFollowUploadOrderChange: (v: boolean) => void;
 }
 
 export function StepDuration({
   weeks,
   videos,
   aiStructured,
+  followUploadOrder,
   onWeeksChange,
   onAiStructuredChange,
+  onFollowUploadOrderChange,
 }: StepDurationProps) {
   const videoCount = videos.length;
   const presets = computeSmartPresets(videoCount, videos);
@@ -112,6 +116,23 @@ export function StepDuration({
             </div>
           </button>
         </div>
+
+        {aiStructured && videoCount >= 3 && (
+          <label className="mt-3 flex items-start gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={followUploadOrder}
+              onChange={(e) => onFollowUploadOrderChange(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-surface-border bg-surface-dark text-neon-pink focus:ring-neon-pink focus:ring-offset-0 cursor-pointer"
+            />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-white">Follow my upload order</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Keep videos in the order you uploaded them. Otherwise the AI chooses which video opens the program.
+              </p>
+            </div>
+          </label>
+        )}
       </div>
 
       {!aiStructured && (

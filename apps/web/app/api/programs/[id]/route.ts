@@ -121,6 +121,7 @@ export async function PATCH(
     data.durationWeeks = Math.max(1, Math.min(12, Number(body.durationWeeks)));
   }
   if (body.aiStructured !== undefined) data.aiStructured = body.aiStructured;
+  if (body.followUploadOrder !== undefined) data.followUploadOrder = body.followUploadOrder;
   if (body.priceInCents !== undefined) data.priceInCents = body.priceInCents;
   if (body.styleInfluencers !== undefined) data.styleInfluencers = body.styleInfluencers;
   // New program definition fields
