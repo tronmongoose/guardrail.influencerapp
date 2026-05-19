@@ -21,10 +21,37 @@ export type LLMProvider = "anthropic" | "openai" | "gemini" | "stub";
 const LLM_TIMEOUT_MS = 60_000; // 60s for content extraction
 const GENERATION_TIMEOUT_MS = 600_000; // 10min for curriculum generation
 
-function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
+// Node's undici fetch defaults `headersTimeout` to 300s — a separate clock
+// from our AbortController wrapper. Large prompts (e.g. a 10-video program
+// with ~93k chars of context) can make Anthropic take longer than 5 min
+// to start streaming the response, at which point undici kills the
+// connection with `UND_ERR_HEADERS_TIMEOUT` before our AbortSignal even
+// fires. Observed in prod on 2026-05-19 against `reset with the Menopause`.
+// A dedicated Agent with extended timeouts unblocks long Anthropic calls
+// without touching the global dispatcher (other fetch consumers stay on
+// undici defaults).
+let _longTimeoutAgent: unknown;
+async function getLongTimeoutAgent(): Promise<unknown> {
+  if (_longTimeoutAgent) return _longTimeoutAgent;
+  try {
+    const undici = await import("undici");
+    _longTimeoutAgent = new undici.Agent({
+      headersTimeout: GENERATION_TIMEOUT_MS,
+      bodyTimeout: GENERATION_TIMEOUT_MS,
+    });
+  } catch {
+    _longTimeoutAgent = null; // not available — fall back to default fetch
+  }
+  return _longTimeoutAgent;
+}
+
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+  const dispatcher = await getLongTimeoutAgent();
+  const init = { ...options, signal: controller.signal };
+  if (dispatcher) (init as Record<string, unknown>).dispatcher = dispatcher;
+  return fetch(url, init).finally(() => clearTimeout(timer));
 }
 
 export interface ContentDigest {

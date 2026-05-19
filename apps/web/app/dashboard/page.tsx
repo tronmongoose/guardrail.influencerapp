@@ -524,7 +524,7 @@ function DashboardContent() {
                       )}
 
                       <p className="text-xs text-gray-400">
-                        {p._count.weeks} week{p._count.weeks !== 1 ? "s" : ""}
+                        {p._count.weeks} lesson{p._count.weeks !== 1 ? "s" : ""}
                         {" · "}
                         {p._count.videos} video{p._count.videos !== 1 ? "s" : ""}
                         {" · "}

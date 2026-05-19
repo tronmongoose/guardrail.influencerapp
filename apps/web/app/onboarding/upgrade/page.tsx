@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { Spinner } from "@/components/ui/spinner";
 
@@ -16,6 +16,15 @@ const FEATURES = [
 
 export default function UpgradePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Wizard appends `?from=<programId>` when redirecting here on
+  // PLATFORM_ACCESS_REQUIRED so we can route the creator back to their
+  // in-progress program after access is granted instead of dumping them
+  // on /dashboard.
+  const fromProgramId = searchParams.get("from");
+  const successDestination = fromProgramId
+    ? `/programs/${fromProgramId}/edit?wizard=true`
+    : "/dashboard";
   const { isLoaded, isSignedIn } = useUser();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -113,8 +122,9 @@ export default function UpgradePage() {
         throw new Error(data.error || "Invalid promo code");
       }
 
-      // Access granted — redirect to dashboard
-      window.location.href = "/dashboard";
+      // Access granted — back to the program if we came from a wizard,
+      // otherwise default to the dashboard.
+      window.location.href = successDestination;
     } catch (err) {
       setPromoError(err instanceof Error ? err.message : "Something went wrong");
       setPromoLoading(false);

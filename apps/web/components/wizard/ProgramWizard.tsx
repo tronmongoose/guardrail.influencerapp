@@ -308,7 +308,10 @@ export function ProgramWizard({
       if (!genRes.ok) {
         const error = await genRes.json();
         if (error.code === "PLATFORM_ACCESS_REQUIRED") {
-          window.location.href = "/onboarding/upgrade";
+          // Pass programId so /onboarding/upgrade can route back here after
+          // platform access is granted (promo or Stripe checkout), instead
+          // of dumping the creator on /dashboard with no breadcrumb.
+          window.location.href = `/onboarding/upgrade?from=${programId}`;
           return;
         }
         throw new Error(error.detail || error.error || "Failed to start generation");

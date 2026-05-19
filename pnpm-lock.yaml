@@ -110,6 +110,9 @@ importers:
       '@huggingface/inference':
         specifier: ^4.13.12
         version: 4.13.12
+      undici:
+        specifier: ^6.21.0
+        version: 6.24.1
       zod:
         specifier: ^3.23.8
         version: 3.25.76
