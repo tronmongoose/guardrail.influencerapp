@@ -30,11 +30,23 @@ const GENERATION_TIMEOUT_MS = 600_000; // 10min for curriculum generation
 // A dedicated Agent with extended timeouts unblocks long Anthropic calls
 // without touching the global dispatcher (other fetch consumers stay on
 // undici defaults).
+//
+// The import is hidden inside `new Function(...)` so webpack's static
+// analysis doesn't try to bundle undici (and its `node:crypto` dependency)
+// into the client bundle when this module is reachable from a "use client"
+// component. The dynamic string is opaque to bundlers; only Node resolves
+// it at runtime. Without this, Next.js fails the prod build with
+// `UnhandledSchemeError: Reading from "node:crypto"`.
 let _longTimeoutAgent: unknown;
 async function getLongTimeoutAgent(): Promise<unknown> {
-  if (_longTimeoutAgent) return _longTimeoutAgent;
+  if (_longTimeoutAgent !== undefined) return _longTimeoutAgent;
+  if (typeof window !== "undefined") {
+    _longTimeoutAgent = null; // browser: don't try to load undici
+    return null;
+  }
   try {
-    const undici = await import("undici");
+    const dynamicImport = new Function("m", "return import(m)") as (m: string) => Promise<unknown>;
+    const undici = (await dynamicImport("undici")) as { Agent: new (opts: Record<string, unknown>) => unknown };
     _longTimeoutAgent = new undici.Agent({
       headersTimeout: GENERATION_TIMEOUT_MS,
       bodyTimeout: GENERATION_TIMEOUT_MS,

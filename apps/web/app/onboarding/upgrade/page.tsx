@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { Spinner } from "@/components/ui/spinner";
@@ -15,6 +15,17 @@ const FEATURES = [
 ];
 
 export default function UpgradePage() {
+  // useSearchParams (used inside UpgradePageInner) requires a Suspense
+  // boundary in Next 15 prerender — without it the prod build fails with
+  // "useSearchParams() should be wrapped in a suspense boundary".
+  return (
+    <Suspense fallback={null}>
+      <UpgradePageInner />
+    </Suspense>
+  );
+}
+
+function UpgradePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Wizard appends `?from=<programId>` when redirecting here on
