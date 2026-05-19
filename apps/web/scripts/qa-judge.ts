@@ -10,7 +10,7 @@ const APPS_WEB_DIR = path.join(REPO_ROOT, "apps", "web");
 
 const JUDGE_MODEL = process.env.QA_JUDGE_MODEL || "claude-opus-4-7";
 
-function loadEnvFile(filePath: string) {
+function loadEnvFile(filePath: string, opts: { override?: boolean } = {}) {
   if (!fs.existsSync(filePath)) return;
   const content = fs.readFileSync(filePath, "utf-8");
   for (const line of content.split("\n")) {
@@ -26,7 +26,10 @@ function loadEnvFile(filePath: string) {
     ) {
       value = value.slice(1, -1);
     }
-    if (!process.env[key]) process.env[key] = value;
+    // Prisma's auto-dotenv runs at `import { PrismaClient }` time and pre-
+    // populates DATABASE_URL from .env. Without `override`, our --prod load
+    // would silently skip and the script would query the wrong DB.
+    if (opts.override || !process.env[key]) process.env[key] = value;
   }
 }
 // --prod loads .env.production.local FIRST so its values stick (loadEnvFile
@@ -42,10 +45,15 @@ if (process.argv.includes("--prod")) {
     );
     process.exit(1);
   }
-  loadEnvFile(PROD_ENV_FILE);
+  loadEnvFile(PROD_ENV_FILE, { override: true });
 }
 loadEnvFile(path.join(APPS_WEB_DIR, ".env"));
 loadEnvFile(path.join(APPS_WEB_DIR, ".env.local"));
+
+// Debug: surface which DB the script actually connects to so it's obvious
+// from the run header whether --prod loaded the prod env or fell through.
+const _dbHost = (process.env.DATABASE_URL ?? "").split("@")[1]?.split("/")[0] ?? "<unset>";
+console.log(`[qa-judge] DATABASE_URL host: ${_dbHost}`);
 
 type Fixture = { name: string; programId: string; notes?: string };
 
