@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server";
+import { setGlobalDispatcher, Agent } from "undici";
 import { getOrCreateUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { generateProgramDraft, extractContentDigests, analyzeUploadedVideoWithGemini, distributeClipsToLessons, validateAndFixClipDistribution, validateDraftQuality, computeGuardrailedLessonCount } from "@guide-rail/ai";
@@ -10,6 +11,19 @@ import { generateSkinFromVibe } from "@/lib/generate-skin";
 import { sendProgramReadyEmail } from "@/lib/email";
 import { getMux, isMuxConfigured } from "@/lib/mux";
 import { stripWrappingQuotes } from "@/lib/strip-quotes";
+
+// Lift undici's default 300s headersTimeout / bodyTimeout to 10 min for ALL
+// fetches in this serverless function process. Large Anthropic prompts (a
+// 10-video program is ~93k chars of context) routinely take 5-8 min to start
+// streaming, which trips undici's default and surfaces as
+// `UND_ERR_HEADERS_TIMEOUT`. The import lives in this server-only route file
+// so the client bundle never sees it; static so Vercel actually ships
+// undici with the serverless function (a dynamic Function-eval import
+// silently failed at runtime because Vercel didn't include the package).
+setGlobalDispatcher(new Agent({
+  headersTimeout: 10 * 60_000,
+  bodyTimeout: 10 * 60_000,
+}));
 
 export const maxDuration = 800; // Vercel Pro (Fluid Compute): keep function alive for long video analysis
 

@@ -21,51 +21,15 @@ export type LLMProvider = "anthropic" | "openai" | "gemini" | "stub";
 const LLM_TIMEOUT_MS = 60_000; // 60s for content extraction
 const GENERATION_TIMEOUT_MS = 600_000; // 10min for curriculum generation
 
-// Node's undici fetch defaults `headersTimeout` to 300s — a separate clock
-// from our AbortController wrapper. Large prompts (e.g. a 10-video program
-// with ~93k chars of context) can make Anthropic take longer than 5 min
-// to start streaming the response, at which point undici kills the
-// connection with `UND_ERR_HEADERS_TIMEOUT` before our AbortSignal even
-// fires. Observed in prod on 2026-05-19 against `reset with the Menopause`.
-// A dedicated Agent with extended timeouts unblocks long Anthropic calls
-// without touching the global dispatcher (other fetch consumers stay on
-// undici defaults).
-//
-// The import is hidden inside `new Function(...)` so webpack's static
-// analysis doesn't try to bundle undici (and its `node:crypto` dependency)
-// into the client bundle when this module is reachable from a "use client"
-// component. The dynamic string is opaque to bundlers; only Node resolves
-// it at runtime. Without this, Next.js fails the prod build with
-// `UnhandledSchemeError: Reading from "node:crypto"`.
-let _longTimeoutAgent: unknown;
-async function getLongTimeoutAgent(): Promise<unknown> {
-  if (_longTimeoutAgent !== undefined) return _longTimeoutAgent;
-  if (typeof window !== "undefined") {
-    _longTimeoutAgent = null; // browser: don't try to load undici
-    return null;
-  }
-  try {
-    const dynamicImport = new Function("m", "return import(m)") as (m: string) => Promise<unknown>;
-    const undici = (await dynamicImport("undici")) as { Agent: new (opts: Record<string, unknown>) => unknown };
-    _longTimeoutAgent = new undici.Agent({
-      headersTimeout: GENERATION_TIMEOUT_MS,
-      bodyTimeout: GENERATION_TIMEOUT_MS,
-    });
-    console.info(`[llm-adapter] undici Agent installed with ${GENERATION_TIMEOUT_MS}ms headers/body timeout`);
-  } catch (err) {
-    console.warn(`[llm-adapter] failed to load undici Agent — Anthropic calls will use default 300s timeout:`, err instanceof Error ? err.message : err);
-    _longTimeoutAgent = null;
-  }
-  return _longTimeoutAgent;
-}
-
-async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
+// undici's default `headersTimeout` / `bodyTimeout` (300s) is overridden at
+// the route-handler level via `setGlobalDispatcher` in
+// apps/web/app/api/programs/[id]/generate-async/route.ts. Doing the override
+// there (server-only) keeps undici out of the client bundle while
+// guaranteeing the package is shipped with the serverless function.
+function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  const dispatcher = await getLongTimeoutAgent();
-  const init = { ...options, signal: controller.signal };
-  if (dispatcher) (init as Record<string, unknown>).dispatcher = dispatcher;
-  return fetch(url, init).finally(() => clearTimeout(timer));
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
 export interface ContentDigest {
