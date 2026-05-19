@@ -319,8 +319,19 @@ export async function generateProgramDraft(
     console.info("[LLM] Generating with stub (no API call)");
     return generateWithStub(input);
   } else if (provider === "anthropic") {
+    const llmStart = Date.now();
     console.info("[LLM] Calling Anthropic API");
-    raw = await callAnthropic(input);
+    try {
+      raw = await callAnthropic(input);
+      console.info(`[LLM] Anthropic returned after ${Math.round((Date.now() - llmStart) / 1000)}s, ${raw.length} chars`);
+    } catch (err) {
+      const elapsed = Math.round((Date.now() - llmStart) / 1000);
+      const errName = err instanceof Error ? err.name : "unknown";
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const cause = err instanceof Error && "cause" in err ? String((err as { cause?: unknown }).cause) : "(no cause)";
+      console.error(`[LLM] Anthropic call FAILED after ${elapsed}s — name=${errName} msg=${errMsg} cause=${cause}`);
+      throw err;
+    }
   } else if (provider === "gemini") {
     console.info("[LLM] Calling Gemini API");
     raw = await callGemini(input);

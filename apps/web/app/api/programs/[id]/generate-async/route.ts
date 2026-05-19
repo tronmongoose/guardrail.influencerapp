@@ -20,10 +20,16 @@ import { stripWrappingQuotes } from "@/lib/strip-quotes";
 // so the client bundle never sees it; static so Vercel actually ships
 // undici with the serverless function (a dynamic Function-eval import
 // silently failed at runtime because Vercel didn't include the package).
-setGlobalDispatcher(new Agent({
-  headersTimeout: 10 * 60_000,
-  bodyTimeout: 10 * 60_000,
-}));
+try {
+  setGlobalDispatcher(new Agent({
+    headersTimeout: 10 * 60_000,
+    bodyTimeout: 10 * 60_000,
+    connect: { timeout: 30_000 },
+  }));
+  console.info("[generate-async] undici global dispatcher installed: headers=600s body=600s");
+} catch (err) {
+  console.error("[generate-async] FAILED to install undici dispatcher:", err);
+}
 
 export const maxDuration = 800; // Vercel Pro (Fluid Compute): keep function alive for long video analysis
 
