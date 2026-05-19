@@ -155,6 +155,19 @@ export function LearnerTimeline({
   const nextActionRef = useRef<HTMLDivElement>(null);
   const hasScrolledRef = useRef(false);
 
+  // Helper: does this session have a WATCH step (CompositeSession with
+  // clips) that should be counted as its own progress unit alongside the
+  // typed actions? Mirrors the WATCH-card render gate so the math agrees
+  // with what the learner sees.
+  const sessionHasWatchStep = useCallback(
+    (s: { actions: ActionData[]; compositeSession?: { clips: CompositeClipData[] } | null }) => {
+      if (!s.compositeSession?.clips?.length) return false;
+      if (s.actions.some((a) => a.type === "WATCH" && a.youtubeVideo)) return false;
+      return s.compositeSession.clips.some((c) => c.youtubeVideo);
+    },
+    [],
+  );
+
   // Compute overall progress
   const { totalActions, completedCount, progressPercent } = useMemo(() => {
     let total = 0;
@@ -165,6 +178,10 @@ export function LearnerTimeline({
           total++;
           if (completedActions.has(a.id)) done++;
         }
+        if (sessionHasWatchStep(s)) {
+          total++;
+          if (watchedSessions.has(s.id)) done++;
+        }
       }
     }
     return {
@@ -172,7 +189,7 @@ export function LearnerTimeline({
       completedCount: done,
       progressPercent: total > 0 ? Math.round((done / total) * 100) : 0,
     };
-  }, [program.weeks, completedActions]);
+  }, [program.weeks, completedActions, watchedSessions, sessionHasWatchStep]);
 
   const isProgramComplete = totalActions > 0 && completedCount === totalActions;
 
@@ -267,12 +284,22 @@ export function LearnerTimeline({
   const weekCompletionMap = useMemo(() => {
     const map: Record<string, number> = {};
     for (const w of program.weeks) {
-      const actions = w.sessions.flatMap((s) => s.actions);
-      const done = actions.filter((a) => completedActions.has(a.id)).length;
-      map[w.id] = actions.length > 0 ? Math.round((done / actions.length) * 100) : 0;
+      let total = 0;
+      let done = 0;
+      for (const s of w.sessions) {
+        for (const a of s.actions) {
+          total++;
+          if (completedActions.has(a.id)) done++;
+        }
+        if (sessionHasWatchStep(s)) {
+          total++;
+          if (watchedSessions.has(s.id)) done++;
+        }
+      }
+      map[w.id] = total > 0 ? Math.round((done / total) * 100) : 0;
     }
     return map;
-  }, [program.weeks, completedActions]);
+  }, [program.weeks, completedActions, watchedSessions, sessionHasWatchStep]);
 
   // SVG arc for progress circle (nav — small)
   const progressArc = useMemo(() => {
@@ -690,7 +717,11 @@ export function LearnerTimeline({
               {/* Sessions + actions */}
               {isUnlocked && week.sessions.map((session) => {
                 const sessionActions = session.actions;
-                const sessionDone = sessionActions.filter((a) => completedActions.has(a.id)).length;
+                const hasWatch = sessionHasWatchStep(session);
+                const sessionTotalUnits = sessionActions.length + (hasWatch ? 1 : 0);
+                const sessionDone =
+                  sessionActions.filter((a) => completedActions.has(a.id)).length +
+                  (hasWatch && watchedSessions.has(session.id) ? 1 : 0);
 
                 return (
                   <div key={session.id} className="mb-4">
@@ -703,7 +734,7 @@ export function LearnerTimeline({
                         >
                           {stripWrappingQuotes(session.title)}
                         </h3>
-                        <span className="text-[10px]" style={{ color: "var(--token-color-text-secondary)" }}>{sessionDone}/{sessionActions.length}</span>
+                        <span className="text-[10px]" style={{ color: "var(--token-color-text-secondary)" }}>{sessionDone}/{sessionTotalUnits}</span>
                       </div>
                     )}
 
