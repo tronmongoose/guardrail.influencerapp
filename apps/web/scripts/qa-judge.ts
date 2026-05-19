@@ -29,18 +29,39 @@ function loadEnvFile(filePath: string) {
     if (!process.env[key]) process.env[key] = value;
   }
 }
+// --prod loads .env.production.local FIRST so its values stick (loadEnvFile
+// only sets a key if not already set). Use this to point the judge at the
+// prod Neon DB without committing fixture files for every prod program.
+// Generated via: cd apps/web && vercel env pull .env.production.local --environment=production
+const PROD_ENV_FILE = path.join(APPS_WEB_DIR, ".env.production.local");
+if (process.argv.includes("--prod")) {
+  if (!fs.existsSync(PROD_ENV_FILE)) {
+    console.error(
+      `--prod given but ${PROD_ENV_FILE} not found.\n` +
+        `Run: cd apps/web && vercel env pull .env.production.local --environment=production`,
+    );
+    process.exit(1);
+  }
+  loadEnvFile(PROD_ENV_FILE);
+}
 loadEnvFile(path.join(APPS_WEB_DIR, ".env"));
 loadEnvFile(path.join(APPS_WEB_DIR, ".env.local"));
 
 type Fixture = { name: string; programId: string; notes?: string };
 
-function parseArgs(): { fixture?: string } {
+function parseArgs(): { fixture?: string; programId?: string; name?: string; prod: boolean } {
   const args = process.argv.slice(2);
   let fixture: string | undefined;
+  let programId: string | undefined;
+  let name: string | undefined;
+  let prod = false;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--fixture") fixture = args[++i];
+    else if (args[i] === "--programId" || args[i] === "--program-id") programId = args[++i];
+    else if (args[i] === "--name") name = args[++i];
+    else if (args[i] === "--prod") prod = true;
   }
-  return { fixture };
+  return { fixture, programId, name, prod };
 }
 
 async function loadFixtures(name?: string): Promise<Fixture[]> {
@@ -226,8 +247,21 @@ async function runOne(prisma: PrismaClient, fixture: Fixture, runDir: string) {
 }
 
 async function main() {
-  const { fixture } = parseArgs();
-  const fixtures = await loadFixtures(fixture);
+  const { fixture, programId, name, prod } = parseArgs();
+
+  // --programId is the ad-hoc path: judge a single program by ID without
+  // needing a fixture file. Pairs naturally with --prod to run against prod.
+  let fixtures: Fixture[];
+  if (programId) {
+    if (fixture) {
+      console.error("Pass either --fixture or --programId, not both.");
+      process.exit(1);
+    }
+    fixtures = [{ name: name ?? `adhoc-${programId.slice(-8)}`, programId }];
+  } else {
+    fixtures = await loadFixtures(fixture);
+  }
+
   if (fixtures.length === 0) {
     console.error("No fixtures to run.");
     process.exit(1);
@@ -236,7 +270,7 @@ async function main() {
   const runDir = path.join(RESULTS_DIR, timestampDir());
   fs.mkdirSync(runDir, { recursive: true });
   console.log(`Run dir: ${runDir}`);
-  console.log(`Judge model: ${JUDGE_MODEL}`);
+  console.log(`Judge model: ${JUDGE_MODEL}${prod ? " (against prod DB)" : ""}`);
 
   const prisma = new PrismaClient();
   try {
