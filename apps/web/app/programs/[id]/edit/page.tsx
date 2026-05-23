@@ -149,8 +149,17 @@ export default function ProgramEditPage() {
   const [program, setProgram] = useState<Program | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [showWizard, setShowWizard] = useState(searchParams.get("wizard") === "true");
-  const wizardDismissedRef = useRef(false);
+  // If the upgrade flow sent the creator back with platform_access=success,
+  // they've already gone through the wizard once. Skip showing it again —
+  // we'll auto-fire generation from the effect below. Without this guard the
+  // wizard re-mounts fresh at step 0 and forces them to click through Basics
+  // → Content → ... → Create all over again.
+  const platformAccessSuccess = searchParams.get("platform_access") === "success";
+  const [showWizard, setShowWizard] = useState(
+    searchParams.get("wizard") === "true" && !platformAccessSuccess,
+  );
+  const wizardDismissedRef = useRef(platformAccessSuccess);
+  const platformAccessAutoFiredRef = useRef(false);
   const [activeTab, setActiveTab] = useState<"details" | "curriculum" | "payments" | "preview">("details");
   const [previewView, setPreviewView] = useState<"overview" | "session">("overview");
   const [previewDeviceMode, setPreviewDeviceMode] = useState<"desktop" | "mobile">("desktop");
@@ -404,6 +413,30 @@ export default function ProgramEditPage() {
     }
   }, [program, genStatusChecked, asyncGenerating, lastGenError]);
 
+  // Returning from /onboarding/upgrade with platform_access=success means the
+  // creator already pressed Generate once in the wizard. Auto-fire generation
+  // for them instead of forcing a redo. Runs exactly once per page load.
+  useEffect(() => {
+    if (!platformAccessSuccess) return;
+    if (platformAccessAutoFiredRef.current) return;
+    if (!program || !genStatusChecked) return;
+    if (asyncGenerating || lastGenError) return;
+    if (program.weeks.length > 0) return;
+
+    platformAccessAutoFiredRef.current = true;
+    setActiveTab("curriculum");
+    generateStructure();
+
+    // Clean the URL so a manual refresh doesn't re-fire.
+    const url = new URL(window.location.href);
+    url.searchParams.delete("platform_access");
+    url.searchParams.delete("wizard");
+    window.history.replaceState({}, "", url.pathname + (url.search ? url.search : ""));
+    // generateStructure is stable for this purpose; keep the dep list focused
+    // on the trigger inputs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [platformAccessSuccess, program, genStatusChecked, asyncGenerating, lastGenError]);
+
   async function cancelGeneration() {
     try {
       const res = await fetch(`/api/programs/${id}/generate-async/cancel`, { method: "POST" });
@@ -625,6 +658,9 @@ export default function ProgramEditPage() {
           },
         }}
         onComplete={() => {
+          // Lock dismissal so the auto-show-wizard effect can't re-fire
+          // (e.g. on a brief asyncGenerating flicker during status polling).
+          wizardDismissedRef.current = true;
           setShowWizard(false);
           setAsyncGenerating(true);
           setActiveTab("curriculum");
