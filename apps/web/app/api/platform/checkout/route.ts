@@ -24,20 +24,31 @@ export async function POST(req: Request) {
     // Use raw SQL so new columns work before Prisma client restart
     const access = await getPlatformAccess(user.id);
 
-    // Already has access
-    if (access.platformPromoGranted || access.platformPaymentComplete) {
-      return NextResponse.json({ redirectUrl: "/dashboard" });
-    }
-
-    // Accept optional amount (in dollars) from request body
+    // Parse body once: amount (optional) + from (optional in-progress programId)
+    // First-time creators hit this route via the wizard's PLATFORM_ACCESS_REQUIRED
+    // detour; honoring `from` routes them back to their in-progress program
+    // instead of dumping them on /dashboard.
     let bodyAmount: number | null = null;
+    let fromProgramId: string | null = null;
     try {
       const body = await req.json();
       if (body.amount && typeof body.amount === "number" && body.amount > 0) {
         bodyAmount = Math.round(body.amount * 100); // convert dollars to cents
       }
+      if (typeof body.from === "string" && body.from.length > 0) {
+        fromProgramId = body.from;
+      }
     } catch {
       // no body is fine
+    }
+
+    const accessRedirect = fromProgramId
+      ? `/programs/${fromProgramId}/edit?wizard=true`
+      : "/dashboard";
+
+    // Already has access
+    if (access.platformPromoGranted || access.platformPaymentComplete) {
+      return NextResponse.json({ redirectUrl: accessRedirect });
     }
 
     const envFeeCents = parseInt(process.env.PLATFORM_ACCESS_FEE_CENTS ?? "0", 10);
@@ -50,7 +61,7 @@ export async function POST(req: Request) {
         UPDATE "User" SET "platformPaymentComplete" = true WHERE id = ${user.id}
       `;
       logger.info({ operation: "platform.checkout.free_grant", userId: user.id });
-      return NextResponse.json({ redirectUrl: "/dashboard" });
+      return NextResponse.json({ redirectUrl: accessRedirect });
     }
 
     const stripe = getStripe();
@@ -71,8 +82,12 @@ export async function POST(req: Request) {
           quantity: 1,
         },
       ],
-      success_url: `${appUrl}/dashboard?platform_access=success`,
-      cancel_url: `${appUrl}/onboarding/upgrade`,
+      success_url: fromProgramId
+        ? `${appUrl}/programs/${fromProgramId}/edit?wizard=true&platform_access=success`
+        : `${appUrl}/dashboard?platform_access=success`,
+      cancel_url: fromProgramId
+        ? `${appUrl}/onboarding/upgrade?from=${fromProgramId}`
+        : `${appUrl}/onboarding/upgrade`,
       customer_email: user.email,
       metadata: {
         type: "platform_access",

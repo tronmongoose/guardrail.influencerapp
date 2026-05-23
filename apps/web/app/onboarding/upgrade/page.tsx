@@ -81,6 +81,12 @@ function UpgradePageInner() {
       if (!isFree && chosenDollars && chosenDollars > 0) {
         body.amount = chosenDollars;
       }
+      // Send `from` so the server can route the redirectUrl (free grant) and
+      // Stripe success_url (paid) back to the in-progress wizard rather than
+      // dumping the creator on /dashboard.
+      if (fromProgramId) {
+        body.from = fromProgramId;
+      }
 
       const res = await fetch("/api/platform/checkout", {
         method: "POST",
