@@ -80,6 +80,57 @@ Verified live on `workout-like-a-champ` cmp4yqlvv0001it8hip72dqk2: "Chest and Tr
 
 ---
 
+## 🔥 Wizard "Uploading N videos…" sticks forever after Mux PUT hang — `9th-degree-healing` 2026-05-22
+
+**Severity:** HIGH — user-visible blocker. The wizard's Generate button stays greyed out indefinitely even after Mux has finished processing all uploads. Reproduced live tonight on `cmphqa7y00001l1048sgizlir`: 4 videos all `muxStatus: ready` in DB, but UI stuck on "Uploading 4 videos…" for 8+ minutes. User had to hard-refresh to unblock.
+
+**Root cause:** [apps/web/components/wizard/steps/StepContent.tsx:221-295](apps/web/components/wizard/steps/StepContent.tsx#L221-L295) — `uploadVideoBlob` uses `XMLHttpRequest` for the Mux direct-upload PUT and **sets no timeout**. The browser's default XHR timeout is `0` (infinite). If Mux receives the bytes but the response packet is lost (proxy timeout, TCP RST, Wi-Fi blip after the upload finishes), none of `load` / `error` / `abort` events fires. The promise from `new Promise<void>((resolve, reject) => ...)` never settles.
+
+Caller pattern at [StepContent.tsx:466-475](apps/web/components/wizard/steps/StepContent.tsx#L466-L475):
+```ts
+onUploadingCountChange?.(videoFiles.length);   // sets count > 0
+const batchResults = await Promise.allSettled(batch.map(uploadVideoBlob));  // ← blocks forever on hung promise
+// ...
+onUploadingCountChange?.(0);                    // never runs
+```
+
+`Promise.allSettled` blocks until every promise resolves OR rejects. A neverlosing-settle promise pins it forever. The reset-to-zero never fires, the wizard's `uploadsInProgress` stays true, Generate stays disabled. Meanwhile Mux server-side completes processing and fires `video.asset.ready` → DB shows `muxStatus: ready` while UI shows "still uploading."
+
+**Fix paths (ranked):**
+1. **XHR timeout + timeout handler** (~10 LOC, immediate ship). Set `xhr.timeout = 10 * 60 * 1000` (10 min cap per video) and add `xhr.addEventListener("timeout", () => reject(new Error("Upload timed out")))`. Caps the hang at the timeout instead of forever. Doesn't help if Mux truly succeeded but the response was lost — that file would be marked failed in the UI even though it's fine server-side.
+2. **Post-upload muxStatus poll fallback** (~30 LOC). After XHR timeout/error, poll `/api/programs/{id}/videos` for the file's `muxStatus` for up to N seconds. If it hits `ready` (Mux did process it despite the lost response), treat the upload as successful and continue. Recovers the case where bytes arrived but response was lost.
+3. **Per-file uploadingCount tracking** (refactor). Decrement count on each settle (success OR fail) rather than waiting for the whole batch. Even with bug #1 unaddressed, the UI degrades to "Uploading 1 video…" instead of "Uploading 4…" — and the spinner only sticks on the actually-hung upload, not the others.
+
+**My pick:** ship (1) immediately, follow up with (3) for resilience. (2) is overkill for the symptom but might be needed if the user reports recurring stuck uploads after (1).
+
+---
+
+## 🔥 Generation falls through to "no enriched digests" branch when Gemini analysis fails — `9th-degree-healing` 2026-05-22
+
+**Severity:** HIGH — silent data loss. The program "generates successfully" but the learner sees 8 lessons with no video content attached.
+
+**Symptom:** Program `cmphqa7y00001l1048sgizlir` ("9th degree healing"), 4 Mux-ready videos. Generation job `1j3zc3b0` completed at 100% in ~3 min. But:
+- All 4 videos: `analysis: NO` — Gemini never produced a VideoAnalysis record
+- All 8 sessions: `compositeSession: NULL` — no clips attached
+- Lesson titles are coherent and topical (chakras, aura, Cook's Crossover, Body Pendulum) — LLM hallucinated curriculum from video titles alone
+- WATCH actions exist on every session but reference no video
+
+**Root cause (probable):** Generation route at [apps/web/app/api/programs/[id]/generate-async/route.ts:612-614](apps/web/app/api/programs/[id]/generate-async/route.ts#L612-L614) — when `enrichedOnly.length === 0`, the route logs "No enriched digests — skipping clip distribution (LLM will assign freely)" and proceeds to LLM generation with basic digests only. LLM produces lesson skeleton; no clips get attached because there's no distribution plan.
+
+The upstream cause — why analysis was never produced — needs Vercel runtime logs to confirm, but likely one of:
+1. Vercel function timeout aborted the analysis stage before persistence (same `This operation was aborted` family as the resolved menopause failures 2026-05-19)
+2. Mux MP4 static rendition not ready when route polled, polling exceeded deadline
+3. Gemini error swallowed at the analysis call site
+
+**The bigger design issue:** the "skip distribution" fallback should not silently produce a working-looking program. Options:
+1. **Hard-fail the job** when enriched digests are empty for a program that has videos. Better UX than a generated-but-useless program — the user knows to retry.
+2. **Defer to webhook + retry.** If Gemini hasn't finished, mark the job PENDING_ANALYSIS and resume when webhooks fill in analyses. Async re-entry pattern.
+3. **Always run analysis inline before LLM, with sufficient deadline budget.** Requires the parallel-Gemini work (already shipped 2026-05-13/14) plus the rendition-polling fix from OPEN-FINDINGS pipeline-speed item (#2).
+
+Step 1 first ("hard fail loudly when no analysis exists"). Then we can argue about the right async pattern.
+
+---
+
 ## 🚧 Across-video lesson order interleaves source videos — `reset-menopause` 2026-05-19
 
 **Severity:** medium. Different bug from the resolved 2026-05-14 within-video scramble. That one was clips of *one* video landing in non-source-order across lessons; this one is *whole different videos* being interleaved across lessons.

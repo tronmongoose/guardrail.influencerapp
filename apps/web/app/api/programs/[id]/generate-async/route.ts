@@ -620,8 +620,19 @@ async function processGenerationJob(jobId: string, programId: string, instructio
       for (const w of clipDistributionPlan.warnings) {
         console.warn(`[generate-async]   WARNING: ${w}`);
       }
+    } else if (videosForPipeline.length > 0) {
+      // The program HAS videos but none produced enriched digests. Falling
+      // through to LLM-with-basic-digests yields a hallucinated curriculum
+      // with no clips attached (observed live on 9th-degree-healing
+      // 2026-05-22 — 8 hallucinated lessons, 0 SessionClips). Fail loudly
+      // so the creator knows to retry instead of publishing a zombie.
+      throw new Error(
+        `Video analysis failed for all ${videosForPipeline.length} video(s) — generation cannot proceed. ` +
+          `Wait ~1 minute for Mux to finish rendering, then retry. ` +
+          `If this persists, the source videos may have a codec Gemini can't process.`,
+      );
     } else {
-      console.info(`[generate-async] No enriched digests — skipping clip distribution (LLM will assign freely)`);
+      console.info(`[generate-async] No videos — proceeding with artifact-only generation (no clip distribution)`);
     }
 
     // ══════════════════════════════════════════════════════════════════════════

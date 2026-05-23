@@ -245,8 +245,14 @@ export function StepContent({
     };
 
     // Step 2: PUT the file directly to Mux — never touches the Next.js server.
+    // 10-min timeout per file. Without it XHR can hang forever when Mux
+    // receives the bytes but the response packet is lost — none of load /
+    // error / abort fires, the wrapping Promise never settles, and the
+    // wizard's Promise.allSettled blocks the "uploading" indicator
+    // indefinitely. (9th-degree-healing 2026-05-22 incident.)
     await new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
+      xhr.timeout = 10 * 60 * 1000;
 
       xhr.upload.addEventListener("progress", (event) => {
         if (event.lengthComputable) {
@@ -261,6 +267,7 @@ export function StepContent({
 
       xhr.addEventListener("error", () => reject(new Error("Network error during upload")));
       xhr.addEventListener("abort", () => reject(new Error("Upload cancelled")));
+      xhr.addEventListener("timeout", () => reject(new Error("Upload timed out after 10 minutes")));
 
       xhr.open("PUT", uploadUrl);
       xhr.setRequestHeader("Content-Type", file.type || getVideoMimeType(file.name));

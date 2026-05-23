@@ -60,6 +60,7 @@ export async function POST(
           sessions: {
             include: {
               actions: true,
+              compositeSession: { include: { clips: { select: { id: true } } } },
             },
           },
         },
@@ -103,6 +104,27 @@ export async function POST(
 
   // Warn if no videos (not blocking, but included in response)
   const hasVideos = program.videos.length > 0;
+
+  // If videos were uploaded, the curriculum MUST reference at least one of
+  // them somewhere — either as a composite-session clip or as a WATCH action
+  // with youtubeVideoId set. Otherwise the LLM hallucinated lessons with no
+  // video content attached (9th-degree-healing 2026-05-22). Block publish.
+  if (hasVideos) {
+    const sessionsWithVideo = program.weeks
+      .flatMap((w) => w.sessions)
+      .filter(
+        (s) =>
+          (s.compositeSession?.clips?.length ?? 0) > 0 ||
+          s.actions.some((a) => a.type === "WATCH" && a.youtubeVideoId),
+      );
+    if (sessionsWithVideo.length === 0) {
+      errors.push({
+        field: "sessions",
+        message:
+          "No lessons have video content attached. Video analysis may have failed during generation — try regenerating the program before publishing.",
+      });
+    }
+  }
 
   // Check creator has platform access
   const hasAccess = user.platformPromoGranted || user.platformPaymentComplete;

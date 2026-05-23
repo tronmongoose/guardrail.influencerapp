@@ -172,61 +172,11 @@ export async function POST(req: NextRequest) {
           playbackId,
           lookupBy: ytVideo.muxAssetId ? "assetId" : "uploadId",
         });
-
-        // Fire-and-forget: Gemini analyzes the video via the Mux MP4 static rendition.
-        // mp4_support: "capped-1080p" is set on upload, so static renditions exist.
-        const videoTitle = ytVideo.title ?? "Untitled";
-        const videoRecordId = ytVideo.id;
-        const mp4Url = `https://stream.mux.com/${playbackId}/capped-1080p.mp4`;
-
-        after(async () => {
-          try {
-            logger.info({ operation: "mux.webhook.gemini_analysis_start", ytVideoId: videoRecordId, mp4Url });
-            const analysis = await analyzeUploadedVideoWithGemini(mp4Url, videoTitle, "video/mp4");
-
-            await prisma.videoAnalysis.upsert({
-              where: { youtubeVideoId: videoRecordId },
-              create: {
-                youtubeVideoId: videoRecordId,
-                summary: analysis.summary,
-                fullTranscript: analysis.fullTranscript ?? null,
-                segments: analysis.segments as unknown as Prisma.InputJsonValue,
-                topics: analysis.topics as unknown as Prisma.InputJsonValue,
-                keyMoments: analysis.keyMoments as unknown as Prisma.InputJsonValue ?? undefined,
-                people: analysis.people as unknown as Prisma.InputJsonValue ?? undefined,
-                durationSeconds: analysis.durationSeconds ?? null,
-              },
-              update: {
-                summary: analysis.summary,
-                fullTranscript: analysis.fullTranscript ?? null,
-                segments: analysis.segments as unknown as Prisma.InputJsonValue,
-                topics: analysis.topics as unknown as Prisma.InputJsonValue,
-                keyMoments: analysis.keyMoments as unknown as Prisma.InputJsonValue ?? undefined,
-                people: analysis.people as unknown as Prisma.InputJsonValue ?? undefined,
-                durationSeconds: analysis.durationSeconds ?? null,
-                analyzedAt: new Date(),
-              },
-            });
-
-            // Also store transcript on the video record for the pipeline
-            if (analysis.fullTranscript) {
-              await prisma.youTubeVideo.update({
-                where: { id: videoRecordId },
-                data: { transcript: analysis.fullTranscript, durationSeconds: analysis.durationSeconds ?? undefined },
-              });
-            }
-
-            logger.info({
-              operation: "mux.webhook.gemini_analysis_complete",
-              ytVideoId: videoRecordId,
-              topics: analysis.topics.length,
-              transcriptChars: analysis.fullTranscript?.length ?? 0,
-            });
-          } catch (err) {
-            logger.error({ operation: "mux.webhook.gemini_analysis_failed", ytVideoId: videoRecordId }, err);
-          }
-        });
-
+        // Gemini analysis runs on video.asset.static_renditions.ready below,
+        // not here — the capped-1080p.mp4 file doesn't exist yet at this
+        // point even though mp4_support was set at upload time. Firing
+        // Gemini here produces a 404 on the rendition URL. See 9th-degree-
+        // healing 2026-05-22 incident in OPEN-FINDINGS.md.
         break;
       }
 
@@ -235,6 +185,108 @@ export async function POST(req: NextRequest) {
         assetId,
         uploadId,
       });
+      break;
+    }
+
+    case "video.asset.static_renditions.ready": {
+      // Mux finished rendering the capped-1080p.mp4 static file. Only now
+      // is the URL we hand to Gemini actually downloadable. Trigger video
+      // analysis from here.
+      const assetId: string = event.data?.id ?? "";
+      if (!assetId) {
+        logger.warn({ operation: "mux.webhook.static_renditions_ready.missing_asset_id" });
+        break;
+      }
+
+      const ytVideo = await prisma.youTubeVideo.findFirst({
+        where: { muxAssetId: assetId },
+      });
+      if (!ytVideo) {
+        // video.asset.ready usually fires first and writes muxAssetId. If we
+        // miss the lookup here it likely means this asset belongs to an
+        // Action (not a YouTubeVideo) or the asset_ready handler hasn't
+        // landed yet — both are acceptable, just no-op.
+        logger.info({
+          operation: "mux.webhook.static_renditions_ready.no_ytvideo",
+          assetId,
+        });
+        break;
+      }
+
+      const playbackId = ytVideo.muxPlaybackId;
+      if (!playbackId) {
+        logger.warn({
+          operation: "mux.webhook.static_renditions_ready.no_playback_id",
+          ytVideoId: ytVideo.id,
+        });
+        break;
+      }
+
+      // Skip if analysis already exists — duplicate webhook deliveries or
+      // re-runs of an asset that's already been processed.
+      const existing = await prisma.videoAnalysis.findUnique({
+        where: { youtubeVideoId: ytVideo.id },
+        select: { id: true },
+      });
+      if (existing) {
+        logger.info({
+          operation: "mux.webhook.static_renditions_ready.analysis_exists",
+          ytVideoId: ytVideo.id,
+        });
+        break;
+      }
+
+      const videoTitle = ytVideo.title ?? "Untitled";
+      const videoRecordId = ytVideo.id;
+      const mp4Url = `https://stream.mux.com/${playbackId}/capped-1080p.mp4`;
+
+      after(async () => {
+        try {
+          logger.info({ operation: "mux.webhook.gemini_analysis_start", ytVideoId: videoRecordId, mp4Url });
+          const analysis = await analyzeUploadedVideoWithGemini(mp4Url, videoTitle, "video/mp4");
+
+          await prisma.videoAnalysis.upsert({
+            where: { youtubeVideoId: videoRecordId },
+            create: {
+              youtubeVideoId: videoRecordId,
+              summary: analysis.summary,
+              fullTranscript: analysis.fullTranscript ?? null,
+              segments: analysis.segments as unknown as Prisma.InputJsonValue,
+              topics: analysis.topics as unknown as Prisma.InputJsonValue,
+              keyMoments: analysis.keyMoments as unknown as Prisma.InputJsonValue ?? undefined,
+              people: analysis.people as unknown as Prisma.InputJsonValue ?? undefined,
+              durationSeconds: analysis.durationSeconds ?? null,
+            },
+            update: {
+              summary: analysis.summary,
+              fullTranscript: analysis.fullTranscript ?? null,
+              segments: analysis.segments as unknown as Prisma.InputJsonValue,
+              topics: analysis.topics as unknown as Prisma.InputJsonValue,
+              keyMoments: analysis.keyMoments as unknown as Prisma.InputJsonValue ?? undefined,
+              people: analysis.people as unknown as Prisma.InputJsonValue ?? undefined,
+              durationSeconds: analysis.durationSeconds ?? null,
+              analyzedAt: new Date(),
+            },
+          });
+
+          if (analysis.fullTranscript) {
+            await prisma.youTubeVideo.update({
+              where: { id: videoRecordId },
+              data: { transcript: analysis.fullTranscript, durationSeconds: analysis.durationSeconds ?? undefined },
+            });
+          }
+
+          logger.info({
+            operation: "mux.webhook.gemini_analysis_complete",
+            ytVideoId: videoRecordId,
+            topics: analysis.topics.length,
+            transcriptChars: analysis.fullTranscript?.length ?? 0,
+          });
+        } catch (err) {
+          logger.error({ operation: "mux.webhook.gemini_analysis_failed", ytVideoId: videoRecordId }, err);
+        }
+      });
+
       break;
     }
 
