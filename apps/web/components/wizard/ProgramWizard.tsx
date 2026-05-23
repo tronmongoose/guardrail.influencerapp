@@ -105,6 +105,12 @@ export function ProgramWizard({
   const { startGeneration } = useGeneration();
   const [currentStep, setCurrentStep] = useState(0);
   const [uploadingCount, setUploadingCount] = useState(0);
+  // Mirror uploadingCount into a ref so handleGenerate's poll-loop sees
+  // live updates rather than the closure-captured value.
+  const uploadingCountRef = useRef(0);
+  useEffect(() => {
+    uploadingCountRef.current = uploadingCount;
+  }, [uploadingCount]);
   const [state, setState] = useState<WizardState>(() => {
     // Try to load from localStorage first
     if (typeof window !== "undefined") {
@@ -259,6 +265,16 @@ export function ProgramWizard({
   const handleGenerate = async () => {
     setIsGenerating(true);
     try {
+      // Wait for any in-flight uploads to finish before firing the server
+      // call. uploadingCount drops to 0 in StepContent's handleFileUpload
+      // when its Promise.allSettled resolves; until then the YouTubeVideo
+      // rows don't exist server-side and the route would see 0 videos.
+      // Cap the wait at 12 min — same magnitude as the XHR timeout per file.
+      const uploadWaitDeadline = Date.now() + 12 * 60_000;
+      while (uploadingCountRef.current > 0 && Date.now() < uploadWaitDeadline) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+
       // Resolve skin fields: "auto-generate" → sentinel skinId; "custom:id" → customSkinId
       const rawSkinId = state.theme.skinId;
       const skinPatchFields: Record<string, string | null> =
@@ -383,11 +399,12 @@ export function ProgramWizard({
       case 4: {
         const totalContent = state.content.videos.length + state.content.artifacts.length;
         const uploadsInProgress = uploadingCount > 0;
-        // Generate is allowed even with uploads still in-flight — the server
-        // waits for Mux readiness internally. Was previously gated on
-        // !uploadsInProgress, which produced multi-minute spinners for
-        // creators on slow connections.
-        const canGenerate = totalContent > 0;
+        // Generate is allowed once there's *intent* — either files-in-flight
+        // or content already saved. state.content.videos populates only
+        // AFTER each upload's PUT finishes, so during upload itself
+        // totalContent is still 0. handleGenerate will wait for uploads to
+        // settle before firing the server call.
+        const canGenerate = totalContent > 0 || uploadsInProgress;
         return (
           <div className="space-y-6">
             <div>
