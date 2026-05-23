@@ -276,7 +276,24 @@ export async function analyzeUploadedVideoWithGemini(
   let fileName: string | null = null;
 
   try {
-    fileUri = await uploadVideoToGeminiFiles(videoUrl, videoTitle, mimeType, apiKey);
+    // Gemini's file-processor sometimes returns state=FAILED transiently on
+    // perfectly-valid MP4s (observed live on 9th-degree-healing 2026-05-22).
+    // Retry once with a short backoff before bubbling the failure up. The
+    // upload itself is idempotent — each call creates a fresh file resource
+    // on Gemini's side.
+    try {
+      fileUri = await uploadVideoToGeminiFiles(videoUrl, videoTitle, mimeType, apiKey);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("Gemini file processing failed")) {
+        console.warn(`[gemini] retry attempt 1 for "${videoTitle}" after FAILED state`);
+        await new Promise((r) => setTimeout(r, 5000));
+        fileUri = await uploadVideoToGeminiFiles(videoUrl, videoTitle, mimeType, apiKey);
+        console.info(`[gemini] retry succeeded for "${videoTitle}"`);
+      } else {
+        throw err;
+      }
+    }
     // Extract file name from URI for cleanup (format: .../files/{name})
     const match = fileUri.match(/\/files\/([^?]+)/);
     if (match) fileName = `files/${match[1]}`;

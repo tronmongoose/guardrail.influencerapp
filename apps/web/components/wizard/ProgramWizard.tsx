@@ -383,7 +383,11 @@ export function ProgramWizard({
       case 4: {
         const totalContent = state.content.videos.length + state.content.artifacts.length;
         const uploadsInProgress = uploadingCount > 0;
-        const canGenerate = totalContent > 0 && !uploadsInProgress;
+        // Generate is allowed even with uploads still in-flight — the server
+        // waits for Mux readiness internally. Was previously gated on
+        // !uploadsInProgress, which produced multi-minute spinners for
+        // creators on slow connections.
+        const canGenerate = totalContent > 0;
         return (
           <div className="space-y-6">
             <div>
@@ -410,7 +414,7 @@ export function ProgramWizard({
                       Uploading {uploadingCount} video{uploadingCount !== 1 ? "s" : ""}…
                     </p>
                     <p className="text-xs text-gray-400 mt-1">
-                      Hang tight — the generate button will activate once your uploads finish.
+                      You can press Generate now — we&apos;ll wait for your uploads to finish on our side.
                     </p>
                   </div>
                 </div>
