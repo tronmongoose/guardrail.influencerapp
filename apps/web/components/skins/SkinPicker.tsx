@@ -405,9 +405,13 @@ export function SkinPicker({ value, onChange, thumbnailUrl, programId, programTi
         className="flex flex-col md:hidden border border-gray-200 rounded-xl overflow-hidden shadow-sm"
         onMouseLeave={() => setHoveredSkinId(null)}
       >
-        {/* Category tab strip */}
+        {/* Category tab strip — wrapped in relative container so we can overlay
+            a right-edge fade + chevron, signaling there are more tabs offscreen.
+            Without it users only saw the first ~3 categories and didn't realize
+            the strip scrolled (9th-degree mobile 2026-05-24). */}
+        <div className="relative flex-shrink-0 border-b border-gray-200 bg-white">
         <div
-          className="flex overflow-x-auto flex-shrink-0 border-b border-gray-200 bg-white"
+          className="flex overflow-x-auto"
           style={{ scrollbarWidth: "none" }}
         >
           {SKIN_CATEGORIES.map((cat) => {
@@ -447,6 +451,18 @@ export function SkinPicker({ value, onChange, thumbnailUrl, programId, programTi
             </svg>
             MY BRAND
           </button>
+        </div>
+          {/* Right-edge fade + chevron — visual cue that more tabs scroll into view */}
+          <div
+            className="pointer-events-none absolute top-0 right-0 h-full flex items-center pl-6 pr-2"
+            style={{
+              background: "linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.95) 50%, #ffffff 100%)",
+            }}
+          >
+            <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </div>
         </div>
 
         {/* Skin list for active tab — collapses after selection */}

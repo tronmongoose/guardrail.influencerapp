@@ -405,13 +405,23 @@ export default function ProgramEditPage() {
   // Skip when there's a known generation failure — the in-page "Generation failed"
   // panel surfaces the error + retry button instead, so the user doesn't get silently
   // re-thrown into the wizard with no idea the previous attempt failed.
+  //
+  // Re-reads ?platform_access=success directly from searchParams instead of
+  // trusting the wizardDismissedRef seeded at mount. Reason: this page is a
+  // Client Component using useSearchParams() with no Suspense boundary, so
+  // Next 15 prerenders it with empty searchParams; the useState/useRef
+  // initializers see platformAccessSuccess=false on first render, the ref
+  // gets stuck at false, then this effect re-opens the wizard at step 0 even
+  // though the creator just round-tripped through Stripe. Bit us repeatedly
+  // on mobile (9th-degree 2026-05-24) — three prior "fixes" treated symptoms.
   useEffect(() => {
     if (!program || !genStatusChecked || wizardDismissedRef.current) return;
     if (lastGenError) return;
+    if (searchParams.get("platform_access") === "success") return;
     if (program.weeks.length === 0 && !asyncGenerating) {
       setShowWizard(true);
     }
-  }, [program, genStatusChecked, asyncGenerating, lastGenError]);
+  }, [program, genStatusChecked, asyncGenerating, lastGenError, searchParams]);
 
   // Returning from /onboarding/upgrade with platform_access=success means the
   // creator already pressed Generate once in the wizard. Auto-fire generation

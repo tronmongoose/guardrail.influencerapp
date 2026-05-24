@@ -430,11 +430,11 @@ export function ProgramWizard({
                     <p className="text-sm font-medium text-neon-cyan">
                       Uploading {uploadingCount} video{uploadingCount !== 1 ? "s" : ""}…
                     </p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      {isGenerating
-                        ? "Generation is queued — we’ll start automatically as soon as uploads finish. You can leave this screen open."
-                        : "You can press Generate now — we’ll wait for your uploads to finish on our side."}
-                    </p>
+                    {!isGenerating && (
+                      <p className="text-xs text-gray-400 mt-1">
+                        You can press Generate now — we’ll wait for your uploads to finish on our side.
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
