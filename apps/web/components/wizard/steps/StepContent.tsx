@@ -627,21 +627,26 @@ export function StepContent({
         </div>
       )}
 
-      {/* Combined content tip */}
+      {/* Combined content tip — also carries the iOS picker caveat to avoid
+          stacking a separate notice below the dropzone (4 notices was too noisy
+          on mobile, 9th-degree 2026-05-24). */}
       <div className="flex items-start gap-2 p-3 bg-neon-cyan/5 border border-neon-cyan/20 rounded-lg">
         <svg className="w-4 h-4 text-neon-cyan flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
-        <p className="text-xs text-gray-300">
-          Upload your videos. We&apos;ll sort them by topic, recommend a duration, and break long ones into clips. Aim for more content if you want a longer program.
-        </p>
+        <div className="text-xs text-gray-300 space-y-1.5">
+          <p>
+            Upload your videos. We&apos;ll sort them by topic, recommend a duration, and break long ones into clips. Aim for more content if you want a longer program.
+          </p>
+          {isIOS && (
+            <p className="text-gray-400">
+              On iPhone, your Photos library will prepare each video (iCloud download + format conversion) before handing them over — this may take a moment per clip.
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="space-y-4">
-          <p className="text-xs text-gray-500">
-            Add videos from your phone, documents, or audio recordings. AI will analyze everything and build your program.
-          </p>
-
           {/* File dropzone — mobile-optimized */}
           <label className="block cursor-pointer">
             <div className={`
@@ -685,17 +690,6 @@ export function StepContent({
               style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden", pointerEvents: "none" }}
             />
           </label>
-
-          {isIOS && (
-            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-surface-card border border-surface-border">
-              <svg className="w-4 h-4 mt-0.5 flex-shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <p className="text-xs text-gray-400 leading-relaxed">
-                In your Photos library, iOS will prepare each video (downloading from iCloud and converting the format) before handing them to Journeyline. This may take a moment per video — it&apos;s outside our control.
-              </p>
-            </div>
-          )}
 
           {/* Per-file extraction progress */}
           {extractionStates.length > 0 && (
