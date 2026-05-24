@@ -50,7 +50,12 @@ interface FileExtractionState {
   phase?: string;
 }
 
-const ACCEPTED_FILE_TYPES = ".pdf,.docx,.txt,.md,.mp4,.webm,.mov,.mp3,.m4a,.wav";
+// iOS Safari transcodes HEVC → H.264 inside the Photos picker when the input
+// accepts specific video extensions (.mp4/.mov) — that's the "Preparing 1 of N…"
+// wait users hit before the picker dismisses. Using video/* / audio/* MIME types
+// lets iOS hand off originals immediately; Mux transcodes server-side.
+// (9th-degree mobile run 2026-05-24.)
+const ACCEPTED_FILE_TYPES = ".pdf,.docx,.txt,.md,video/*,audio/*";
 
 function getFileType(filename: string): string | null {
   const lower = filename.toLowerCase();
