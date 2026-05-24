@@ -433,6 +433,17 @@ export default function ProgramEditPage() {
     if (asyncGenerating || lastGenError) return;
     if (program.weeks.length > 0) return;
 
+    // Lock dismissal + close the wizard SYNCHRONOUSLY before any async work
+    // or URL mutation. Without this, the replaceState below strips
+    // ?platform_access=success → useSearchParams updates → the auto-show
+    // effect re-runs with all guards failing (ref still false because Next 15
+    // SSRs this Client Component with empty searchParams; lastGenError still
+    // null; asyncGenerating still false because generateStructure's fetch
+    // hasn't resolved) → wizard opens at currentStep=0. Three prior fixes
+    // missed this; the ref guard is the only one that survives every race.
+    wizardDismissedRef.current = true;
+    setShowWizard(false);
+
     platformAccessAutoFiredRef.current = true;
     setActiveTab("curriculum");
     generateStructure();
@@ -476,7 +487,11 @@ export default function ProgramEditPage() {
       setAsyncGenerating(true);
       showToast("Generation started — this may take a minute", "info");
     } catch (err) {
-      showToast(err instanceof Error ? err.message : "Generation failed", "error");
+      const msg = err instanceof Error ? err.message : "Generation failed";
+      showToast(msg, "error");
+      // Surface to the in-page failed panel so a silent fetch failure on the
+      // auto-fire path doesn't leave the user staring at nothing.
+      setLastGenError(msg);
     } finally {
       setGenerating(false);
     }

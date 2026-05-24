@@ -42,8 +42,13 @@ export async function POST(req: Request) {
       // no body is fine
     }
 
+    // platform_access=success triggers the edit page's auto-fire generation
+    // effect. Without it, the free-grant + already-has-access return paths
+    // would land the creator back in the wizard with no auto-start, exactly
+    // mirroring the original "Generate brings me back to step 1" bug for
+    // promo/free creators.
     const accessRedirect = fromProgramId
-      ? `/programs/${fromProgramId}/edit?wizard=true`
+      ? `/programs/${fromProgramId}/edit?wizard=true&platform_access=success`
       : "/dashboard";
 
     // Already has access

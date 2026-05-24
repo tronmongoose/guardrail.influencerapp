@@ -33,8 +33,11 @@ function UpgradePageInner() {
   // in-progress program after access is granted instead of dumping them
   // on /dashboard.
   const fromProgramId = searchParams.get("from");
+  // platform_access=success is what the edit page watches for to auto-fire
+  // generation. The promo path was missing this param entirely, so promo
+  // creators always landed back in the wizard with no auto-start.
   const successDestination = fromProgramId
-    ? `/programs/${fromProgramId}/edit?wizard=true`
+    ? `/programs/${fromProgramId}/edit?wizard=true&platform_access=success`
     : "/dashboard";
   const { isLoaded, isSignedIn } = useUser();
   const [loading, setLoading] = useState(false);
