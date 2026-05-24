@@ -431,7 +431,9 @@ export function ProgramWizard({
                       Uploading {uploadingCount} video{uploadingCount !== 1 ? "s" : ""}…
                     </p>
                     <p className="text-xs text-gray-400 mt-1">
-                      You can press Generate now — we&apos;ll wait for your uploads to finish on our side.
+                      {isGenerating
+                        ? "Generation is queued — we’ll start automatically as soon as uploads finish. You can leave this screen open."
+                        : "You can press Generate now — we’ll wait for your uploads to finish on our side."}
                     </p>
                   </div>
                 </div>
@@ -472,7 +474,7 @@ export function ProgramWizard({
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
-                    Starting generation…
+                    {uploadsInProgress ? "Waiting for uploads to finish…" : "Starting generation…"}
                   </span>
                 ) : (
                   "Generate Journeyline →"
