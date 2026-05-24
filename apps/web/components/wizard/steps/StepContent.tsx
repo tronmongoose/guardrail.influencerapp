@@ -150,6 +150,19 @@ export function StepContent({
 }: StepContentProps) {
   const [extractionStates, setExtractionStates] = useState<FileExtractionState[]>([]);
   const [aiMessageIndex, setAiMessageIndex] = useState(0);
+  // iOS Safari makes the Photos picker prepare each video (iCloud download +
+  // HEVC→H.264 transcode) before dismissing — out of our control. Show iOS
+  // users an expectation-setting note so the wait doesn't read as "stuck."
+  // useState(false) + useEffect avoids SSR/hydration mismatch on the UA check.
+  const [isIOS, setIsIOS] = useState(false);
+  useEffect(() => {
+    const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+    const iPadOS = typeof navigator !== "undefined"
+      && navigator.platform === "MacIntel"
+      && (navigator as Navigator & { maxTouchPoints?: number }).maxTouchPoints !== undefined
+      && ((navigator as Navigator & { maxTouchPoints?: number }).maxTouchPoints ?? 0) > 1;
+    setIsIOS(/iPhone|iPad|iPod/i.test(ua) || iPadOS);
+  }, []);
 
   const isExtracting = extractionStates.some((s) => s.status === "pending" || s.status === "extracting" || s.status === "transcribing");
 
@@ -672,6 +685,17 @@ export function StepContent({
               style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden", pointerEvents: "none" }}
             />
           </label>
+
+          {isIOS && (
+            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-surface-card border border-surface-border">
+              <svg className="w-4 h-4 mt-0.5 flex-shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-xs text-gray-400 leading-relaxed">
+                In your Photos library, iOS will prepare each video (downloading from iCloud and converting the format) before handing them to Journeyline. This may take a moment per video — it&apos;s outside our control.
+              </p>
+            </div>
+          )}
 
           {/* Per-file extraction progress */}
           {extractionStates.length > 0 && (
