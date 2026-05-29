@@ -173,15 +173,20 @@ model Session {
 // a CompositeSession (no typed WATCH Action exists, so LearnerProgress can't
 // represent it). Manual toggles from the learner UI also flow through here.
 model LearnerSessionProgress {
-  id          String    @id @default(cuid())
-  userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sessionId   String
-  session     Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  watched     Boolean   @default(false)
-  watchedAt   DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId       String
+  session         Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  watched         Boolean   @default(false)
+  watchedAt       DateTime?
+  // SessionClip IDs the learner has individually marked watched. Per-clip
+  // granularity so a CompositeSession with N clips renders as N independent
+  // steps in the learner UI. `watched` is the session-level rollup (true when
+  // every clip is in this array, kept in sync server-side).
+  watchedClipIds  String[]  @default([])
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@unique([userId, sessionId])
   @@index([userId])

@@ -75,18 +75,33 @@ export default async function LearnPage({ params }: { params: Promise<{ programI
 
   if (!program) notFound();
 
-  // Pre-load watched-session IDs so the timeline can render the WATCH card's
-  // visited state on first paint. Drives the in-page Set; updates flow back
-  // through POST /api/progress/session.
-  const watchedSessionRows = await prisma.learnerSessionProgress.findMany({
-    where: {
-      userId: user.id,
+  // Pre-load per-clip watched state so the timeline renders each
+  // CompositeSession clip as its own checkable WATCH step on first paint.
+  // Legacy rows (watched: true, watchedClipIds: []) are expanded to every
+  // clip ID in that session so older entitlements continue to render as
+  // "all parts watched". Updates flow back through POST /api/progress/session.
+  const progressRows = await prisma.learnerSessionProgress.findMany({
+    where: { userId: user.id, session: { week: { programId } } },
+    select: {
+      sessionId: true,
       watched: true,
-      session: { week: { programId } },
+      watchedClipIds: true,
+      session: { select: { compositeSession: { select: { clips: { select: { id: true } } } } } },
     },
-    select: { sessionId: true },
   });
-  const watchedSessionIds = watchedSessionRows.map((r) => r.sessionId);
+  const initialWatchedClipKeys: string[] = [];
+  for (const row of progressRows) {
+    const allClips = row.session.compositeSession?.clips.map((c) => c.id) ?? [];
+    const effective =
+      row.watchedClipIds.length > 0
+        ? row.watchedClipIds
+        : row.watched
+          ? allClips
+          : [];
+    for (const clipId of effective) {
+      initialWatchedClipKeys.push(`${row.sessionId}::${clipId}`);
+    }
+  }
 
   // Creators can always view their own program (even unpublished)
   const isCreator = program.creatorId === user.id;
@@ -149,7 +164,7 @@ export default async function LearnPage({ params }: { params: Promise<{ programI
         creatorAvatarUrl={avatarProxyUrl}
         targetTransformation={program.targetTransformation}
         durationWeeks={program.durationWeeks}
-        initialWatchedSessionIds={watchedSessionIds}
+        initialWatchedClipKeys={initialWatchedClipKeys}
       />
     </SkinThemeProvider>
   );

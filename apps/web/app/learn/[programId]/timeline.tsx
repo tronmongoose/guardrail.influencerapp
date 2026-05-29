@@ -63,8 +63,11 @@ interface Props {
   creatorAvatarUrl: string | null;
   targetTransformation: string | null;
   durationWeeks: number;
-  /** Session IDs the learner has marked watched, pre-loaded server-side. */
-  initialWatchedSessionIds: string[];
+  /**
+   * Watch-keys (`${sessionId}::${clipId}`) the learner has marked watched,
+   * pre-loaded server-side. One key per individually-completable clip.
+   */
+  initialWatchedClipKeys: string[];
 }
 
 export function LearnerTimeline({
@@ -78,7 +81,7 @@ export function LearnerTimeline({
   creatorAvatarUrl,
   targetTransformation,
   durationWeeks,
-  initialWatchedSessionIds,
+  initialWatchedClipKeys,
 }: Props) {
   const { showToast } = useToast();
 
@@ -107,38 +110,35 @@ export function LearnerTimeline({
   // Track which action is expanded (for mobile detail view)
   const [expandedAction, setExpandedAction] = useState<string | null>(null);
 
-  // Track which sessions' composite videos have been watched. Server-backed
-  // via /api/progress/session — initialWatchedSessionIds hydrates the Set
-  // on first paint, setWatchedForSession optimistically updates it and
-  // fires the POST. On failure the optimistic update is rolled back so the
-  // UI never lies about persisted state.
-  const [watchedSessions, setWatchedSessions] = useState<Set<string>>(
-    () => new Set(initialWatchedSessionIds),
+  // Track which CompositeSession clips have been watched. Keys are
+  // `${sessionId}::${clipId}` so legacy and per-clip writes share a Set.
+  // Server-backed via /api/progress/session — the server stores the array
+  // of watched clip IDs and computes the session-level rollup.
+  const [watchedClipKeys, setWatchedClipKeys] = useState<Set<string>>(
+    () => new Set(initialWatchedClipKeys),
   );
-
-  const setWatchedForSession = useCallback(
-    async (sessionId: string, watched: boolean) => {
-      const prev = watchedSessions;
-      // Optimistic update
-      setWatchedSessions((s) => {
+  const setWatchedForClip = useCallback(
+    async (sessionId: string, clipId: string, watched: boolean) => {
+      const key = `${sessionId}::${clipId}`;
+      const prev = watchedClipKeys;
+      setWatchedClipKeys((s) => {
         const next = new Set(s);
-        if (watched) next.add(sessionId);
-        else next.delete(sessionId);
+        if (watched) next.add(key);
+        else next.delete(key);
         return next;
       });
       try {
         const res = await fetch("/api/progress/session", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId, watched }),
+          body: JSON.stringify({ sessionId, clipId, watched }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
       } catch {
-        // Roll back the optimistic update so the UI matches the server.
-        setWatchedSessions(prev);
+        setWatchedClipKeys(prev);
       }
     },
-    [watchedSessions],
+    [watchedClipKeys],
   );
 
   // Celebration overlay state (week milestones only — not final week)
@@ -155,20 +155,23 @@ export function LearnerTimeline({
   const nextActionRef = useRef<HTMLDivElement>(null);
   const hasScrolledRef = useRef(false);
 
-  // Helper: does this session have a WATCH step (CompositeSession with
-  // clips) that should be counted as its own progress unit alongside the
-  // typed actions? Mirrors the WATCH-card render gate so the math agrees
-  // with what the learner sees.
-  const sessionHasWatchStep = useCallback(
-    (s: { actions: ActionData[]; compositeSession?: { clips: CompositeClipData[] } | null }) => {
-      if (!s.compositeSession?.clips?.length) return false;
-      if (s.actions.some((a) => a.type === "WATCH" && a.youtubeVideo)) return false;
-      return s.compositeSession.clips.some((c) => c.youtubeVideo);
+  // Helper: returns the CompositeSession clips that should each render as
+  // their own WATCH card in the timeline (filtered to clips with a
+  // resolvable video). Empty when the session has its own typed WATCH
+  // Action (avoids double-rendering). Each returned clip counts as one
+  // progress unit in the math below — mirrors the render loop so they
+  // agree.
+  const sessionWatchClips = useCallback(
+    (s: { actions: ActionData[]; compositeSession?: { clips: CompositeClipData[] } | null }): CompositeClipData[] => {
+      if (!s.compositeSession?.clips?.length) return [];
+      if (s.actions.some((a) => a.type === "WATCH" && a.youtubeVideo)) return [];
+      return s.compositeSession.clips.filter((c) => c.youtubeVideo);
     },
     [],
   );
 
-  // Compute overall progress
+  // Compute overall progress. Each CompositeSession clip is its own unit so
+  // a 2-part lesson contributes 2 to the total.
   const { totalActions, completedCount, progressPercent } = useMemo(() => {
     let total = 0;
     let done = 0;
@@ -178,9 +181,9 @@ export function LearnerTimeline({
           total++;
           if (completedActions.has(a.id)) done++;
         }
-        if (sessionHasWatchStep(s)) {
+        for (const c of sessionWatchClips(s)) {
           total++;
-          if (watchedSessions.has(s.id)) done++;
+          if (watchedClipKeys.has(`${s.id}::${c.id}`)) done++;
         }
       }
     }
@@ -189,7 +192,7 @@ export function LearnerTimeline({
       completedCount: done,
       progressPercent: total > 0 ? Math.round((done / total) * 100) : 0,
     };
-  }, [program.weeks, completedActions, watchedSessions, sessionHasWatchStep]);
+  }, [program.weeks, completedActions, watchedClipKeys, sessionWatchClips]);
 
   const isProgramComplete = totalActions > 0 && completedCount === totalActions;
 
@@ -291,15 +294,15 @@ export function LearnerTimeline({
           total++;
           if (completedActions.has(a.id)) done++;
         }
-        if (sessionHasWatchStep(s)) {
+        for (const c of sessionWatchClips(s)) {
           total++;
-          if (watchedSessions.has(s.id)) done++;
+          if (watchedClipKeys.has(`${s.id}::${c.id}`)) done++;
         }
       }
       map[w.id] = total > 0 ? Math.round((done / total) * 100) : 0;
     }
     return map;
-  }, [program.weeks, completedActions, watchedSessions, sessionHasWatchStep]);
+  }, [program.weeks, completedActions, watchedClipKeys, sessionWatchClips]);
 
   // SVG arc for progress circle (nav — small)
   const progressArc = useMemo(() => {
@@ -717,11 +720,11 @@ export function LearnerTimeline({
               {/* Sessions + actions */}
               {isUnlocked && week.sessions.map((session) => {
                 const sessionActions = session.actions;
-                const hasWatch = sessionHasWatchStep(session);
-                const sessionTotalUnits = sessionActions.length + (hasWatch ? 1 : 0);
+                const watchClips = sessionWatchClips(session);
+                const sessionTotalUnits = sessionActions.length + watchClips.length;
                 const sessionDone =
                   sessionActions.filter((a) => completedActions.has(a.id)).length +
-                  (hasWatch && watchedSessions.has(session.id) ? 1 : 0);
+                  watchClips.filter((c) => watchedClipKeys.has(`${session.id}::${c.id}`)).length;
 
                 return (
                   <div key={session.id} className="mb-4">
@@ -739,157 +742,148 @@ export function LearnerTimeline({
                     )}
 
                     <div className="space-y-2">
-                      {/* WATCH step: one card per lesson session — collapsed
-                          row shows title + "Watch · N parts · X min"; expanded
-                          shows a single chained player that plays all clips
-                          back-to-back with chapter navigation, plus an
-                          "Open in focus mode" link to the dedicated viewer.
-                          Replaces an earlier per-clip rendering that produced
-                          N "Part X of N · WATCH" cards per lesson — a single
-                          continuous video was being presented as N separate
-                          steps with N separate Mark-as-watched checkboxes. */}
-                      {session.compositeSession?.clips?.length &&
-                        !session.actions.some((a) => a.type === "WATCH" && a.youtubeVideo) && (() => {
-                          const clips = session.compositeSession.clips.filter((c) => c.youtubeVideo);
-                          if (clips.length === 0) return null;
+                      {/* WATCH steps: one card per CompositeSession clip so a
+                          multi-segment lesson renders as N independent steps
+                          (each with its own title, video, checkbox, and
+                          persisted completion). Rare in practice — most
+                          generated lessons have a single segment. */}
+                      {watchClips.map((c, idx) => {
+                        const wKey = `${session.id}::${c.id}`;
+                        const watchDone = watchedClipKeys.has(wKey);
+                        const isWatchExpanded = expandedAction === wKey;
+                        const partTitle =
+                          c.chapterTitle?.trim() ||
+                          c.youtubeVideo?.title ||
+                          (watchClips.length > 1
+                            ? `${session.title} — Part ${idx + 1}`
+                            : session.title);
+                        const partSeconds =
+                          c.startSeconds != null && c.endSeconds != null
+                            ? Math.max(0, c.endSeconds - c.startSeconds)
+                            : 0;
+                        const partLabel =
+                          partSeconds > 0
+                            ? (() => {
+                                const m = Math.floor(partSeconds / 60);
+                                const sec = Math.floor(partSeconds % 60);
+                                return m > 0 ? `${m} min` : `${sec}s`;
+                              })()
+                            : null;
+                        const subtitle = ["Watch", partLabel].filter(Boolean).join(" · ");
 
-                          // Server-backed: the Set holds raw session IDs that
-                          // match LearnerSessionProgress.sessionId so the
-                          // POST body and server-fetched hydration agree.
-                          const watchKey = session.id;
-                          const watchDone = watchedSessions.has(watchKey);
-                          const isWatchExpanded = expandedAction === watchKey;
-                          const totalSeconds = clips.reduce((sum, c) => {
-                            if (c.startSeconds != null && c.endSeconds != null) {
-                              return sum + Math.max(0, c.endSeconds - c.startSeconds);
-                            }
-                            return sum;
-                          }, 0);
-                          const fmtTotal = (s: number) => {
-                            const m = Math.floor(s / 60);
-                            const sec = Math.floor(s % 60);
-                            return m > 0 ? `${m} min` : `${sec}s`;
-                          };
-                          const partsLabel = clips.length > 1 ? `${clips.length} parts` : null;
-                          const totalLabel = totalSeconds > 0 ? fmtTotal(totalSeconds) : null;
-                          const subtitleParts = [partsLabel, totalLabel].filter(Boolean);
-                          const titleText =
-                            clips[0].chapterTitle?.trim() ||
-                            clips[0].youtubeVideo?.title ||
-                            session.title;
+                        const markWatched = () => {
+                          void setWatchedForClip(session.id, c.id, true);
+                        };
+                        const toggleWatched = () => {
+                          void setWatchedForClip(session.id, c.id, !watchDone);
+                        };
 
-                          const markWatched = () => {
-                            void setWatchedForSession(watchKey, true);
-                          };
-                          const toggleWatched = () => {
-                            void setWatchedForSession(watchKey, !watchDone);
-                          };
-
-                          return (
+                        return (
+                          <div
+                            key={wKey}
+                            className={`border transition-all duration-300 overflow-hidden ${
+                              watchDone ? "opacity-70" : ""
+                            }`}
+                            style={{
+                              borderRadius: "var(--token-radius-lg)",
+                              backgroundColor: watchDone
+                                ? "var(--token-color-bg-default)"
+                                : "var(--token-color-bg-elevated)",
+                              borderColor: "var(--token-color-border-subtle)",
+                            }}
+                          >
                             <div
-                              className={`border transition-all duration-300 overflow-hidden ${
-                                watchDone ? "opacity-70" : ""
-                              }`}
-                              style={{
-                                borderRadius: "var(--token-radius-lg)",
-                                backgroundColor: watchDone
-                                  ? "var(--token-color-bg-default)"
-                                  : "var(--token-color-bg-elevated)",
-                                borderColor: "var(--token-color-border-subtle)",
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => setExpandedAction(isWatchExpanded ? null : wKey)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  setExpandedAction(isWatchExpanded ? null : wKey);
+                                }
                               }}
+                              className="w-full flex items-center gap-3 py-3 px-4 text-left cursor-pointer"
                             >
-                              <div
-                                role="button"
-                                tabIndex={0}
-                                onClick={() => setExpandedAction(isWatchExpanded ? null : watchKey)}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter" || e.key === " ") {
-                                    e.preventDefault();
-                                    setExpandedAction(isWatchExpanded ? null : watchKey);
-                                  }
+                              <CompletionCircle
+                                done={watchDone}
+                                isSaving={false}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleWatched();
                                 }}
-                                className="w-full flex items-center gap-3 py-3 px-4 text-left cursor-pointer"
-                              >
-                                <CompletionCircle
-                                  done={watchDone}
-                                  isSaving={false}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleWatched();
+                              />
+
+                              <div className="flex-1 min-w-0">
+                                <p
+                                  className={`text-sm font-medium truncate ${watchDone ? "line-through" : ""}`}
+                                  style={{
+                                    color: watchDone
+                                      ? "var(--token-color-text-secondary)"
+                                      : "var(--token-color-text-primary)",
                                   }}
-                                />
-
-                                <div className="flex-1 min-w-0">
-                                  <p
-                                    className={`text-sm font-medium truncate ${watchDone ? "line-through" : ""}`}
-                                    style={{
-                                      color: watchDone
-                                        ? "var(--token-color-text-secondary)"
-                                        : "var(--token-color-text-primary)",
-                                    }}
-                                  >
-                                    {titleText}
-                                  </p>
-                                  <span
-                                    className="text-[10px] uppercase tracking-wider font-semibold"
-                                    style={getActionTypeColor("WATCH")}
-                                  >
-                                    {["Watch", ...subtitleParts].join(" · ")}
-                                  </span>
-                                </div>
-
-                                <svg
-                                  className={`w-4 h-4 transition-transform duration-200 ${isWatchExpanded ? "rotate-180" : ""}`}
-                                  style={{ color: "var(--token-color-text-secondary)" }}
-                                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
                                 >
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                </svg>
+                                  {partTitle}
+                                </p>
+                                <span
+                                  className="text-[10px] uppercase tracking-wider font-semibold"
+                                  style={getActionTypeColor("WATCH")}
+                                >
+                                  {subtitle}
+                                </span>
                               </div>
 
-                              {isWatchExpanded && (
-                                <div className="px-3 pb-4 pt-1 space-y-3 animate-fade-in">
-                                  <InlineChainedPlayer
-                                    clips={clips.map((c) => ({
-                                      id: c.id,
-                                      chapterTitle: c.chapterTitle ?? "",
-                                      startSeconds: c.startSeconds,
-                                      endSeconds: c.endSeconds,
-                                      youtubeVideo: c.youtubeVideo!,
-                                    }))}
-                                    sessionTitle={session.title}
-                                    onAllComplete={markWatched}
-                                  />
-
-                                  <div className="flex items-center justify-between gap-2 pt-1">
-                                    <Link
-                                      href={`/learn/${program.id}/${session.id}`}
-                                      className="text-xs underline-offset-2 hover:underline transition"
-                                      style={{ color: "var(--token-color-text-secondary)" }}
-                                    >
-                                      Open in focus mode →
-                                    </Link>
-                                    {!watchDone && (
-                                      <button
-                                        type="button"
-                                        onClick={markWatched}
-                                        className="px-3 py-1.5 text-xs font-semibold transition border hover:opacity-80"
-                                        style={{
-                                          borderRadius: "var(--token-comp-btn-primary-radius)",
-                                          backgroundColor: "var(--token-color-accent)",
-                                          color: "var(--token-color-text-on-accent, #fff)",
-                                          borderColor: "var(--token-color-accent)",
-                                        }}
-                                      >
-                                        Mark as watched
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
+                              <svg
+                                className={`w-4 h-4 transition-transform duration-200 ${isWatchExpanded ? "rotate-180" : ""}`}
+                                style={{ color: "var(--token-color-text-secondary)" }}
+                                fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                              </svg>
                             </div>
-                          );
-                        })()}
+
+                            {isWatchExpanded && (
+                              <div className="px-3 pb-4 pt-1 space-y-3 animate-fade-in">
+                                <InlineChainedPlayer
+                                  clips={[{
+                                    id: c.id,
+                                    chapterTitle: c.chapterTitle ?? "",
+                                    startSeconds: c.startSeconds,
+                                    endSeconds: c.endSeconds,
+                                    youtubeVideo: c.youtubeVideo!,
+                                  }]}
+                                  sessionTitle={partTitle}
+                                  onAllComplete={markWatched}
+                                />
+
+                                <div className="flex items-center justify-between gap-2 pt-1">
+                                  <Link
+                                    href={`/learn/${program.id}/${session.id}`}
+                                    className="text-xs underline-offset-2 hover:underline transition"
+                                    style={{ color: "var(--token-color-text-secondary)" }}
+                                  >
+                                    Open in focus mode →
+                                  </Link>
+                                  {!watchDone && (
+                                    <button
+                                      type="button"
+                                      onClick={markWatched}
+                                      className="px-3 py-1.5 text-xs font-semibold transition border hover:opacity-80"
+                                      style={{
+                                        borderRadius: "var(--token-comp-btn-primary-radius)",
+                                        backgroundColor: "var(--token-color-accent)",
+                                        color: "var(--token-color-text-on-accent, #fff)",
+                                        borderColor: "var(--token-color-accent)",
+                                      }}
+                                    >
+                                      Mark as watched
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                       {session.actions.map((action) => {
                         const done = completedActions.has(action.id);
                         const isNext = action.id === nextActionId;
