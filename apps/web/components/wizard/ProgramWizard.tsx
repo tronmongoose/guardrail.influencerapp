@@ -104,13 +104,34 @@ export function ProgramWizard({
 }: ProgramWizardProps) {
   const { startGeneration } = useGeneration();
   const [currentStep, setCurrentStep] = useState(0);
-  const [uploadingCount, setUploadingCount] = useState(0);
-  // Mirror uploadingCount into a ref so handleGenerate's poll-loop sees
-  // live updates rather than the closure-captured value.
-  const uploadingCountRef = useRef(0);
-  useEffect(() => {
-    uploadingCountRef.current = uploadingCount;
-  }, [uploadingCount]);
+  // Two separate counters fed by per-file deltas from StepContent.
+  //   pendingRecordsCount → uploads whose DB row doesn't exist yet. Gates
+  //     handleGenerate, since generate-async needs to see the YouTubeVideo
+  //     rows. Sub-second per file, so the poll resolves almost instantly.
+  //   uploadingBytesCount → uploads whose XHR PUT to Mux is still in flight.
+  //     Drives the "Uploading N videos…" indicator but does NOT block
+  //     Generate — generate-async polls Mux for readiness and tolerates
+  //     videos that are still transcoding when it runs.
+  const [pendingRecordsCount, setPendingRecordsCount] = useState(0);
+  const [uploadingBytesCount, setUploadingBytesCount] = useState(0);
+  // Ref mirror so handleGenerate's poll loop sees live updates rather than
+  // a closure-captured stale value.
+  const pendingRecordsCountRef = useRef(0);
+  const handleUploadCountsChange = useCallback(
+    (delta: { pending: number; bytes: number }) => {
+      if (delta.pending !== 0) {
+        setPendingRecordsCount((c) => {
+          const next = c + delta.pending;
+          pendingRecordsCountRef.current = next;
+          return next;
+        });
+      }
+      if (delta.bytes !== 0) {
+        setUploadingBytesCount((c) => c + delta.bytes);
+      }
+    },
+    []
+  );
   const [state, setState] = useState<WizardState>(() => {
     // Try to load from localStorage first
     if (typeof window !== "undefined") {
@@ -226,7 +247,7 @@ export function ProgramWizard({
           state.basics.targetTransformation.trim().length > 0
         );
       case 1: // Content
-        return state.content.videos.length > 0 || state.content.artifacts.length > 0 || uploadingCount > 0;
+        return state.content.videos.length > 0 || state.content.artifacts.length > 0 || uploadingBytesCount > 0;
       case 2: // Duration
         return state.duration.weeks >= 2;
       case 3: // Theme (optional)
@@ -236,7 +257,7 @@ export function ProgramWizard({
       default:
         return false;
     }
-  }, [currentStep, state, uploadingCount]);
+  }, [currentStep, state, uploadingBytesCount]);
 
   // Auto-select middle preset when entering the duration step if current value isn't one of the presets
   // Skip when AI mode is active — weeks is derived from topic analysis instead
@@ -265,14 +286,16 @@ export function ProgramWizard({
   const handleGenerate = async () => {
     setIsGenerating(true);
     try {
-      // Wait for any in-flight uploads to finish before firing the server
-      // call. uploadingCount drops to 0 in StepContent's handleFileUpload
-      // when its Promise.allSettled resolves; until then the YouTubeVideo
-      // rows don't exist server-side and the route would see 0 videos.
-      // Cap the wait at 12 min — same magnitude as the XHR timeout per file.
-      const uploadWaitDeadline = Date.now() + 12 * 60_000;
-      while (uploadingCountRef.current > 0 && Date.now() < uploadWaitDeadline) {
-        await new Promise((r) => setTimeout(r, 500));
+      // Wait only for the brief window where uploads are still creating
+      // their YouTubeVideo rows server-side (upload-url + POST /videos —
+      // sub-second per file). Once those exist, generate-async can see them
+      // and will poll Mux for each asset's readiness on its own; byte
+      // transfer to Mux is allowed to continue in the browser after the
+      // wizard hands off to GenerationProgress. Cap at 15s as a safety net
+      // for network slowness — never the 12-min wait the old code imposed.
+      const recordWaitDeadline = Date.now() + 15_000;
+      while (pendingRecordsCountRef.current > 0 && Date.now() < recordWaitDeadline) {
+        await new Promise((r) => setTimeout(r, 100));
       }
 
       // Resolve skin fields: "auto-generate" → sentinel skinId; "custom:id" → customSkinId
@@ -372,7 +395,7 @@ export function ProgramWizard({
             onArtifactsChange={(artifacts) =>
               updateState("content", { artifacts })
             }
-            onUploadingCountChange={setUploadingCount}
+            onUploadCountsChange={handleUploadCountsChange}
           />
         );
       case 2:
@@ -398,12 +421,13 @@ export function ProgramWizard({
         );
       case 4: {
         const totalContent = state.content.videos.length + state.content.artifacts.length;
-        const uploadsInProgress = uploadingCount > 0;
+        const uploadsInProgress = uploadingBytesCount > 0;
         // Generate is allowed once there's *intent* — either files-in-flight
         // or content already saved. state.content.videos populates only
         // AFTER each upload's PUT finishes, so during upload itself
-        // totalContent is still 0. handleGenerate will wait for uploads to
-        // settle before firing the server call.
+        // totalContent is still 0. handleGenerate fires immediately once
+        // every in-flight upload has created its YouTubeVideo row; bytes
+        // continue streaming to Mux in the background.
         const canGenerate = totalContent > 0 || uploadsInProgress;
         return (
           <div className="space-y-6">
@@ -428,11 +452,11 @@ export function ProgramWizard({
                   </svg>
                   <div>
                     <p className="text-sm font-medium text-neon-cyan">
-                      Uploading {uploadingCount} video{uploadingCount !== 1 ? "s" : ""}…
+                      Uploading {uploadingBytesCount} video{uploadingBytesCount !== 1 ? "s" : ""}…
                     </p>
                     {!isGenerating && (
                       <p className="text-xs text-gray-400 mt-1">
-                        You can press Generate now — we’ll wait for your uploads to finish on our side.
+                        Uploads will keep running after you press Generate — just keep this tab open.
                       </p>
                     )}
                   </div>
@@ -474,7 +498,7 @@ export function ProgramWizard({
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
-                    {uploadsInProgress ? "Waiting for uploads to finish…" : "Starting generation…"}
+                    Starting generation…
                   </span>
                 ) : (
                   "Generate Journeyline →"

@@ -30,7 +30,10 @@ interface StepContentProps {
   artifacts: Artifact[];
   onVideosChange: (videos: Video[]) => void;
   onArtifactsChange: (artifacts: Artifact[]) => void;
-  onUploadingCountChange?: (count: number) => void;
+  // Delta-based emit, fired per-file. `pending` tracks uploads whose DB row
+  // hasn't been created yet (gates Generate). `bytes` tracks uploads whose
+  // XHR PUT to Mux is still in flight (drives UI only — does not gate Generate).
+  onUploadCountsChange?: (delta: { pending: number; bytes: number }) => void;
 }
 
 function isUploadedVideo(video: Video): boolean {
@@ -146,7 +149,7 @@ export function StepContent({
   artifacts,
   onVideosChange,
   onArtifactsChange,
-  onUploadingCountChange,
+  onUploadCountsChange,
 }: StepContentProps) {
   const [extractionStates, setExtractionStates] = useState<FileExtractionState[]>([]);
   const [aiMessageIndex, setAiMessageIndex] = useState(0);
@@ -243,80 +246,110 @@ export function StepContent({
       );
     };
 
-    updateState(0, "Uploading");
-
-    // Step 1: Get a Mux direct upload URL
-    const tokenRes = await fetch("/api/mux/upload-url", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
-
-    if (!tokenRes.ok) {
-      const data = await tokenRes.json().catch(() => ({}));
-      throw new Error(data.error ?? "Failed to get upload URL");
-    }
-
-    const { uploadId, uploadUrl } = (await tokenRes.json()) as {
-      uploadId: string;
-      uploadUrl: string;
+    // Per-file counter lifecycle. `pending` is decremented as soon as the
+    // YouTubeVideo row exists server-side (so handleGenerate can unblock).
+    // `bytes` is decremented after the XHR PUT settles (used by the UI
+    // indicator only). The try/finally below refunds any counter we still
+    // owe if we throw early, so the wizard's gates never stick above zero.
+    onUploadCountsChange?.({ pending: 1, bytes: 1 });
+    let pendingDecremented = false;
+    let bytesDecremented = false;
+    const decrementPending = () => {
+      if (pendingDecremented) return;
+      pendingDecremented = true;
+      onUploadCountsChange?.({ pending: -1, bytes: 0 });
+    };
+    const decrementBytes = () => {
+      if (bytesDecremented) return;
+      bytesDecremented = true;
+      onUploadCountsChange?.({ pending: 0, bytes: -1 });
     };
 
-    // Step 2: PUT the file directly to Mux — never touches the Next.js server.
-    // 10-min timeout per file. Without it XHR can hang forever when Mux
-    // receives the bytes but the response packet is lost — none of load /
-    // error / abort fires, the wrapping Promise never settles, and the
-    // wizard's Promise.allSettled blocks the "uploading" indicator
-    // indefinitely. (9th-degree-healing 2026-05-22 incident.)
-    await new Promise<void>((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.timeout = 10 * 60 * 1000;
+    try {
+      updateState(0, "Uploading");
 
-      xhr.upload.addEventListener("progress", (event) => {
-        if (event.lengthComputable) {
-          updateState(Math.round((event.loaded / event.total) * 88), "Uploading");
-        }
+      // Step 1: Get a Mux direct upload URL
+      const tokenRes = await fetch("/api/mux/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
       });
 
-      xhr.addEventListener("load", () => {
-        if (xhr.status >= 200 && xhr.status < 300) resolve();
-        else reject(new Error(`Upload failed with status ${xhr.status}`));
+      if (!tokenRes.ok) {
+        const data = await tokenRes.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to get upload URL");
+      }
+
+      const { uploadId, uploadUrl } = (await tokenRes.json()) as {
+        uploadId: string;
+        uploadUrl: string;
+      };
+
+      // Step 2: Create the YouTubeVideo row BEFORE the XHR PUT so the server
+      // can see it as soon as Generate is pressed, even while bytes are still
+      // streaming to Mux. generate-async polls Mux per video until each asset
+      // becomes ready, so in-flight uploads are a supported state.
+      const res = await fetch(`/api/programs/${programId}/videos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: "mux-upload", muxUploadId: uploadId, title: file.name }),
       });
 
-      xhr.addEventListener("error", () => reject(new Error("Network error during upload")));
-      xhr.addEventListener("abort", () => reject(new Error("Upload cancelled")));
-      xhr.addEventListener("timeout", () => reject(new Error("Upload timed out after 10 minutes")));
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to save video");
+      }
 
-      xhr.open("PUT", uploadUrl);
-      xhr.setRequestHeader("Content-Type", file.type || getVideoMimeType(file.name));
-      xhr.send(file);
-    });
+      const video: Video = await res.json();
+      decrementPending();
 
-    updateState(92, "Saving");
+      // Step 3: PUT the file directly to Mux — never touches the Next.js server.
+      // 10-min timeout per file. Without it XHR can hang forever when Mux
+      // receives the bytes but the response packet is lost — none of load /
+      // error / abort fires, the wrapping Promise never settles, and the
+      // wizard's Promise.allSettled blocks the "uploading" indicator
+      // indefinitely. (9th-degree-healing 2026-05-22 incident.)
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.timeout = 10 * 60 * 1000;
 
-    // Step 3: Create the video record linked to the Mux upload ID.
-    // Gemini analysis is triggered by the video.asset.ready webhook once Mux finishes processing.
-    const res = await fetch(`/api/programs/${programId}/videos`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source: "mux-upload", muxUploadId: uploadId, title: file.name }),
-    });
+        xhr.upload.addEventListener("progress", (event) => {
+          if (event.lengthComputable) {
+            updateState(Math.round((event.loaded / event.total) * 88), "Uploading");
+          }
+        });
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || "Failed to save video");
+        xhr.addEventListener("load", () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else reject(new Error(`Upload failed with status ${xhr.status}`));
+        });
+
+        xhr.addEventListener("error", () => reject(new Error("Network error during upload")));
+        xhr.addEventListener("abort", () => reject(new Error("Upload cancelled")));
+        xhr.addEventListener("timeout", () => reject(new Error("Upload timed out after 10 minutes")));
+
+        xhr.open("PUT", uploadUrl);
+        xhr.setRequestHeader("Content-Type", file.type || getVideoMimeType(file.name));
+        xhr.send(file);
+      });
+
+      decrementBytes();
+      updateState(92, "Saving");
+
+      // Extract thumbnail + duration from the local File (while we still have it).
+      // Duration lets the wizard show an accurate "~N lessons" estimate before Gemini analyzes.
+      const { thumbnailUrl, durationSeconds } = await extractVideoMetadata(file);
+      return {
+        ...video,
+        thumbnailUrl: thumbnailUrl ?? video.thumbnailUrl,
+        durationSeconds: durationSeconds ?? video.durationSeconds,
+      };
+    } finally {
+      // Refund any counter we never paid down (e.g. upload-url failed, row
+      // creation failed, PUT threw). No-op if already decremented.
+      decrementPending();
+      decrementBytes();
     }
-
-    const video: Video = await res.json();
-
-    // Extract thumbnail + duration from the local File (while we still have it).
-    // Duration lets the wizard show an accurate "~N lessons" estimate before Gemini analyzes.
-    const { thumbnailUrl, durationSeconds } = await extractVideoMetadata(file);
-    return {
-      ...video,
-      thumbnailUrl: thumbnailUrl ?? video.thumbnailUrl,
-      durationSeconds: durationSeconds ?? video.durationSeconds,
-    };
   };
 
   const extractSingleFile = async (file: File): Promise<Artifact | null> => {
@@ -462,10 +495,8 @@ export function StepContent({
     const videoFiles = files.filter((f) => isVideoFile(f.name));
     const otherFiles = files.filter((f) => !isVideoFile(f.name));
 
-    // Signal to parent that uploads are starting so wizard can allow advancing
-    if (videoFiles.length > 0) {
-      onUploadingCountChange?.(videoFiles.length);
-    }
+    // Each uploadVideoBlob call emits its own per-file deltas to
+    // onUploadCountsChange, so no batch-level signaling is needed here.
 
     // Initialize extraction states — first batch of videos start as "extracting",
     // later-batch videos and other files start as "pending" until their turn
@@ -561,9 +592,6 @@ export function StepContent({
         );
       }
     }
-
-    // Signal uploads finished
-    onUploadingCountChange?.(0);
 
     if (newVideos.length > 0) {
       onVideosChange([...videos, ...newVideos]);

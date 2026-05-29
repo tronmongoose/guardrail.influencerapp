@@ -257,7 +257,11 @@ async function processGenerationJob(jobId: string, programId: string, instructio
       console.info(`[generate-async] [MUX] Resolving playbackId for ${videosWithoutPlaybackId.length} video(s) via Mux API`);
       const mux = getMux();
       const MUX_RESOLVE_POLL_MS = 5_000;
-      const MUX_RESOLVE_MAX_MS = 6 * 60_000; // 6 min per video (runs in parallel)
+      // 10 min per video (runs in parallel). Creators can now press Generate
+      // while uploads are still streaming to Mux, so this needs enough headroom
+      // to cover the full upload + Mux transcode time on slow connections
+      // before we fall through to title-only-digest videos.
+      const MUX_RESOLVE_MAX_MS = 10 * 60_000;
 
       await Promise.all(videosWithoutPlaybackId.map(async (v) => {
         const waitUntil = Date.now() + MUX_RESOLVE_MAX_MS;
