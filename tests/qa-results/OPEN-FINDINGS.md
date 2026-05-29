@@ -80,6 +80,28 @@ Verified live on `workout-like-a-champ` cmp4yqlvv0001it8hip72dqk2: "Chest and Tr
 
 ---
 
+## 🚧 Multi-clip lessons have unintuitive part-navigation UX — `9th-degree` 2026-05-23
+
+**Severity:** medium. Real user impact: a learner could finish part 1 of a multi-part lesson and never realize part 2 exists.
+
+**Symptom:** Lesson 2 of program `cmphuu9ob0001js04rercugrj` is structurally a clean 2-clip split (the judge rewarded it 5/5 on topic boundary respect — clean 299s break). But in the learner UI the second clip is essentially hidden:
+- Top of card shows "WATCH · 2 PARTS · 9 MIN" (only signal that >1 part exists)
+- Player chrome is a single video, no part-tabs or thumbnails for part 2
+- Only navigation is a small `← →` arrow row at the bottom of the player with the chapter title in the middle
+
+**Auto-advance status:** [InlineChainedPlayer.tsx](apps/web/components/viewer/InlineChainedPlayer.tsx) does call `onClipEnd` when a clip finishes and advances `currentIndex` to play the next clip with `autoPlay={true}`. So if a learner watches part 1 to completion, part 2 *should* auto-play. **But** if they pause partway through (the common case for a 5-min instructional clip), they'll never trigger the handler and have no visual indication that part 2 exists beyond the small arrows.
+
+**Aggravating decision tonight:** the 2026-05-22 fix removed the "Part 1 of 2" text from the bottom row because it was deemed redundant with the top "2 PARTS" label. In hindsight that made discoverability worse — the position indicator was a constant reminder during playback that more was coming. The top label only flashes once on card open.
+
+**Fix paths:**
+1. **Cheapest:** restore a position dot row or "1 / 2" subtle indicator in the bottom navigation row. Doesn't bring back full "Part 1 of 2" text but keeps a non-redundant progress signal in view during playback.
+2. **Better:** render the parts as a thumbnail strip below the player (each clip = a clickable thumbnail with title underneath). Visible at-a-glance, harder to miss.
+3. **Best:** in addition to the strip, surface a "Up next: {part 2 title}" overlay during the last 10 seconds of part 1 — common YouTube pattern. Most discoverable.
+
+Recommendation: ship (1) immediately, plan (2) for the next UI pass. Defer (3) until we have a few real learner sessions to see if the auto-advance is actually invisible in practice.
+
+---
+
 ## 🔥 Wizard "Uploading N videos…" sticks forever after Mux PUT hang — `9th-degree-healing` 2026-05-22
 
 **Severity:** HIGH — user-visible blocker. The wizard's Generate button stays greyed out indefinitely even after Mux has finished processing all uploads. Reproduced live tonight on `cmphqa7y00001l1048sgizlir`: 4 videos all `muxStatus: ready` in DB, but UI stuck on "Uploading 4 videos…" for 8+ minutes. User had to hard-refresh to unblock.

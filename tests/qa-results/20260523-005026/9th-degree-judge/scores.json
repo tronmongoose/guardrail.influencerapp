@@ -1,0 +1,21 @@
+{
+  "program_title": "9th Degree",
+  "scores": {
+    "lesson_boundaries": 4,
+    "lesson_count": 3,
+    "title_clarity": 4,
+    "step_flow": 4,
+    "source_faithfulness": 3,
+    "topic_boundary_respect": 2
+  },
+  "overall": 3.0,
+  "pass": false,
+  "critical_issues": [
+    "Lesson 3 promises all seven chakras but the clip ends at 215s, omitting Throat, Third Eye, and Crown",
+    "Lesson 3 chapter title contradicts lesson summary by listing only four chakras",
+    "Lesson 1 collapses 9+ distinct techniques into one undifferentiated 0-406 clip, ignoring per-segment structure",
+    "Program title '9th Degree' diverges from source brand 'Nth Degree Healing'",
+    "programDescription is empty"
+  ],
+  "top_recommendation": "Fix Lesson 3 by extending the clip to 335s so the promised seven-chakra coverage is actually delivered, and update the chapter title to match."
+}

@@ -1,0 +1,19 @@
+{
+  "program_title": "Box and Flow",
+  "scores": {
+    "lesson_boundaries": 5,
+    "lesson_count": 4,
+    "title_clarity": 5,
+    "step_flow": 4,
+    "source_faithfulness": 5,
+    "topic_boundary_respect": 4
+  },
+  "overall": 4.5,
+  "pass": true,
+  "critical_issues": [
+    "Roughly 480 seconds of yoga source content (Boat pose, Bridge/Wheel, Half Pigeon, Savasana) is omitted from the curriculum despite being flagged as high-significance in keyMoments",
+    "Lessons 1 and 5 cover substantially overlapping boxing fundamentals without clear differentiation in the lesson framing",
+    "Empty programDescription field"
+  ],
+  "top_recommendation": "Add a final lesson covering the omitted yoga material from 766s–1246s of the Olivia Young flow video — Boat pose, Bridge/Wheel, Half Pigeon, and Savasana are all high-significance Gemini keyMoments and include the thematic 'flow through the fight' insight that ties the whole program together."
+}

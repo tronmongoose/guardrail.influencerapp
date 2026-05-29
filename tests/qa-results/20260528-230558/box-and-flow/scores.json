@@ -1,0 +1,19 @@
+{
+  "program_title": "Box and flow",
+  "scores": {
+    "lesson_boundaries": 3,
+    "lesson_count": 4,
+    "title_clarity": 4,
+    "step_flow": 3,
+    "source_faithfulness": 4,
+    "topic_boundary_respect": 2
+  },
+  "overall": 3.18,
+  "pass": false,
+  "critical_issues": [
+    "Lesson 4 clip endSeconds=1246 exceeds the source video durationSeconds=766 — timestamps do not exist in the source",
+    "Lesson 3 clip endSeconds=810 also exceeds source duration and straddles the Gemini topic boundary at 489s",
+    "Lesson 6 summary overstates Dani's coverage by claiming she teaches 'combinations,' which her 325s transcript never reaches"
+  ],
+  "top_recommendation": "Correct the clip timestamps in Lessons 3 and 4 so they fit within the yoga video's 766s runtime and respect the Gemini topic boundary at 489s"
+}
