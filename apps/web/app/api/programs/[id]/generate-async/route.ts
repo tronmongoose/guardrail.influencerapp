@@ -247,27 +247,75 @@ async function processGenerationJob(jobId: string, programId: string, instructio
       data: { stage: "fetching_transcripts", progress: 5 },
     });
 
-    // Resolve muxPlaybackId from Mux API for videos that don't have it yet.
-    // Poll in parallel until each asset reports `ready` — webhooks may be delayed,
-    // and if the user clicks Generate right after uploading, Mux is still transcoding.
+    // ── Wait phase: collapse the three possible video states (still uploading,
+    // transcoding, ready) into two (ready or timedOut) before anything heavy.
+    // The Mux webhook updates the YouTubeVideo row with muxAssetId / muxStatus
+    // / muxPlaybackId as transcoding progresses, so we poll the DB first and
+    // only fall back to the Mux API when the DB hasn't caught up. Each video
+    // exits the phase with an explicit classification stored in
+    // waitResultByVideoId — downstream stages (Gemini filter at videosNeeding
+    // Analysis, digest fallback at the title-only branch) read this map to
+    // distinguish "timed out, treat as stub" from "never had content".
+    type WaitResult =
+      | { status: "ready"; elapsedMs: number }
+      | { status: "timedOut"; reason: "no-asset" | "no-playback" | "errored" | "deadline"; elapsedMs: number };
+    const waitResultByVideoId = new Map<string, WaitResult>();
+
     const videosWithoutPlaybackId = videosForPipeline.filter(
       (v) => !v.analysis && !v.muxPlaybackId && v.muxUploadId && isMuxConfigured()
     );
     if (videosWithoutPlaybackId.length > 0) {
-      console.info(`[generate-async] [MUX] Resolving playbackId for ${videosWithoutPlaybackId.length} video(s) via Mux API`);
+      const waitPhaseStart = Date.now();
+      console.info(`[generate-async] [WAIT] phase start — ${videosWithoutPlaybackId.length} video(s) need readiness`);
+      for (const v of videosWithoutPlaybackId) {
+        console.info(`[generate-async] [WAIT]   start: id=${v.id} title="${v.title}" initialStatus=${v.muxStatus ?? "null"} hasAssetId=${Boolean(v.muxAssetId)} hasPlaybackId=${Boolean(v.muxPlaybackId)}`);
+      }
+
       const mux = getMux();
       const MUX_RESOLVE_POLL_MS = 5_000;
-      // 10 min per video (runs in parallel). Creators can now press Generate
+      // 10 min per video (runs in parallel). Creators can press Generate
       // while uploads are still streaming to Mux, so this needs enough headroom
       // to cover the full upload + Mux transcode time on slow connections
-      // before we fall through to title-only-digest videos.
+      // before we classify a video as timedOut and fall through to the stub
+      // digest.
       const MUX_RESOLVE_MAX_MS = 10 * 60_000;
 
       await Promise.all(videosWithoutPlaybackId.map(async (v) => {
-        const waitUntil = Date.now() + MUX_RESOLVE_MAX_MS;
+        const startedAt = Date.now();
+        const waitUntil = startedAt + MUX_RESOLVE_MAX_MS;
+
+        const finalize = (result: WaitResult) => {
+          waitResultByVideoId.set(v.id, result);
+          if (result.status === "ready") {
+            console.info(`[generate-async] [WAIT]   end: id=${v.id} title="${v.title}" status=ready elapsedMs=${result.elapsedMs}`);
+          } else {
+            console.warn(`[generate-async] [WAIT]   end: id=${v.id} title="${v.title}" status=timedOut reason=${result.reason} elapsedMs=${result.elapsedMs}`);
+          }
+        };
+
         while (Date.now() < waitUntil && Date.now() < deadline) {
           try {
-            let assetId = v.muxAssetId;
+            // DB-first: webhook may have already written readiness. Cheaper
+            // than a Mux API call and avoids Mux rate limits in the hot loop.
+            const dbRow = await prisma.youTubeVideo.findUnique({
+              where: { id: v.id },
+              select: { muxAssetId: true, muxPlaybackId: true, muxStatus: true },
+            });
+            if (dbRow?.muxStatus === "errored") {
+              finalize({ status: "timedOut", reason: "errored", elapsedMs: Date.now() - startedAt });
+              return;
+            }
+            if (dbRow?.muxPlaybackId) {
+              (v as { muxPlaybackId: string | null }).muxPlaybackId = dbRow.muxPlaybackId;
+              if (dbRow.muxAssetId) (v as { muxAssetId: string | null }).muxAssetId = dbRow.muxAssetId;
+              finalize({ status: "ready", elapsedMs: Date.now() - startedAt });
+              return;
+            }
+
+            // DB hasn't caught up — fall back to Mux API in case the webhook
+            // is delayed. This is the same flow as before, just gated behind
+            // the DB-first check.
+            let assetId = dbRow?.muxAssetId ?? v.muxAssetId;
             if (!assetId) {
               const upload = await mux.video.uploads.retrieve(v.muxUploadId!);
               assetId = upload.asset_id ?? null;
@@ -278,12 +326,19 @@ async function processGenerationJob(jobId: string, programId: string, instructio
             }
 
             if (!assetId) {
-              console.info(`[generate-async] [MUX]   "${v.title}" — waiting for Mux to create asset...`);
+              console.info(`[generate-async] [WAIT]   "${v.title}" — waiting for Mux to create asset...`);
               await new Promise((r) => setTimeout(r, MUX_RESOLVE_POLL_MS));
               continue;
             }
 
             const asset = await mux.video.assets.retrieve(assetId);
+            if (asset.status === "errored") {
+              // Persist the errored status so future runs short-circuit on the
+              // DB-first check and don't re-poll Mux for 10 min.
+              await prisma.youTubeVideo.update({ where: { id: v.id }, data: { muxStatus: "errored" } }).catch(() => {});
+              finalize({ status: "timedOut", reason: "errored", elapsedMs: Date.now() - startedAt });
+              return;
+            }
             if (asset.status === "ready" && asset.playback_ids?.[0]?.id) {
               const pid = asset.playback_ids[0].id;
               await prisma.youTubeVideo.update({
@@ -291,24 +346,39 @@ async function processGenerationJob(jobId: string, programId: string, instructio
                 data: { muxPlaybackId: pid, muxStatus: "ready", url: `https://stream.mux.com/${pid}` },
               });
               (v as { muxPlaybackId: string | null }).muxPlaybackId = pid;
-              console.info(`[generate-async] [MUX]   ✓ "${v.title}" → playbackId=${pid}`);
+              finalize({ status: "ready", elapsedMs: Date.now() - startedAt });
               return;
             }
 
-            if (asset.status === "errored") {
-              console.warn(`[generate-async] [MUX]   "${v.title}" — asset errored, giving up`);
-              return;
-            }
-
-            console.info(`[generate-async] [MUX]   "${v.title}" — status=${asset.status}, polling...`);
+            console.info(`[generate-async] [WAIT]   "${v.title}" — asset status=${asset.status}, polling...`);
             await new Promise((r) => setTimeout(r, MUX_RESOLVE_POLL_MS));
           } catch (err) {
-            console.warn(`[generate-async] [MUX]   "${v.title}" poll error:`, err instanceof Error ? err.message : err);
+            console.warn(`[generate-async] [WAIT]   "${v.title}" poll error:`, err instanceof Error ? err.message : err);
             await new Promise((r) => setTimeout(r, MUX_RESOLVE_POLL_MS));
           }
         }
-        console.warn(`[generate-async] [MUX]   "${v.title}" — timed out waiting for asset to be ready`);
+
+        // Budget exhausted. Classify by whichever stage we never made it past.
+        // If the route deadline hit before our per-video budget, surface that
+        // separately so debug-panel viewers can tell the difference.
+        const hitRouteDeadline = Date.now() >= deadline;
+        const classified: WaitResult = hitRouteDeadline
+          ? { status: "timedOut", reason: "deadline", elapsedMs: Date.now() - startedAt }
+          : v.muxAssetId
+            ? { status: "timedOut", reason: "no-playback", elapsedMs: Date.now() - startedAt }
+            : { status: "timedOut", reason: "no-asset", elapsedMs: Date.now() - startedAt };
+        finalize(classified);
       }));
+
+      // End-of-phase summary — debug panel consumes this line.
+      const results = Array.from(waitResultByVideoId.values());
+      const elapsedAll = results.map((r) => r.elapsedMs).sort((a, b) => a - b);
+      const totalReady = results.filter((r) => r.status === "ready").length;
+      const totalTimedOut = results.filter((r) => r.status === "timedOut").length;
+      const totalErrored = results.filter((r) => r.status === "timedOut" && r.reason === "errored").length;
+      const p50 = elapsedAll.length > 0 ? elapsedAll[Math.floor(elapsedAll.length * 0.5)] : 0;
+      const p95 = elapsedAll.length > 0 ? elapsedAll[Math.min(elapsedAll.length - 1, Math.floor(elapsedAll.length * 0.95))] : 0;
+      console.info(`[generate-async] [WAIT] phase end — totalReady=${totalReady} totalTimedOut=${totalTimedOut} totalErrored=${totalErrored} p50ElapsedMs=${p50} p95ElapsedMs=${p95} phaseElapsedMs=${Date.now() - waitPhaseStart}`);
     }
 
     const videosNeedingAnalysis = videosForPipeline.filter(
@@ -426,6 +496,48 @@ async function processGenerationJob(jobId: string, programId: string, instructio
       console.warn(`[generate-async] ${videosNeedingAnalysis.length} video(s) need analysis but GOOGLE_AI_API_KEY is not set`);
     }
 
+    // Re-sync v.analysis / v.transcript / v.durationSeconds from DB before
+    // the digest loop reads them. POST /videos schedules a Gemini call in
+    // after(), and the Mux video.asset.static_renditions.ready webhook does
+    // the same — both write to VideoAnalysis. If either beat the route's
+    // own call (or the route's call failed silently in the catch above),
+    // the DB has the analysis but the in-memory videosForPipeline does not.
+    // Without this sync the digest loop falls into the title-only fallback
+    // for those videos, they get filtered out of `enrichedOnly`, the clip
+    // distribution plan is built without them, and the validator's plan-
+    // aware fix can't catch the LLM's hallucinated clips because the plan
+    // never had clips for those videos to compare against. See OPEN-FINDINGS
+    // "Clip timestamps exceed source video duration — box-and-flow 2026-05-28".
+    const refreshed = await prisma.youTubeVideo.findMany({
+      where: { id: { in: videosForPipeline.map((v) => v.id) } },
+      include: { analysis: true },
+    });
+    const refreshedById = new Map(refreshed.map((r) => [r.id, r] as const));
+    let syncedAnalysis = 0;
+    let syncedTranscript = 0;
+    let syncedDuration = 0;
+    for (const v of videosForPipeline) {
+      const r = refreshedById.get(v.id);
+      if (!r) continue;
+      if (r.analysis && !v.analysis) {
+        v.analysis = r.analysis;
+        syncedAnalysis++;
+      }
+      if (r.transcript && !v.transcript) {
+        (v as { transcript: string | null }).transcript = r.transcript;
+        syncedTranscript++;
+      }
+      if (r.durationSeconds && !v.durationSeconds) {
+        (v as { durationSeconds: number | null }).durationSeconds = r.durationSeconds;
+        syncedDuration++;
+      }
+    }
+    if (syncedAnalysis + syncedTranscript + syncedDuration > 0) {
+      console.info(
+        `[generate-async] Post-Gemini re-sync from DB: analysis=${syncedAnalysis} transcript=${syncedTranscript} duration=${syncedDuration} video(s) updated (parallel writer beat in-memory mutation)`,
+      );
+    }
+
     const finalWithAnalysis = videosForPipeline.filter((v) => v.analysis).length;
     const finalWithTranscript = videosForPipeline.filter((v) => v.transcript).length;
     console.info(`[generate-async] After analysis: ${finalWithAnalysis}/${videosForPipeline.length} analyzed, ${finalWithTranscript}/${videosForPipeline.length} with transcript`);
@@ -486,6 +598,11 @@ async function processGenerationJob(jobId: string, programId: string, instructio
         // No transcript and no analysis — title-only fallback. Include the
         // actual durationSeconds so the clip distributor can slice the video
         // proportionally instead of falling back to the 600s default.
+        // If the video timed out waiting for Mux, mark the summary so Sonnet
+        // doesn't over-anchor lessons on it (and so the debug panel can
+        // distinguish "Mux not ready" from "never had transcript").
+        const waitResult = waitResultByVideoId.get(v.id);
+        const isTimedOut = waitResult?.status === "timedOut";
         enrichedDigests.push({
           contentId: v.id,
           contentTitle: v.title ?? "Untitled",
@@ -494,7 +611,9 @@ async function processGenerationJob(jobId: string, programId: string, instructio
           skillsIntroduced: [],
           memorableExamples: [],
           difficultyLevel: "intermediate",
-          summary: `Uploaded video: ${v.title ?? "Untitled"}`,
+          summary: isTimedOut
+            ? `Uploaded video: ${v.title ?? "Untitled"} (still processing — full content unavailable at generation time)`
+            : `Uploaded video: ${v.title ?? "Untitled"}`,
           durationSeconds: v.durationSeconds ?? null,
         } as ContentDigest);
       }
@@ -504,10 +623,15 @@ async function processGenerationJob(jobId: string, programId: string, instructio
     const digestWithAnalysis = videosForPipeline.filter((v) => v.analysis).length;
     const withTranscriptOnly = videosNeedingLLMExtraction.length;
     const titleOnlyFallback = videosForPipeline.length - digestWithAnalysis - withTranscriptOnly;
+    const titleOnlyTimedOut = videosForPipeline.filter((v) => {
+      const r = waitResultByVideoId.get(v.id);
+      return !v.analysis && (!v.transcript || v.transcript.length < 50) && r?.status === "timedOut";
+    }).length;
+    const titleOnlyNoContent = titleOnlyFallback - titleOnlyTimedOut;
     console.info(`[generate-async] ═══ DIGEST ROUTING ═══`);
     console.info(`[generate-async]   Existing analysis → enriched digest: ${digestWithAnalysis}`);
     console.info(`[generate-async]   Transcript → LLM extraction: ${withTranscriptOnly}`);
-    console.info(`[generate-async]   Title-only fallback (no transcript, no analysis): ${titleOnlyFallback}`);
+    console.info(`[generate-async]   Title-only fallback (no transcript, no analysis): ${titleOnlyFallback} (Mux wait timedOut: ${titleOnlyTimedOut}, never had content: ${titleOnlyNoContent})`);
     for (const item of videosNeedingLLMExtraction) {
       console.info(`[generate-async]   LLM EXTRACT: "${item.contentTitle}" | text=${item.text ? `${item.text.length} chars` : "NULL"} | preview="${(item.text ?? "").slice(0, 120)}..."`);
     }
