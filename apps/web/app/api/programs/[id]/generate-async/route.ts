@@ -11,6 +11,7 @@ import { generateSkinFromVibe } from "@/lib/generate-skin";
 import { sendProgramReadyEmail } from "@/lib/email";
 import { getMux, isMuxConfigured } from "@/lib/mux";
 import { stripWrappingQuotes } from "@/lib/strip-quotes";
+import { beginStep, endStep } from "@/lib/generation-steps";
 
 // Lift undici's default 300s headersTimeout / bodyTimeout to 10 min for ALL
 // fetches in this serverless function process. Large Anthropic prompts (a
@@ -65,19 +66,6 @@ export async function POST(
 
   if (!program || program.creatorId !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  // Check creator has platform access
-  const hasAccess = user.platformPromoGranted || user.platformPaymentComplete;
-  if (!hasAccess) {
-    return NextResponse.json(
-      {
-        error: "Platform access required",
-        code: "PLATFORM_ACCESS_REQUIRED",
-        message: "Please complete platform setup to generate programs.",
-      },
-      { status: 402 }
-    );
   }
 
   const hasContent = program.videos.length > 0 || program.artifacts.length > 0;
@@ -199,9 +187,10 @@ async function processGenerationJob(jobId: string, programId: string, instructio
 
   try {
     // Mark as processing — start with preparing stage so the UI shows progress immediately
-    await prisma.generationJob.update({
-      where: { id: jobId },
-      data: { status: "PROCESSING", stage: "preparing", progress: 2, startedAt: new Date() },
+    await beginStep(jobId, "preparing", undefined, {
+      status: "PROCESSING",
+      startedAt: new Date(),
+      progress: 2,
     });
 
     // Fetch program with videos, artifacts, and existing analyses
@@ -242,10 +231,8 @@ async function processGenerationJob(jobId: string, programId: string, instructio
     // this step runs Gemini directly using the Mux MP4 static rendition URL.
     // ══════════════════════════════════════════════════════════════════════════
     checkDeadline("fetching_transcripts");
-    await prisma.generationJob.update({
-      where: { id: jobId },
-      data: { stage: "fetching_transcripts", progress: 5 },
-    });
+    await endStep(jobId, "ok", `videos=${videosForPipeline.length} artifacts=${usableArtifacts.length}`);
+    await beginStep(jobId, "fetching_transcripts", undefined, { progress: 5 });
 
     // ── Wait phase: collapse the three possible video states (still uploading,
     // transcoding, ready) into two (ready or timedOut) before anything heavy.
@@ -387,42 +374,67 @@ async function processGenerationJob(jobId: string, programId: string, instructio
 
     if (videosNeedingAnalysis.length > 0 && process.env.GOOGLE_AI_API_KEY) {
       console.info(`[generate-async] [GEMINI] ${videosNeedingAnalysis.length} video(s) need Gemini analysis`);
-      const MUX_RENDITION_POLL_MS = 5_000;
-      const MUX_RENDITION_MAX_MS = 5 * 60_000; // 5 min max wait for renditions (Mux MP4 transcode for 20-min videos commonly takes 2-4 min)
+      const RENDITION_DB_POLL_MS = 2_000;
+      const RENDITION_FALLBACK_AFTER_MS = 4 * 60_000; // After 4 min with no webhook, HEAD-check Mux directly as a webhook-delivery safety net
+      const RENDITION_MAX_MS = 6 * 60_000; // Total wait ceiling per video
 
       // Run video analyses in parallel (bounded by ANALYSIS_CONCURRENCY). Each
-      // task is independent: separate Mux MP4 poll, separate Gemini call,
-      // separate VideoAnalysis upsert. The in-memory mutation of `v.analysis`
-      // is write-only per object and the objects are distinct, so no race.
-      // Progress counts completions rather than indices so the bar advances
-      // smoothly even when tasks finish out of order.
+      // task waits for the static-rendition flag the Mux webhook sets, then
+      // calls Gemini. The bounded concurrency caps simultaneous Gemini calls
+      // even when 20 webhooks land in the same second — webhooks can't bound
+      // themselves across invocations, but the route can.
       let completedAnalyses = 0;
       await runWithBoundedConcurrency(videosNeedingAnalysis, ANALYSIS_CONCURRENCY, async (v) => {
         checkDeadline("fetching_transcripts");
         const mp4Url = `https://stream.mux.com/${v.muxPlaybackId}/capped-1080p.mp4`;
 
-        // Wait for the MP4 static rendition to be accessible before sending to Gemini
-        console.info(`[generate-async] [GEMINI] Waiting for MP4 rendition: "${v.title}"`);
+        // Wait for the Mux video.asset.static_renditions.ready webhook to flip
+        // muxStaticRenditionReadyAt. If the webhook is delayed past
+        // RENDITION_FALLBACK_AFTER_MS, fall back to HEAD-checking Mux directly
+        // so a missed webhook doesn't strand generation.
+        console.info(`[generate-async] [GEMINI] Waiting for static rendition flag: "${v.title}"`);
         const renditionStart = Date.now();
         let mp4Ready = false;
-        while (!mp4Ready && (Date.now() - renditionStart) < MUX_RENDITION_MAX_MS) {
+        let usedFallback = false;
+        while (!mp4Ready && (Date.now() - renditionStart) < RENDITION_MAX_MS) {
           checkDeadline("fetching_transcripts");
-          try {
-            const headRes = await fetch(mp4Url, { method: "HEAD" });
-            if (headRes.ok) {
-              mp4Ready = true;
-              console.info(`[generate-async] [GEMINI] ✓ MP4 ready for "${v.title}" (${Math.round((Date.now() - renditionStart) / 1000)}s)`);
-            } else {
-              console.info(`[generate-async] [GEMINI]   MP4 not ready yet (${headRes.status}) — waiting ${MUX_RENDITION_POLL_MS / 1000}s...`);
-              await new Promise((r) => setTimeout(r, MUX_RENDITION_POLL_MS));
-            }
-          } catch {
-            await new Promise((r) => setTimeout(r, MUX_RENDITION_POLL_MS));
+
+          const dbRow = await prisma.youTubeVideo.findUnique({
+            where: { id: v.id },
+            select: { muxStaticRenditionReadyAt: true },
+          });
+          if (dbRow?.muxStaticRenditionReadyAt) {
+            mp4Ready = true;
+            console.info(`[generate-async] [GEMINI] ✓ Static rendition ready for "${v.title}" (${Math.round((Date.now() - renditionStart) / 1000)}s, source=${usedFallback ? "fallback-HEAD" : "webhook"})`);
+            break;
           }
+
+          // Webhook-delivery safety net: after the fallback threshold, HEAD
+          // the MP4 URL ourselves and self-flip the flag if it's available.
+          if (!usedFallback && (Date.now() - renditionStart) >= RENDITION_FALLBACK_AFTER_MS) {
+            usedFallback = true;
+            console.warn(`[generate-async] [GEMINI]   no webhook after ${Math.round(RENDITION_FALLBACK_AFTER_MS / 1000)}s for "${v.title}" — HEAD-checking Mux directly`);
+            try {
+              const headRes = await fetch(mp4Url, { method: "HEAD" });
+              if (headRes.ok) {
+                await prisma.youTubeVideo.update({
+                  where: { id: v.id },
+                  data: { muxStaticRenditionReadyAt: new Date() },
+                });
+                mp4Ready = true;
+                console.info(`[generate-async] [GEMINI] ✓ Static rendition ready for "${v.title}" via fallback HEAD`);
+                break;
+              }
+            } catch {
+              // fall through to keep waiting on the webhook
+            }
+          }
+
+          await new Promise((r) => setTimeout(r, RENDITION_DB_POLL_MS));
         }
 
         if (!mp4Ready) {
-          console.warn(`[generate-async] [GEMINI] ✗ MP4 not available after ${MUX_RENDITION_MAX_MS / 1000}s for "${v.title}" — skipping`);
+          console.warn(`[generate-async] [GEMINI] ✗ Static rendition not ready after ${RENDITION_MAX_MS / 1000}s for "${v.title}" — skipping`);
           completedAnalyses++;
           return;
         }
@@ -542,21 +554,14 @@ async function processGenerationJob(jobId: string, programId: string, instructio
     const finalWithTranscript = videosForPipeline.filter((v) => v.transcript).length;
     console.info(`[generate-async] After analysis: ${finalWithAnalysis}/${videosForPipeline.length} analyzed, ${finalWithTranscript}/${videosForPipeline.length} with transcript`);
 
-    await prisma.generationJob.update({
-      where: { id: jobId },
-      data: { progress: 25 },
-    });
-
     // ══════════════════════════════════════════════════════════════════════════
     // ── Step 2: Content Extraction / Enriched Digests (25-45%) ──
     // Passes transcripts to the LLM for structured extraction (topics, skills,
     // key concepts). Videos without transcripts get title-only fallback digests.
     // ══════════════════════════════════════════════════════════════════════════
     checkDeadline("analyzing");
-    await prisma.generationJob.update({
-      where: { id: jobId },
-      data: { stage: "analyzing", progress: 25 },
-    });
+    await endStep(jobId, "ok", `analyzed=${finalWithAnalysis}/${videosForPipeline.length} transcripts=${finalWithTranscript}`);
+    await beginStep(jobId, "analyzing", undefined, { progress: 25 });
 
     const enrichedDigests: (ContentDigest | EnrichedContentDigest)[] = [];
 
@@ -767,10 +772,8 @@ async function processGenerationJob(jobId: string, programId: string, instructio
     // ── Step 3: LLM Generation (45-85%) ──
     // ══════════════════════════════════════════════════════════════════════════
     checkDeadline("generating");
-    await prisma.generationJob.update({
-      where: { id: jobId },
-      data: { stage: "generating", progress: 45 },
-    });
+    await endStep(jobId, "ok", `digests=${enrichedDigests.length}${clipDistributionPlan ? ` clips=${clipDistributionPlan.totalClips}` : ""}`);
+    await beginStep(jobId, "generating", `provider=${process.env.LLM_PROVIDER || "stub"} weeks=${effectiveWeeks}`, { progress: 45 });
 
     // Build a single flat content grouping (clustering removed — LLM handles grouping)
     const allContentIds = [
@@ -869,10 +872,8 @@ async function processGenerationJob(jobId: string, programId: string, instructio
       aiStructured: program.aiStructured,
     });
 
-    await prisma.generationJob.update({
-      where: { id: jobId },
-      data: { stage: "validating", progress: 85 },
-    });
+    await endStep(jobId, "ok", `llm_elapsed=${llmTimer.elapsed()}ms`);
+    await beginStep(jobId, "validating", undefined, { progress: 85 });
 
     // Validate
     let validated = ProgramDraftSchema.safeParse(draft);
@@ -930,10 +931,8 @@ async function processGenerationJob(jobId: string, programId: string, instructio
       console.info(`[generate-async] Quality checks passed`);
     }
 
-    await prisma.generationJob.update({
-      where: { id: jobId },
-      data: { stage: "persisting", progress: 90 },
-    });
+    await endStep(jobId, "ok", qualityWarnings.length > 0 ? `quality_warnings=${qualityWarnings.length}` : undefined);
+    await beginStep(jobId, "persisting", undefined, { progress: 90 });
 
     // ── Step 4: Persist (90-100%) ──
     checkDeadline("persisting");
@@ -1063,10 +1062,8 @@ async function processGenerationJob(jobId: string, programId: string, instructio
     // Only runs when the creator selected "Build My Own" in the skin picker (skinId = "auto-generate")
     if (program.skinId === "auto-generate") {
       checkDeadline("generating_skin");
-      await prisma.generationJob.update({
-        where: { id: jobId },
-        data: { stage: "generating_skin", progress: 93 },
-      });
+      await endStep(jobId, "ok", `sessions=${sessionCount} actions=${actionCount} composites=${compositeCount}`);
+      await beginStep(jobId, "generating_skin", undefined, { progress: 93 });
 
       try {
         const skinTokens = await generateSkinFromVibe({
@@ -1120,6 +1117,7 @@ async function processGenerationJob(jobId: string, programId: string, instructio
     }
 
     // Mark complete
+    await endStep(jobId, "ok");
     await prisma.generationJob.update({
       where: { id: jobId },
       data: {
@@ -1156,6 +1154,12 @@ async function processGenerationJob(jobId: string, programId: string, instructio
     // and silently re-open the wizard, which looks like the job never ran.
     const rawMessage = err instanceof Error ? err.message : String(err ?? "");
     const errorMessage = rawMessage.trim() || "Generation failed unexpectedly. Please try again.";
+
+    try {
+      await endStep(jobId, "error", errorMessage);
+    } catch (stepErr) {
+      console.error("[generate-async] Failed to close open step on error:", stepErr);
+    }
 
     try {
       await prisma.generationJob.update({
