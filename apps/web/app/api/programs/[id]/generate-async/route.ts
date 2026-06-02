@@ -157,7 +157,7 @@ export async function POST(
  */
 const STAGE_BUDGETS_MS = {
   preparing: 60_000,                  // beginStep DB write + program findUnique (cold Neon can be ≥15s)
-  fetching_transcripts: 12 * 60_000, // Mux wait (≤10 min/video, parallel) + Gemini (bounded 4-way parallel)
+  fetching_transcripts: 16 * 60_000, // Mux wait (≤10 min/video, parallel) + Gemini analysis (~5-8 min for an 18-min video). 12 min cut it close on a single long video — the harness saw a dance-tutorial run hit this ceiling.
   analyzing: 90_000,                  // LLM digest extraction
   generating: 6 * 60_000,             // LLM program draft (P95 observed ~154s; headroom for retries)
   validating: 30_000,                 // Schema + clip-distribution validation
@@ -216,6 +216,17 @@ async function processGenerationJob(jobId: string, programId: string, instructio
   // the route ceiling is breached, with a distinguishing message.
   let currentStage: StageName = "preparing";
   let stageDeadlineMs = Date.now() + STAGE_BUDGETS_MS.preparing;
+
+  // Global heartbeat — no-op writes that touch updatedAt so the status
+  // endpoint's 3-min stale detector doesn't false-positive while a single
+  // await (Gemini analysis, Anthropic LLM call) blocks for minutes without
+  // writing to DB. Per-loop heartbeats covered the polling loops only; this
+  // covers the whole job lifetime including long-running awaits.
+  const heartbeatTimer = setInterval(() => {
+    prisma.generationJob
+      .update({ where: { id: jobId }, data: { updatedAt: new Date() } })
+      .catch(() => {});
+  }, HEARTBEAT_INTERVAL_MS);
 
   function setStage(stage: StageName) {
     currentStage = stage;
@@ -321,7 +332,6 @@ async function processGenerationJob(jobId: string, programId: string, instructio
       await Promise.all(videosWithoutPlaybackId.map(async (v) => {
         const startedAt = Date.now();
         const waitUntil = startedAt + MUX_RESOLVE_MAX_MS;
-        let lastHeartbeatAt = Date.now();
 
         const finalize = (result: WaitResult) => {
           waitResultByVideoId.set(v.id, result);
@@ -333,15 +343,8 @@ async function processGenerationJob(jobId: string, programId: string, instructio
         };
 
         // Honor: per-video budget (waitUntil) AND stage budget (stageDeadlineMs) AND route ceiling (routeDeadlineMs).
-        // Heartbeat updatedAt every HEARTBEAT_INTERVAL_MS so the status endpoint's stale detector doesn't false-positive.
+        // updatedAt is heartbeat'd globally via the setInterval at the top of processGenerationJob.
         while (Date.now() < waitUntil && Date.now() < stageDeadlineMs && Date.now() < routeDeadlineMs) {
-          // Heartbeat — no-op write that touches updatedAt so status endpoint sees progress
-          if (Date.now() - lastHeartbeatAt > HEARTBEAT_INTERVAL_MS) {
-            await prisma.generationJob
-              .update({ where: { id: jobId }, data: { updatedAt: new Date() } })
-              .catch(() => {});
-            lastHeartbeatAt = Date.now();
-          }
           try {
             // DB-first: webhook may have already written readiness. Cheaper
             // than a Mux API call and avoids Mux rate limits in the hot loop.
@@ -457,21 +460,12 @@ async function processGenerationJob(jobId: string, programId: string, instructio
         // so a missed webhook doesn't strand generation.
         console.info(`[generate-async] [GEMINI] Waiting for static rendition flag: "${v.title}"`);
         const renditionStart = Date.now();
-        let lastRenditionHeartbeatAt = Date.now();
         let renditionFallbackLoggedOnce = false;
         let mp4Ready = false;
         let mp4ReadySource: "webhook" | "fallback-HEAD" = "webhook";
         while (!mp4Ready && (Date.now() - renditionStart) < RENDITION_MAX_MS) {
           checkDeadline("fetching_transcripts");
-
-          // Heartbeat — see same logic in the wait phase above.
-          if (Date.now() - lastRenditionHeartbeatAt > HEARTBEAT_INTERVAL_MS) {
-            await prisma.generationJob
-              .update({ where: { id: jobId }, data: { updatedAt: new Date() } })
-              .catch(() => {});
-            lastRenditionHeartbeatAt = Date.now();
-          }
-
+          // updatedAt is heartbeat'd globally via the setInterval at the top of processGenerationJob.
           const dbRow = await prisma.youTubeVideo.findUnique({
             where: { id: v.id },
             select: { muxStaticRenditionReadyAt: true },
@@ -1270,5 +1264,10 @@ async function processGenerationJob(jobId: string, programId: string, instructio
       // last line of defense — log loudly so we can see this in production.
       console.error("[generate-async] CRITICAL: failed to mark job FAILED — job will be stuck until isStale triggers:", updateErr);
     }
+  } finally {
+    // Always stop the heartbeat — otherwise it keeps writing every 30s after
+    // the job is COMPLETED/FAILED, which doesn't break anything but leaves a
+    // trail of pointless DB writes until Vercel reaps the function instance.
+    clearInterval(heartbeatTimer);
   }
 }
