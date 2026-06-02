@@ -156,7 +156,7 @@ export async function POST(
  * single stage, not the total budget. ROUTE_TIMEOUT_MS is the real ceiling.
  */
 const STAGE_BUDGETS_MS = {
-  preparing: 30_000,
+  preparing: 60_000,                  // beginStep DB write + program findUnique (cold Neon can be ≥15s)
   fetching_transcripts: 12 * 60_000, // Mux wait (≤10 min/video, parallel) + Gemini (bounded 4-way parallel)
   analyzing: 90_000,                  // LLM digest extraction
   generating: 6 * 60_000,             // LLM program draft (P95 observed ~154s; headroom for retries)
