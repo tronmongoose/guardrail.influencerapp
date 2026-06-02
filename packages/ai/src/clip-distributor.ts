@@ -86,6 +86,31 @@ function adaptiveSnapWindow(idealSpacing: number): number {
   );
 }
 
+/**
+ * Decide whether a Gemini topic label represents promotional / non-instructional
+ * content that should be excluded from clips entirely. Sponsorships, ads,
+ * shop plugs, Patreon mentions etc. produce learner-facing chapters that the
+ * judge dings as "ad copy as a learning activity" (sean-tucker 2026-05-31).
+ *
+ * Conservative match: only strong, unambiguous patterns. We avoid filtering
+ * topics with words like "outro" alone because Gemini sometimes labels a
+ * legitimate summary section as "Outro" (e.g. Squabble Up's "Full Routine
+ * Run-Throughs & Outro" which is mostly run-throughs).
+ */
+function isPromotionalTopic(label: string): boolean {
+  const l = label.toLowerCase();
+  // Sponsorship / ad patterns
+  if (/\bsponsor(ed|ship)?\b/.test(l)) return true;
+  if (/\b(advertisement|ad break|ad spot|ad-?read)\b/.test(l)) return true;
+  if (/\bpodcast (plug|promo)\b/.test(l)) return true;
+  // Named-platform plugs that have come up in our corpus
+  if (/\bsquarespace\b/.test(l)) return true;
+  if (/\b(patreon|merch(andise)?|shop( now)?|store)\b/.test(l)) return true;
+  // "Like and subscribe" / "subscribe to" call-to-action chapters
+  if (/\b(like and subscribe|subscribe (to|now)|cta|call to action)\b/.test(l)) return true;
+  return false;
+}
+
 function chooseChunkCount(duration: number, topicCount: number): number {
   const minCount = Math.max(1, Math.ceil(duration / TARGET_CHUNK_MAX_SECONDS));
   const maxCount = Math.max(1, Math.floor(duration / TARGET_CHUNK_MIN_SECONDS));
@@ -108,20 +133,25 @@ function timeBasedSlices(
     return [{ startSeconds: 0, endSeconds: duration, label: topics[0]?.label ?? "Part 1" }];
   }
 
-  // Snap candidates: topic endSeconds + segment endSeconds, deduped. When a
-  // long video has only one broad topic (no thematic distinctness) the topic
-  // boundaries alone yield no candidates and we'd cut at arithmetic midpoints,
-  // straddling — or worse, splitting — Gemini segments. Including segments
-  // gives the snapper finer-grained candidates so cuts land at real
-  // exercise/topic transitions instead of mid-segment.
-  const candidateSet = new Set<number>();
+  // Snap candidates: topic endSeconds are PREFERRED over segment endSeconds.
+  // Without preference, a segment boundary close to the arithmetic mid wins
+  // over a topic boundary slightly farther, even when the topic boundary
+  // would produce a clip that respects the upstream Gemini topic structure
+  // (Squabble Up corpus run 2026-05-31: ideal 399.25 snapped to segment 326
+  // instead of topic 505, producing a clip that straddled the topic
+  // transition). We snap to a topic boundary if any is within the window,
+  // and only fall back to segment boundaries when none qualifies.
+  const topicBoundaries: number[] = [];
   for (const t of topics) {
-    if (t.endSeconds > 0 && t.endSeconds < duration) candidateSet.add(t.endSeconds);
+    if (t.endSeconds > 0 && t.endSeconds < duration) topicBoundaries.push(t.endSeconds);
   }
+  const segmentBoundaries: number[] = [];
   for (const s of segments ?? []) {
-    if (s.endSeconds > 0 && s.endSeconds < duration) candidateSet.add(s.endSeconds);
+    if (s.endSeconds > 0 && s.endSeconds < duration) {
+      // Don't add a segment boundary that coincides with a topic boundary
+      if (!topicBoundaries.includes(s.endSeconds)) segmentBoundaries.push(s.endSeconds);
+    }
   }
-  const boundaries = Array.from(candidateSet);
 
   const idealBreaks: number[] = [];
   for (let i = 1; i < count; i++) {
@@ -130,18 +160,30 @@ function timeBasedSlices(
 
   const snapWindow = adaptiveSnapWindow(duration / count);
 
-  const used = new Set<number>();
-  const resolved: number[] = [];
-  for (const ideal of idealBreaks) {
+  // For each ideal break, try topic boundaries first; only fall back to
+  // segment boundaries if no topic boundary is in the snap window.
+  const findBestInList = (ideal: number, list: number[], used: Set<number>): number | null => {
     let best: number | null = null;
     let bestDist = Infinity;
-    for (const b of boundaries) {
+    for (const b of list) {
       if (used.has(b)) continue;
       const dist = Math.abs(b - ideal);
       if (dist <= snapWindow && dist < bestDist) {
         best = b;
         bestDist = dist;
       }
+    }
+    return best;
+  };
+
+  const used = new Set<number>();
+  const resolved: number[] = [];
+  for (const ideal of idealBreaks) {
+    // Prefer topic boundary
+    let best = findBestInList(ideal, topicBoundaries, used);
+    if (best === null) {
+      // Fall back to segment boundary when no topic boundary qualifies
+      best = findBestInList(ideal, segmentBoundaries, used);
     }
     if (best !== null) {
       used.add(best);
@@ -246,7 +288,17 @@ function collectClips(
 
   for (const digest of enrichedDigests) {
     const fullDuration = digest.durationSeconds ?? DEFAULT_VIDEO_DURATION;
-    const topics = digest.topics ?? [];
+    const allTopics = digest.topics ?? [];
+    // Filter out promotional / non-instructional topics (sponsorships, ads,
+    // platform plugs) so they don't become learner-facing clips. The judge
+    // dings these as "ad copy as a learning activity" (sean-tucker, explainer-
+    // essays, 2026-05-31). When a video is ENTIRELY promotional (no
+    // instructional topics remain), keep all topics — better to surface the
+    // source as-is than produce an empty clip set.
+    const topics = (() => {
+      const kept = allTopics.filter((t) => !isPromotionalTopic(t.label));
+      return kept.length > 0 ? kept : allTopics;
+    })();
     const hasMultipleTopics = topics.length >= 2;
     const longEnoughToSplit = fullDuration >= MIN_DURATION_FOR_SPLIT_SECONDS;
 
@@ -496,7 +548,28 @@ export function distributeClipsToLessons(
 
   for (let i = 0; i < clips.length; i++) {
     const clip = clips[i];
-    const lesson = lessons[currentLesson];
+    let lesson = lessons[currentLesson];
+
+    // Prefer single-video lessons. If this clip is from a different video
+    // than the lesson's existing clips, advance to a fresh lesson when
+    // possible. A lesson that pairs intro-level content from one video with
+    // advanced content from another reads as pedagogically jarring (judge
+    // dinged Box and Get It 2026-05-29 for Lesson 2 stitching Video #2's
+    // stance intro with Video #1's advanced flow). Only advance if the
+    // remaining clips still fit in the remaining lessons.
+    if (
+      lesson.clips.length > 0 &&
+      lesson.clips[0].videoId !== clip.videoId &&
+      currentLesson < totalLessons - 1
+    ) {
+      const remainingClips = clips.length - i;
+      const remainingLessonsIfAdvance = totalLessons - (currentLesson + 1);
+      if (remainingClips <= remainingLessonsIfAdvance * MAX_CLIPS_PER_LESSON) {
+        currentLesson++;
+        lesson = lessons[currentLesson];
+      }
+    }
+
     lesson.clips.push(clip);
     lesson.totalDurationSeconds += clip.durationSeconds;
 
@@ -904,6 +977,22 @@ export function formatDistributionPlanForPrompt(
   plan: DistributionPlan,
   enrichedDigests?: EnrichedContentDigest[],
 ): string {
+  // Build per-video duration map so the preamble can surface a hard ceiling
+  // for each clip's endSeconds. Without this, the LLM has been observed to
+  // hallucinate clip ranges past the video's actual length (e.g. endSeconds=1146
+  // on a 914s video — beauty-isolated corpus run 2026-05-31).
+  const videoDurationMap = new Map<string, number>();
+  if (enrichedDigests) {
+    for (const d of enrichedDigests) {
+      if (typeof d.durationSeconds === "number" && d.durationSeconds > 0) {
+        videoDurationMap.set(d.contentId, d.durationSeconds);
+      }
+    }
+  }
+  const durationLines = Array.from(videoDurationMap.entries()).map(
+    ([id, dur]) => `  - ${id}: ${dur}s`,
+  );
+
   const lines: string[] = [
     `═══ VIDEO ASSIGNMENT PLAN (MANDATORY) ═══`,
     `The following clip assignments have been pre-computed. You MUST follow them exactly.`,
@@ -911,6 +1000,13 @@ export function formatDistributionPlanForPrompt(
     `Your job is to write great titles, summaries, takeaways, DO/REFLECT actions, and overlay details for each lesson — but the video clips are fixed.`,
     `For each clip, base its chapterTitle and chapterDescription on the timestamped transcript excerpts below it. When a clip lists multiple segments, your chapterTitle and summary MUST reflect every segment — do not name only the first one or two. Never ground titles in the source video title or in adjacent clips.`,
     ``,
+    ...(durationLines.length > 0
+      ? [
+          `HARD BOUNDS — each clip's startSeconds and endSeconds MUST fall within its video's actual duration. Do not produce ranges past the durations below; doing so will fail validation and the program will not generate.`,
+          ...durationLines,
+          ``,
+        ]
+      : []),
   ];
 
   for (const lesson of plan.lessons) {

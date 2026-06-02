@@ -4,6 +4,149 @@ Running list of QA-session findings that aren't fully resolved. Replaces the per
 
 ---
 
+## ⏸ LLM doesn't reject off-topic content from a program assemblage — `fireship-coding-shorts` 2026-05-31
+
+**Status: DEFERRED by product decision 2026-05-31.** Creator is responsible for curating their own program. No platform-side warning or block planned. Revisit only if real-creator data shows this is a frequent support issue.
+
+Original finding preserved below for context.
+
+---
+
+### Original finding
+
+**Severity:** medium-high — silent misuse of source material that learners would see.
+
+**Symptom:** The `fireship-coding-shorts` program (6 videos: 5 Fireship 100-second coding intros + 1 Gordon Ramsay scrambled-eggs video, lessonCount=3) produced a curriculum where the Ramsay video was bundled into a "static type checking" coding lesson with no acknowledgment that the source content is unrelated. Judge dimensions: lesson_boundaries=1, lesson_count=2, step_flow=2, topic_boundary_respect=2 → overall 2.13 (FAIL). [Critical issues from judge](corpus-20260531-183412/fireship-coding-shorts/scores.json):
+- "Gordon Ramsay scrambled eggs video bundled into a 'static type checking' coding lesson with no justification"
+- "Lesson titles describe content that does not match the assigned clips (Lesson 1 promises JS/Python/Flutter but only plays React; Lesson 3 promises TypeScript but plays JS/Flutter/eggs/Python)"
+
+**Why this matters:** in production, a creator could include a misclicked or thematically-mismatched video among their uploads. The pipeline does not flag this — it just packs everything into the lesson plan. The LLM tries to bridge the gap with generic placeholder titles ("Execute logic across multiple environments") rather than surface the misfit. A learner sees the inconsistency immediately.
+
+**Pipeline-layer attribution:** Curriculum-LLM is doing what it was asked — fit N videos into M lessons. There is no upstream "off-topic detector" stage. The clip distributor preserves source-video adjacency but doesn't compute thematic distance between videos.
+
+**Levers worth discussing:**
+1. **Pre-LLM thematic check** — embed each video's `topic` labels + summary and cluster them; warn the creator when a cluster contains an outlier (cosine distance > threshold)
+2. **LLM-driven outlier surface** — extend the curriculum prompt to ask "list any source video that does not fit the program's transformation in 1 sentence" before generating lessons
+3. **Accept silently** — current behavior; document the creator's responsibility for curating their own corpus
+
+**Corpus-author note:** the Ramsay video was deliberately mixed into the Fireship bundle by the harness author to bring the lesson count to 6. The mix is artificial but the failure mode it exposes is real.
+
+---
+
+## ✅ validateAndFixClipDistribution doesn't always produce a fixedDraft — RESOLVED 2026-05-31 (route protection verified + harness mirrors it)
+
+**Status:** Originally flagged as the validator silently letting phantom clips through. After re-reading the route, **production is already protected**: [generate-async/route.ts:911–914](../../apps/web/app/api/programs/[id]/generate-async/route.ts) throws when `fixedDraft` is null, and lines 904–909 throw when the repaired draft fails re-validation. Learners cannot see clip-hallucination output today — the job fails loudly first.
+
+The harness was producing fixture data inconsistent with production behavior (it captured the unrepaired draft instead of failing). Now mirrored in [apps/web/scripts/youtube-fixture-corpus.ts](../../apps/web/scripts/youtube-fixture-corpus.ts) `assembleProgram`: writes `.failure.json` artifact when no `fixedDraft` is available, matching the route's throw semantics.
+
+The deeper question — why the validator gives up on `fireship-coding-shorts` specifically — is now diagnosable cleanly: the route's throw exposes the error list, so future debug has signal instead of silent fallback.
+
+---
+
+## 🔧 LLM produces clip ranges beyond video duration — FIX SHIPPED 2026-05-31 (prompt constraint added)
+
+**Fix:** [packages/ai/src/clip-distributor.ts](../../packages/ai/src/clip-distributor.ts) `formatDistributionPlanForPrompt` now emits a `HARD BOUNDS` block listing each video's `durationSeconds` and stating that clips MUST NOT reference seconds beyond the video's actual length. The LLM previously was told "do not change these values" but had no explicit upper bound; now it has both.
+
+Verification pending: re-run `assemble beauty-isolated` and confirm the validator's repair count drops from 4 → 0 (meaning the LLM stopped hallucinating ranges, not that the validator fixed them).
+
+---
+
+### Original finding
+
+**Severity:** high. Validator catches it in production, but it's silently doing heavy repair every run.
+
+**Symptom:** [program-beauty-isolated.draft.json](../qa-fixtures/corpus/program-beauty-isolated.draft.json) (NikkieTutorials, 914s source video) produced clips at `706–1146` and `1146–1514`. Both `endSeconds` values exceed the video's `durationSeconds=914`. A learner playing those clips would hit empty / past-end content.
+
+**What the layers actually produced:**
+- [program-beauty-isolated.distribution-plan.json](../qa-fixtures/corpus/program-beauty-isolated.distribution-plan.json): correct — clip ranges 0–706 and 706–914, exactly matching Gemini's topic boundaries
+- LLM `generateProgramDraft` output: incorrect — generated 706–1146 and 1146–1514, ignoring the plan
+- The chapter descriptions reference real source content (launch dates, kids makeup challenge) — the LLM correctly identified the topics but hallucinated timestamps for them
+
+**Why this matters even though the validator catches it:** [route.ts:887](../../apps/web/app/api/programs/[id]/generate-async/route.ts) calls `validateAndFixClipDistribution` and repairs the draft before persisting. So learners don't see broken clips. But it means *every generation involving this content shape* is silently running heavy repair work, and any future bug in the validator silently lets phantom clips through. The LLM should be respecting its plan more reliably.
+
+**Pipeline-layer attribution:** This is a curriculum-LLM bug, not a clip-distributor bug. The plan was correct; the LLM ignored it.
+
+**Surface:** found via the corpus harness ([apps/web/scripts/youtube-fixture-corpus.ts](../../apps/web/scripts/youtube-fixture-corpus.ts)) running `assemble beauty-isolated`. Judge flagged it on first scoring run: `topic_boundary_respect: 1`.
+
+---
+
+## 🔧 Gemini empty-response failure rate ~30% on the structured analysis prompt — FIX SHIPPED 2026-05-31 (retry + diagnostics)
+
+**Fix:** [packages/ai/src/gemini-video-analyzer.ts](../../packages/ai/src/gemini-video-analyzer.ts) now wraps both `analyzeVideoWithGemini` (YouTube path) and the analysis call inside `analyzeUploadedVideoWithGemini` (Upload path) with a 3-attempt retry loop using jittered backoff. Final-attempt error messages now include `finishReason`, `safetyRatings`, and `promptFeedback` via `formatGeminiDiagnostics` so future failures are immediately diagnosable without a separate `gemini-diag.ts` invocation.
+
+Verification pending: re-run `analyze-retry` against the 4 stuck videos (Molly Wright, Tia Graham, Ken Robinson, GLy YWA 45min) — confirm at least 1–2 recover with the retry, and the persistent failures now expose a clear `finishReason` in the error message.
+
+---
+
+### Original finding
+
+**Severity:** medium — fails silently in production, video falls through to title-only digest path → degraded downstream curriculum quality.
+
+**Symptom:** 30-video corpus run: 8/30 (27%) hit `Gemini returned empty response` from [packages/ai/src/gemini-video-analyzer.ts:425](../../packages/ai/src/gemini-video-analyzer.ts) — Gemini returned a candidate with `finishReason=STOP` but `content.parts[0].text` empty.
+
+**Diagnostic:** [apps/web/scripts/gemini-diag.ts](../../apps/web/scripts/gemini-diag.ts) hit zQnBQ4tB3ZA (one of the failed videos) with a SIMPLE prompt → 200 OK, valid response, `finishReason=STOP`, 319 chars of content. So:
+- Gemini CAN access the video (not safety, not region, not recitation)
+- Failure is **prompt-specific** — the long structured `buildVideoAnalysisPrompt` triggers it
+- Failures are **partly transient** — `analyze-retry` recovered DHjqpvDnNGE (JavaScript Fireship) on second attempt
+
+**Production impact:** route catches the error at [route.ts:496](../../apps/web/app/api/programs/[id]/generate-async/route.ts) and continues. Failed videos get no `VideoAnalysis` row → digest stage falls into title-only fallback at [route.ts:631](../../apps/web/app/api/programs/[id]/generate-async/route.ts) → no enriched clips, no topic-aware curriculum. The video is "in" the program but the brain has nothing to work with.
+
+**Levers to consider:**
+1. Add a retry-with-jitter in [gemini-video-analyzer.ts](../../packages/ai/src/gemini-video-analyzer.ts) for empty-response specifically (the Mux path already retries on `Gemini file processing failed`)
+2. Surface `finishReason` in the error message so future debug doesn't need a one-off diagnostic
+3. Consider falling back to a simpler prompt + a second structured-extraction pass on the simple output
+
+---
+
+## 🔧 Gemini 5-min timeout hits on 30+ min videos — FIX SHIPPED 2026-05-31 (env-configurable + tiered)
+
+**Fix:** [packages/ai/src/constants.ts](../../packages/ai/src/constants.ts) now exports `DEFAULT_GEMINI_ANALYSIS_TIMEOUT_MS = 300_000` plus `getGeminiAnalysisTimeoutMs(videoDurationSeconds?)` resolver. The resolver tiers headroom by video length:
+- `< 10 min` → base (300s)
+- `10–30 min` → base + 120s = 420s
+- `≥ 30 min` → base + 300s = 600s
+
+Env override: `GEMINI_ANALYSIS_TIMEOUT_MS` adjusts the base; tiers stack. Both `analyzeVideoWithGemini` (YouTube path) and `analyzeUploadedVideoWithGemini` (Upload path) use the resolver. The Upload path now also accepts an optional `durationSeconds` parameter so the route can pass the value through.
+
+Verification pending: re-run analyze on `GLy2rYHwUqY` (YWA 45min) — confirm extended 600s timeout (default for ≥30min videos) lets it complete.
+
+---
+
+### Original finding
+
+**Severity:** medium — known production failure mode for long uploads.
+
+**Symptom:** 4/30 corpus videos hit `This operation was aborted` from the 5-min `GEMINI_TIMEOUT_MS` in [gemini-video-analyzer.ts:16](../../packages/ai/src/gemini-video-analyzer.ts). All four are 30+ min videos: Bad Romance + Squabble Up dance tutorials, YWA 30min, YWA 45min.
+
+**Implication:** any creator uploading 30+ min videos has a meaningful chance of falling out of the brain entirely. Most successful 30+ min videos in the corpus took 100–230s, close to but under the 5-min ceiling. The current ceiling has very little headroom for the long-form case.
+
+**Levers:**
+1. Bump `GEMINI_TIMEOUT_MS` for the Mux path specifically (longer uploads are the common case there)
+2. Add a one-time retry on `AbortError`
+3. For videos > N minutes, route to the Files API + a different prompt that requests sparse output
+
+---
+
+## 📦 Stress-test harness — bypass-the-route corpus run 2026-05-31
+
+**Severity:** infrastructure — new addition to the QA toolchain.
+
+**What landed:** a 4-script harness for stress-testing steps 3–6 (Gemini segmentation → digest extraction → clip distribution → curriculum gen) without touching the running app. Lives under [apps/web/scripts/](../../apps/web/scripts/) — pure scripts, zero production code changes, zero DB writes.
+
+| File | Role |
+|---|---|
+| [corpus-config.ts](../../apps/web/scripts/corpus-config.ts) | 30 YouTube videos × 10 programs, organized by duration tier + content shape |
+| [youtube-fixture-corpus.ts](../../apps/web/scripts/youtube-fixture-corpus.ts) | `list` / `analyze` / `analyze-retry` / `assemble` / `full` commands. Resumable; per-video failure isolation; mirrors production by calling `validateAndFixClipDistribution` |
+| [qa-judge-corpus.ts](../../apps/web/scripts/qa-judge-corpus.ts) | Sibling to existing [qa-judge.ts](../../apps/web/scripts/qa-judge.ts) — same prompt, same `---JSON---` delimiter, same `tests/qa-results/<ts>/` output. Reads JSON fixtures instead of pulling from Prisma. |
+| [gemini-diag.ts](../../apps/web/scripts/gemini-diag.ts) | One-shot Gemini call with full raw response logging (finishReason, safetyRatings, usage). Use to investigate "empty response" cases. |
+
+Fixtures land under [tests/qa-fixtures/corpus/](../qa-fixtures/corpus/). Judge results land alongside existing runs under [tests/qa-results/corpus-<timestamp>/](.).
+
+**Why this exists rather than going through the route:** the current `generate-async` orchestrator only routes Mux uploads to Gemini; YouTube URLs cannot reach `analyzeVideoWithGemini` through the route ([route.ts:371–389](../../apps/web/app/api/programs/[id]/generate-async/route.ts) filters on `muxPlaybackId`). The harness calls the AI package functions directly, so YouTube URLs become a cheap, reusable ingest source for stress testing the content brain without burning Mux storage or manual uploads.
+
+**Production parity:** strong at the schema/prompt level (same `buildVideoAnalysisPrompt`, same Zod schema, same temperature) and now mirrors production's clip validation step. Weak at the wire/upload level (no Files API exercise, no static-rendition wait, no Mux webhook race). That gap is intentional — see plan in `/Users/Rotenberg_Mathew/.claude/plans/ok-we-re-getting-close-wild-spark.md`.
+
+---
+
 ## 🔥 Pipeline speed — generation takes way too long
 
 **Severity:** big fix, prioritize early next session.
@@ -216,6 +359,72 @@ Suggested commit organization when shipping:
 1. One commit for the pipeline fixes (llm-adapter + clip-distributor + schemas + tests) — the substance of two days' QA work
 2. Separate commit/PR for the harness (`tests/` dir) — it's QA infrastructure, not product code
 3. Revert the `JOB_TIMEOUT_MS` bump before either; ship it together with the parallelization fix in a follow-up
+
+---
+
+## 🟧 Route-level `JOB_TIMEOUT_MS` (10 min) is consumed by `fetching_transcripts` waits, leaving zero budget for `persisting` — 2026-06-02
+
+**Severity:** medium — silent failure mode on real uploads with longer videos. Surfaced by [apps/web/scripts/bulk-mux-upload.ts](../../apps/web/scripts/bulk-mux-upload.ts) (upload harness Script A) on its first end-to-end run.
+
+**Symptom:** TEST-UPLOAD program with 2 videos (8MB AWS short + 174MB 18-min dance tutorial). Wait phase for the dance video's Mux static rendition burned 9 min 37s in `fetching_transcripts`. `generating` succeeded in 2m 34s, `validating` in 15ms — then `persisting` immediately threw `"Job timed out after 10 minutes during persisting stage"`. The job reached 90% progress and died at the DB-write step despite the LLM having returned a valid draft.
+
+```
+job cmpw4zuyh0001la04nwlsd5ga steps:
+  preparing                51ms     ok
+  fetching_transcripts     577228ms ok   ← 9m 37s burned on Mux wait
+  analyzing                25ms     ok
+  generating               153898ms ok   ← LLM returned cleanly (llm_elapsed=153881ms)
+  validating               15ms     ok
+  persisting               14ms     error "Job timed out after 10 minutes during persisting stage"
+```
+
+**Pipeline-layer attribution:** Route-level deadline accounting at [generate-async/route.ts:180-186](../../apps/web/app/api/programs/[id]/generate-async/route.ts) treats the wait phase and LLM phase as fungible against the same 10-min budget. They aren't — wait is bounded by Mux's render time (1-10 min for long videos), LLM by Anthropic latency. Tracking them together means a slow upstream stage starves downstream stages of budget they need.
+
+**Levers to consider:**
+1. Per-stage budgets instead of one route-wide ceiling (give `persisting` its own ≥30s reservation that can't be eaten)
+2. Reset the deadline after `fetching_transcripts` completes, since by then the long-pole work is done
+3. Skip the deadline entirely for `persisting` (DB writes shouldn't be gated by a wall-clock that started 10 min ago)
+4. Move the wait phase outside `JOB_TIMEOUT_MS` and let it run against `maxDuration = 800s` (Vercel's hard ceiling) directly
+
+---
+
+## 🟧 LLM call aborts at ~153s during `generating` with "This operation was aborted" — 2026-06-02
+
+**Severity:** medium — second run of the harness (retry against cached analyses) hit this. The fetch is configured for `GENERATION_TIMEOUT_MS = 600_000` (10 min) at [llm-adapter.ts:22](../../packages/ai/src/llm-adapter.ts#L22), but the abort fires at 152.8s — almost exactly where the previous successful run's LLM call had finished (153.9s).
+
+**Symptom:** Same TEST-UPLOAD program, retry triggered with both Gemini analyses cached:
+
+```
+job cmpwmewhj0001js04d4dpl2t0 steps:
+  preparing                64ms     ok
+  fetching_transcripts     306490ms ok   ← still slow despite cached analyses (see next finding)
+  analyzing                15ms     ok
+  generating               152839ms error "This operation was aborted"
+```
+
+The error string is the AbortController.abort() message from `fetchWithTimeout` at [llm-adapter.ts:29-33](../../packages/ai/src/llm-adapter.ts#L29-L33), but that timer is set for 10 min — far past 152.8s.
+
+**Hypothesis (unverified):** Anthropic's load balancer dropping the connection right around the response boundary, OR Vercel Fluid Compute recycling the function instance during a long server-to-server fetch from `after()`. The fact that the first run's LLM completed at 153.9s and the second's aborted at 152.8s suggests Anthropic's P50 for this prompt size sits right at the threshold of whatever's killing the connection.
+
+**Pipeline-layer attribution:** Not the route, not the adapter timeout. External — Anthropic connection-level OR Vercel infrastructure. Needs deeper instrumentation (response headers, undici socket diagnostics) to confirm.
+
+**Levers to consider:**
+1. Wrap `callAnthropic` in a retry-with-backoff (1-2 attempts) — would absorb transient drops without code-change visibility
+2. Stream the Anthropic response instead of awaiting full body — keeps the TCP connection live and detects drops earlier
+3. Log undici socket errors via the global dispatcher's error events for better diagnostics
+4. Move long-running LLM calls to a queue/worker rather than inline in a serverless function
+
+---
+
+## 🟧 `fetching_transcripts` is slow on retry even when `VideoAnalysis` rows are cached — 2026-06-02
+
+**Severity:** low (UX papercut on regenerations, not a real failure mode). Surfaced alongside the abort finding above.
+
+**Symptom:** Second job for the same program — both `VideoAnalysis` rows already populated from the first run — still spent 5 min 6s in `fetching_transcripts`. Step note was `analyzed=2/2 transcripts=2`, suggesting both got there eventually, but the path used should have been near-instant since [route.ts:251-253](../../apps/web/app/api/programs/[id]/generate-async/route.ts#L251-L253) filters the wait phase to videos missing both `analysis` and `muxPlaybackId`.
+
+**Hypothesis (unverified):** The cached-analysis short-circuit may not be firing as expected, OR the wait phase is still running for one of the videos because something on the row state was reset between runs. Worth checking whether the first run's failure rolled back the `VideoAnalysis` writes that had landed mid-job.
+
+**Pipeline-layer attribution:** Likely route logic — the cached-content fast path either isn't being detected or the cache key is mismatched. Read-only investigation: query `VideoAnalysis.createdAt` on both rows vs. the first job's stage timings.
 
 ---
 

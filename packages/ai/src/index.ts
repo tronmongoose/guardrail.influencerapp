@@ -24,7 +24,9 @@ export type { VideoInfo, LessonPreset } from "./lesson-presets";
 export {
   DEFAULT_GEMINI_TEXT_MODEL,
   DEFAULT_GEMINI_VIDEO_MODEL,
+  DEFAULT_GEMINI_ANALYSIS_TIMEOUT_MS,
   GEMINI_API_BASE,
   getGeminiTextModel,
   getGeminiVideoModel,
+  getGeminiAnalysisTimeoutMs,
 } from "./constants";

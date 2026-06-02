@@ -11,14 +11,40 @@
 
 import type { VideoAnalysisOutput } from "@guide-rail/shared";
 import { VideoAnalysisOutputSchema } from "@guide-rail/shared";
-import { GEMINI_API_BASE, getGeminiVideoModel } from "./constants";
+import { GEMINI_API_BASE, getGeminiVideoModel, getGeminiAnalysisTimeoutMs } from "./constants";
 
-const GEMINI_TIMEOUT_MS = 300_000; // 5 minutes — uploaded videos need more headroom
+// Default count of analysis-call attempts. Empirical: 27% of YouTube-path
+// calls returned empty text with finishReason=STOP on the first try; ~75%
+// of those recovered on a second attempt (corpus run 2026-05-31). The Upload
+// path historically retried only the file-upload phase, not the analysis.
+const ANALYSIS_MAX_ATTEMPTS = 3;
+const ANALYSIS_BACKOFF_BASE_MS = 5_000;
 
 function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
+// Pretty-print Gemini's response metadata for inclusion in error messages.
+// Surfaces finishReason and promptFeedback so we can tell SAFETY vs RECITATION
+// vs silent STOP without a separate diagnostic script.
+function formatGeminiDiagnostics(data: unknown): string {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const d = data as any;
+  const parts: string[] = [];
+  const cand = d?.candidates?.[0];
+  if (cand?.finishReason) parts.push(`finishReason=${cand.finishReason}`);
+  if (cand?.safetyRatings) parts.push(`safetyRatings=${JSON.stringify(cand.safetyRatings)}`);
+  if (d?.promptFeedback) parts.push(`promptFeedback=${JSON.stringify(d.promptFeedback)}`);
+  return parts.length > 0 ? ` [${parts.join(", ")}]` : "";
+}
+
+async function jitteredBackoff(attempt: number): Promise<void> {
+  // attempt is 1-indexed; first retry waits ~5s, second ~7s, with jitter
+  const base = ANALYSIS_BACKOFF_BASE_MS + (attempt - 1) * 2_000;
+  const jitter = Math.floor(Math.random() * 2_000);
+  await new Promise((r) => setTimeout(r, base + jitter));
 }
 
 function buildVideoAnalysisPrompt(videoTitle: string): string {
@@ -261,6 +287,7 @@ export async function analyzeUploadedVideoWithGemini(
   videoUrl: string,
   videoTitle: string,
   mimeType: "video/mp4" | "video/quicktime" = "video/mp4",
+  durationSeconds?: number,
 ): Promise<VideoAnalysisOutput> {
   const apiKey = process.env.GOOGLE_AI_API_KEY;
 
@@ -316,38 +343,54 @@ export async function analyzeUploadedVideoWithGemini(
       },
     };
 
-    const res = await fetchWithTimeout(
-      `${GEMINI_API_BASE}/models/${model}:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-      },
-      GEMINI_TIMEOUT_MS,
-    );
+    const timeoutMs = getGeminiAnalysisTimeoutMs(durationSeconds);
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= ANALYSIS_MAX_ATTEMPTS; attempt++) {
+      try {
+        const res = await fetchWithTimeout(
+          `${GEMINI_API_BASE}/models/${model}:generateContent?key=${apiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestBody),
+          },
+          timeoutMs,
+        );
 
-    if (!res.ok) {
-      const errorBody = await res.text().catch(() => "");
-      throw new Error(`Gemini API error: ${res.status} - ${errorBody}`);
+        if (!res.ok) {
+          const errorBody = await res.text().catch(() => "");
+          throw new Error(`Gemini API error: ${res.status} - ${errorBody}`);
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const data: any = await res.json();
+        const candidates = data.candidates;
+        if (!candidates || candidates.length === 0) {
+          throw new Error(`Gemini returned no candidates${formatGeminiDiagnostics(data)}`);
+        }
+
+        const rawText = candidates[0].content?.parts?.[0]?.text;
+        if (!rawText) {
+          throw new Error(`Gemini returned empty response${formatGeminiDiagnostics(data)}`);
+        }
+
+        const json = extractJSON(rawText);
+        const parsed = JSON.parse(json);
+        const validated = VideoAnalysisOutputSchema.parse(parsed);
+
+        console.info(
+          `[gemini] Upload analysis complete: ${validated.segments.length} segments, ${validated.topics.length} topics (attempt ${attempt})`,
+        );
+        return validated;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        if (attempt < ANALYSIS_MAX_ATTEMPTS) {
+          console.warn(`[gemini] upload analysis attempt ${attempt}/${ANALYSIS_MAX_ATTEMPTS} failed for "${videoTitle}": ${lastError.message}`);
+          await jitteredBackoff(attempt);
+        }
+      }
     }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data: any = await res.json();
-    const candidates = data.candidates;
-    if (!candidates || candidates.length === 0) throw new Error("Gemini returned no candidates");
-
-    const rawText = candidates[0].content?.parts?.[0]?.text;
-    if (!rawText) throw new Error("Gemini returned empty response");
-
-    const json = extractJSON(rawText);
-    const parsed = JSON.parse(json);
-    const validated = VideoAnalysisOutputSchema.parse(parsed);
-
-    console.info(
-      `[gemini] Upload analysis complete: ${validated.segments.length} segments, ${validated.topics.length} topics`,
-    );
-
-    return validated;
+    throw new Error(`Gemini upload analysis failed after ${ANALYSIS_MAX_ATTEMPTS} attempts for "${videoTitle}": ${lastError?.message ?? "unknown error"}`);
   } finally {
     // Always clean up the uploaded file
     if (fileName && apiKey) {
@@ -375,8 +418,9 @@ export async function analyzeVideoWithGemini(
   const model = getGeminiVideoModel();
   const youtubeUrl = `https://www.youtube.com/watch?v=${youtubeVideoId}`;
   const prompt = buildVideoAnalysisPrompt(videoTitle);
+  const timeoutMs = getGeminiAnalysisTimeoutMs(durationSeconds);
 
-  console.info(`[gemini] Analyzing video: ${videoTitle} (${youtubeVideoId}) with ${model}`);
+  console.info(`[gemini] Analyzing video: ${videoTitle} (${youtubeVideoId}) with ${model} (timeout=${timeoutMs}ms)`);
 
   const requestBody = {
     contents: [
@@ -397,43 +441,63 @@ export async function analyzeVideoWithGemini(
     },
   };
 
-  const res = await fetchWithTimeout(
-    `${GEMINI_API_BASE}/models/${model}:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestBody),
-    },
-    GEMINI_TIMEOUT_MS,
-  );
+  // Retry-with-jitter loop. Recovers from transient empty-response failures
+  // (the structured prompt triggers ~27% empty rate on first attempt; ~75% of
+  // those recover by attempt 2 per corpus run 2026-05-31). On the final
+  // attempt's failure the error message includes finishReason/promptFeedback.
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= ANALYSIS_MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetchWithTimeout(
+        `${GEMINI_API_BASE}/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        },
+        timeoutMs,
+      );
 
-  if (!res.ok) {
-    const errorBody = await res.text().catch(() => "");
-    throw new Error(`Gemini API error: ${res.status} - ${errorBody}`);
+      if (!res.ok) {
+        const errorBody = await res.text().catch(() => "");
+        throw new Error(`Gemini API error: ${res.status} - ${errorBody}`);
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data: any = await res.json();
+
+      const candidates = data.candidates;
+      if (!candidates || candidates.length === 0) {
+        throw new Error(`Gemini returned no candidates${formatGeminiDiagnostics(data)}`);
+      }
+
+      const rawText = candidates[0].content?.parts?.[0]?.text;
+      if (!rawText) {
+        throw new Error(`Gemini returned empty response${formatGeminiDiagnostics(data)}`);
+      }
+
+      console.info(`[gemini] Raw response length: ${rawText.length} chars (attempt ${attempt})`);
+
+      const json = extractJSON(rawText);
+      const parsed = JSON.parse(json);
+      const validated = VideoAnalysisOutputSchema.parse(parsed);
+      // success — fall through to the post-loop return path
+      // eslint-disable-next-line @typescript-eslint/no-use-before-define
+      return finishYouTubeAnalysis(validated);
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (attempt < ANALYSIS_MAX_ATTEMPTS) {
+        console.warn(`[gemini] attempt ${attempt}/${ANALYSIS_MAX_ATTEMPTS} failed for "${videoTitle}": ${lastError.message}`);
+        await jitteredBackoff(attempt);
+      }
+    }
   }
+  throw new Error(`Gemini analysis failed after ${ANALYSIS_MAX_ATTEMPTS} attempts for "${videoTitle}": ${lastError?.message ?? "unknown error"}`);
+}
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const data: any = await res.json();
-
-  const candidates = data.candidates;
-  if (!candidates || candidates.length === 0) {
-    throw new Error("Gemini returned no candidates");
-  }
-
-  const rawText = candidates[0].content?.parts?.[0]?.text;
-  if (!rawText) {
-    throw new Error("Gemini returned empty response");
-  }
-
-  console.info(`[gemini] Raw response length: ${rawText.length} chars`);
-
-  const json = extractJSON(rawText);
-  const parsed = JSON.parse(json);
-  const validated = VideoAnalysisOutputSchema.parse(parsed);
-
+function finishYouTubeAnalysis(validated: VideoAnalysisOutput): VideoAnalysisOutput {
   console.info(
     `[gemini] Analysis complete: ${validated.segments.length} segments, ${validated.topics.length} topics, ${validated.keyMoments?.length ?? 0} key moments`,
   );
-
   return validated;
 }

@@ -551,6 +551,34 @@ supported by the transcripts below. Do not infer program details, add steps the
 creator didn't mention, or invent outcomes. If the transcripts don't cover
 something, do not include it.
 
+HONOR SOURCE GENRE (non-negotiable):
+Read what the clip actually IS, not what the program theme suggests it
+should be. If the source content is one of these genres, the lesson MUST
+reflect that genre — do not pretend the learner will acquire a teachable
+skill from content that doesn't teach one.
+
+- Announcement / preview / roadmap content (e.g. "here's what's coming in
+  our new course") → the lesson is an EXPLORATION of what's coming, not a
+  skill-build. Title and steps must say "explore" / "preview" / "decide
+  whether this fits you" — not "master" / "learn to do X."
+- Product reveal / collection unveiling (e.g. a beauty creator showing
+  their makeup line) → the lesson is an UNVEILING / OVERVIEW, not a
+  technique tutorial. Don't frame it as "design a performance look" when
+  the source only displays the product.
+- Promotional / sponsorship / podcast-plug segments embedded in otherwise
+  instructional videos → do not write a lesson around these. If the
+  assigned clip is mostly such content, frame the lesson honestly as
+  "context about the creator" or similar, not as instruction.
+- Personal reflection / opinion essays (e.g. "why I started this channel")
+  → the lesson is REFLECTION on the creator's perspective, not skill
+  acquisition. Steps invite the learner to reflect on their own
+  experience, not to perform a technique.
+
+You may write a strong, useful lesson for any of these genres — but only
+by honestly framing what the source actually is. Pretending a preview is a
+tutorial is the most common source-faithfulness failure mode and is
+unacceptable.
+
 LESSON ORDER RULE — workflow sequencing (non-negotiable):
 Sequence lessons in the order a learner would encounter these skills in
 their actual workflow. Foundational skills and creation steps come before
@@ -617,6 +645,23 @@ LESSON TITLE RULES:
 - Good: "Hit your protein target at every meal, not just dinner"
 - Good: "Build a midlife-friendly grocery list in under 10 minutes"
 
+LESSON TITLE ↔ CLIP CONTENT ALIGNMENT (highest-priority rule, non-negotiable):
+When a VIDEO ASSIGNMENT PLAN is provided, the lesson's title MUST describe
+what actually happens in the clips ASSIGNED to that lesson, derived from the
+clip's transcript excerpts in the plan. Do NOT title a lesson based on the
+program's overall theme if that theme doesn't match the assigned clip content.
+
+- If Lesson 1 is assigned a clip about "hand-pulling Biang Biang noodles,"
+  its title cannot be "Mise en Place Fundamentals" or "Kitchen Organization."
+  The title must be about hand-pulling noodles.
+- If Lesson 3 is assigned a clip from a video's INTRO segment (knives,
+  measuring cups), the title must describe that intro — not a downstream
+  technique that the assigned clip doesn't cover.
+- Read the timestamped transcript excerpts under each lesson's clips. The
+  title MUST come from what's in those excerpts, not from the program title,
+  not from the source video's title, not from your guess.
+- Title-clip mismatch is the #1 failure mode and is unacceptable.
+
 STEP/ACTION RULES:
 - Every action must be something the learner physically does, decides, or writes.
 - Restatements of concepts are NOT actions.
@@ -633,6 +678,41 @@ STEP/ACTION RULES:
   to your sleep. 3. Note one concrete change you could try this week."
 - This rule applies equally to conceptual lessons and tool/procedure lessons.
   Conceptual content is not an excuse for vague steps.
+
+LESSON SCAFFOLDING RULE (non-negotiable):
+A lesson with only one DO + one REFLECT is too sparse and fails the learner.
+Every lesson MUST contain at least 3 actions arranged as a scaffold around
+the WATCH step (the clips themselves):
+
+- A PRE-WATCH or SETUP action that primes the learner before they watch —
+  e.g. "Set up your notebook and these three columns…", "Lay out the
+  ingredients the chef will use: X, Y, Z so you can follow along", "Note
+  the bar's gauge before you start — you'll come back to it after."
+  Action type: \`do\` (the learner physically prepares something) or
+  \`read\` (concise on-page primer the learner reads before the WATCH).
+- A MAIN PRACTICE action AFTER the WATCH where the learner actually
+  performs the technique, replicates the step, or applies the concept.
+  Action type: \`do\`. This is the heart of the lesson.
+- A REFLECT action as the final step (per the REFLECT RULE).
+
+You may add additional DO actions between WATCH and REFLECT when the
+content genuinely supports a multi-step practice (e.g. drill 1, drill 2,
+then reflect). You may substitute a READ for one of the DOs when the
+content is concept-heavy and the learner truly does need a short reading
+before they can perform.
+
+What's NOT acceptable:
+- A single bare DO action that just says "Try the technique from the
+  video" with no setup before it.
+- Two actions total (1 DO + 1 REFLECT) — this is the skinny-lesson
+  failure mode flagged by the judge as the #1 step-flow problem.
+- Filler scaffolding that adds no real preparation or practice (e.g. a
+  PRE-WATCH that just says "Read the lesson title.").
+
+The bar: a learner reading just the actions (without the title) should
+be able to tell exactly what to set up, what to practice, and what to
+reflect on. If your action list doesn't support that, add the missing
+scaffolding step.
 
 REFLECT RULE:
 - Each lesson MUST include EXACTLY ONE REFLECT action.

@@ -442,10 +442,17 @@ async function processGenerationJob(jobId: string, programId: string, instructio
         console.info(`[generate-async] [GEMINI] Analyzing "${v.title}" via ${mp4Url}`);
 
         try {
+          // Pass durationSeconds when known so the analyzer can pick a tiered
+          // timeout (30+min videos get +300s headroom; see getGeminiAnalysisTimeoutMs
+          // in packages/ai/src/constants.ts). On a first-time upload this is
+          // typically null because Gemini analysis is what populates it; the
+          // analyzer falls back to base 300s in that case. Mux webhook timing
+          // for saving asset.duration upstream is a follow-up.
           const analysis = await analyzeUploadedVideoWithGemini(
             mp4Url,
             v.title ?? "Untitled",
             "video/mp4",
+            v.durationSeconds ?? undefined,
           );
 
           await prisma.videoAnalysis.upsert({
