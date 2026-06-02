@@ -144,7 +144,38 @@ export async function POST(
  * Updates job status/progress as it runs.
  * Processes both YouTube videos and uploaded artifacts (PDFs, DOCXs, etc.).
  */
-const JOB_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes (within Vercel Pro 800s maxDuration with buffer). Parallel Gemini analysis (below) keeps multi-video programs comfortably within this budget — a 15-video program completes in ~3 min on cached renditions.
+/**
+ * Per-stage budgets. Replaces the old global `JOB_TIMEOUT_MS` which let a slow
+ * upstream stage (e.g. a 10-min Mux wait) silently starve downstream stages
+ * (validating, persisting) of any budget. Each stage now has its own deadline
+ * that resets when the stage begins; only the route-level `ROUTE_TIMEOUT_MS`
+ * caps the total wall-clock.
+ *
+ * Sum is intentionally well over `maxDuration = 800` — stages don't all run to
+ * their cap on a normal job, so the union is the right upper bound for any
+ * single stage, not the total budget. ROUTE_TIMEOUT_MS is the real ceiling.
+ */
+const STAGE_BUDGETS_MS = {
+  preparing: 30_000,
+  fetching_transcripts: 12 * 60_000, // Mux wait (≤10 min/video, parallel) + Gemini (bounded 4-way parallel)
+  analyzing: 90_000,                  // LLM digest extraction
+  generating: 6 * 60_000,             // LLM program draft (P95 observed ~154s; headroom for retries)
+  validating: 30_000,                 // Schema + clip-distribution validation
+  persisting: 90_000,                 // DB writes — normally 3-8s; headroom for slow Neon
+  generating_skin: 3 * 60_000,        // Optional skin gen
+} as const;
+type StageName = keyof typeof STAGE_BUDGETS_MS;
+
+/** Route-wide safety net: just under Vercel `maxDuration = 800`. If any single
+ * job's total wall-clock approaches this, fail with a distinct error so we can
+ * tell "stage X ran over its budget" from "the whole job is hitting Vercel's
+ * hard ceiling." */
+const ROUTE_TIMEOUT_MS = 750_000;
+
+/** Heartbeat cadence inside silent wait loops. Without this, `GenerationJob.updatedAt`
+ * doesn't change while the wait loop polls, and the status endpoint's 3-min stale
+ * detector fires false positives mid-wait. */
+const HEARTBEAT_INTERVAL_MS = 30_000;
 
 /** Max concurrent Gemini analysis tasks. Each task waits on Mux MP4 rendition then calls Gemini Files API. Bumping this from 1 (serial) to 4 cuts wall-clock by ~4x on multi-video programs. Gemini's per-key RPM limits handle 4-way comfortably for our workload. */
 const ANALYSIS_CONCURRENCY = 4;
@@ -177,11 +208,30 @@ async function runWithBoundedConcurrency<T>(
 
 async function processGenerationJob(jobId: string, programId: string, instructions?: string) {
   const timer = createTimer();
-  const deadline = Date.now() + JOB_TIMEOUT_MS;
+  // Route-wide ceiling — distinct error so we can tell "stage X went over" from
+  // "the whole job is hitting Vercel's hard ceiling."
+  const routeDeadlineMs = Date.now() + ROUTE_TIMEOUT_MS;
+  // Per-stage state. setStage() is called from each beginStep below to reset
+  // the per-stage budget. checkDeadline() throws if either the stage budget OR
+  // the route ceiling is breached, with a distinguishing message.
+  let currentStage: StageName = "preparing";
+  let stageDeadlineMs = Date.now() + STAGE_BUDGETS_MS.preparing;
+
+  function setStage(stage: StageName) {
+    currentStage = stage;
+    stageDeadlineMs = Date.now() + STAGE_BUDGETS_MS[stage];
+  }
 
   function checkDeadline(stage: string) {
-    if (Date.now() > deadline) {
-      throw new Error(`Job timed out after ${Math.round(JOB_TIMEOUT_MS / 60000)} minutes during ${stage} stage`);
+    if (Date.now() > routeDeadlineMs) {
+      throw new Error(
+        `Job exceeded ${Math.round(ROUTE_TIMEOUT_MS / 60000)}min route ceiling (Vercel maxDuration) during ${stage}`,
+      );
+    }
+    if (Date.now() > stageDeadlineMs) {
+      throw new Error(
+        `Stage ${currentStage} exceeded its ${Math.round(STAGE_BUDGETS_MS[currentStage] / 1000)}s budget`,
+      );
     }
   }
 
@@ -233,6 +283,7 @@ async function processGenerationJob(jobId: string, programId: string, instructio
     checkDeadline("fetching_transcripts");
     await endStep(jobId, "ok", `videos=${videosForPipeline.length} artifacts=${usableArtifacts.length}`);
     await beginStep(jobId, "fetching_transcripts", undefined, { progress: 5 });
+    setStage("fetching_transcripts");
 
     // ── Wait phase: collapse the three possible video states (still uploading,
     // transcoding, ready) into two (ready or timedOut) before anything heavy.
@@ -270,6 +321,7 @@ async function processGenerationJob(jobId: string, programId: string, instructio
       await Promise.all(videosWithoutPlaybackId.map(async (v) => {
         const startedAt = Date.now();
         const waitUntil = startedAt + MUX_RESOLVE_MAX_MS;
+        let lastHeartbeatAt = Date.now();
 
         const finalize = (result: WaitResult) => {
           waitResultByVideoId.set(v.id, result);
@@ -280,7 +332,16 @@ async function processGenerationJob(jobId: string, programId: string, instructio
           }
         };
 
-        while (Date.now() < waitUntil && Date.now() < deadline) {
+        // Honor: per-video budget (waitUntil) AND stage budget (stageDeadlineMs) AND route ceiling (routeDeadlineMs).
+        // Heartbeat updatedAt every HEARTBEAT_INTERVAL_MS so the status endpoint's stale detector doesn't false-positive.
+        while (Date.now() < waitUntil && Date.now() < stageDeadlineMs && Date.now() < routeDeadlineMs) {
+          // Heartbeat — no-op write that touches updatedAt so status endpoint sees progress
+          if (Date.now() - lastHeartbeatAt > HEARTBEAT_INTERVAL_MS) {
+            await prisma.generationJob
+              .update({ where: { id: jobId }, data: { updatedAt: new Date() } })
+              .catch(() => {});
+            lastHeartbeatAt = Date.now();
+          }
           try {
             // DB-first: webhook may have already written readiness. Cheaper
             // than a Mux API call and avoids Mux rate limits in the hot loop.
@@ -345,11 +406,13 @@ async function processGenerationJob(jobId: string, programId: string, instructio
           }
         }
 
-        // Budget exhausted. Classify by whichever stage we never made it past.
-        // If the route deadline hit before our per-video budget, surface that
-        // separately so debug-panel viewers can tell the difference.
-        const hitRouteDeadline = Date.now() >= deadline;
-        const classified: WaitResult = hitRouteDeadline
+        // Budget exhausted. Classify by whichever budget capped us first.
+        // "deadline" means the route or stage cut us off before our per-video
+        // wait budget; "no-playback" / "no-asset" mean we exhausted MUX_RESOLVE_MAX_MS
+        // without the right field being set.
+        const hitRouteOrStageDeadline =
+          Date.now() >= routeDeadlineMs || Date.now() >= stageDeadlineMs;
+        const classified: WaitResult = hitRouteOrStageDeadline
           ? { status: "timedOut", reason: "deadline", elapsedMs: Date.now() - startedAt }
           : v.muxAssetId
             ? { status: "timedOut", reason: "no-playback", elapsedMs: Date.now() - startedAt }
@@ -394,10 +457,20 @@ async function processGenerationJob(jobId: string, programId: string, instructio
         // so a missed webhook doesn't strand generation.
         console.info(`[generate-async] [GEMINI] Waiting for static rendition flag: "${v.title}"`);
         const renditionStart = Date.now();
+        let lastRenditionHeartbeatAt = Date.now();
+        let renditionFallbackLoggedOnce = false;
         let mp4Ready = false;
-        let usedFallback = false;
+        let mp4ReadySource: "webhook" | "fallback-HEAD" = "webhook";
         while (!mp4Ready && (Date.now() - renditionStart) < RENDITION_MAX_MS) {
           checkDeadline("fetching_transcripts");
+
+          // Heartbeat — see same logic in the wait phase above.
+          if (Date.now() - lastRenditionHeartbeatAt > HEARTBEAT_INTERVAL_MS) {
+            await prisma.generationJob
+              .update({ where: { id: jobId }, data: { updatedAt: new Date() } })
+              .catch(() => {});
+            lastRenditionHeartbeatAt = Date.now();
+          }
 
           const dbRow = await prisma.youTubeVideo.findUnique({
             where: { id: v.id },
@@ -405,28 +478,37 @@ async function processGenerationJob(jobId: string, programId: string, instructio
           });
           if (dbRow?.muxStaticRenditionReadyAt) {
             mp4Ready = true;
-            console.info(`[generate-async] [GEMINI] ✓ Static rendition ready for "${v.title}" (${Math.round((Date.now() - renditionStart) / 1000)}s, source=${usedFallback ? "fallback-HEAD" : "webhook"})`);
+            console.info(`[generate-async] [GEMINI] ✓ Static rendition ready for "${v.title}" (${Math.round((Date.now() - renditionStart) / 1000)}s, source=${mp4ReadySource})`);
             break;
           }
 
-          // Webhook-delivery safety net: after the fallback threshold, HEAD
-          // the MP4 URL ourselves and self-flip the flag if it's available.
-          if (!usedFallback && (Date.now() - renditionStart) >= RENDITION_FALLBACK_AFTER_MS) {
-            usedFallback = true;
-            console.warn(`[generate-async] [GEMINI]   no webhook after ${Math.round(RENDITION_FALLBACK_AFTER_MS / 1000)}s for "${v.title}" — HEAD-checking Mux directly`);
+          // Webhook-delivery safety net: after RENDITION_FALLBACK_AFTER_MS, HEAD
+          // the MP4 URL on EVERY poll cycle (not just once). If the first HEAD
+          // returns 404 because Mux is still rendering and the webhook later
+          // gets delayed, the prior one-shot version stranded the video — the
+          // loop would never flip the flag and we'd misclassify as timedOut.
+          const pastFallbackThreshold =
+            (Date.now() - renditionStart) >= RENDITION_FALLBACK_AFTER_MS;
+          if (pastFallbackThreshold) {
+            if (!renditionFallbackLoggedOnce) {
+              renditionFallbackLoggedOnce = true;
+              console.warn(`[generate-async] [GEMINI]   no webhook after ${Math.round(RENDITION_FALLBACK_AFTER_MS / 1000)}s for "${v.title}" — HEAD-checking Mux directly each poll cycle`);
+            }
             try {
               const headRes = await fetch(mp4Url, { method: "HEAD" });
+              console.info(`[generate-async] [GEMINI]   HEAD ${mp4Url.replace(/^.*?stream\.mux\.com\//, "stream.mux.com/")} → ${headRes.status} for "${v.title}"`);
               if (headRes.ok) {
                 await prisma.youTubeVideo.update({
                   where: { id: v.id },
                   data: { muxStaticRenditionReadyAt: new Date() },
                 });
                 mp4Ready = true;
-                console.info(`[generate-async] [GEMINI] ✓ Static rendition ready for "${v.title}" via fallback HEAD`);
+                mp4ReadySource = "fallback-HEAD";
+                console.info(`[generate-async] [GEMINI] ✓ Static rendition ready for "${v.title}" via fallback HEAD (after ${Math.round((Date.now() - renditionStart) / 1000)}s)`);
                 break;
               }
-            } catch {
-              // fall through to keep waiting on the webhook
+            } catch (err) {
+              console.warn(`[generate-async] [GEMINI]   HEAD error for "${v.title}":`, err instanceof Error ? err.message : err);
             }
           }
 
@@ -569,6 +651,7 @@ async function processGenerationJob(jobId: string, programId: string, instructio
     checkDeadline("analyzing");
     await endStep(jobId, "ok", `analyzed=${finalWithAnalysis}/${videosForPipeline.length} transcripts=${finalWithTranscript}`);
     await beginStep(jobId, "analyzing", undefined, { progress: 25 });
+    setStage("analyzing");
 
     const enrichedDigests: (ContentDigest | EnrichedContentDigest)[] = [];
 
@@ -781,6 +864,7 @@ async function processGenerationJob(jobId: string, programId: string, instructio
     checkDeadline("generating");
     await endStep(jobId, "ok", `digests=${enrichedDigests.length}${clipDistributionPlan ? ` clips=${clipDistributionPlan.totalClips}` : ""}`);
     await beginStep(jobId, "generating", `provider=${process.env.LLM_PROVIDER || "stub"} weeks=${effectiveWeeks}`, { progress: 45 });
+    setStage("generating");
 
     // Build a single flat content grouping (clustering removed — LLM handles grouping)
     const allContentIds = [
@@ -881,6 +965,7 @@ async function processGenerationJob(jobId: string, programId: string, instructio
 
     await endStep(jobId, "ok", `llm_elapsed=${llmTimer.elapsed()}ms`);
     await beginStep(jobId, "validating", undefined, { progress: 85 });
+    setStage("validating");
 
     // Validate
     let validated = ProgramDraftSchema.safeParse(draft);
@@ -940,6 +1025,7 @@ async function processGenerationJob(jobId: string, programId: string, instructio
 
     await endStep(jobId, "ok", qualityWarnings.length > 0 ? `quality_warnings=${qualityWarnings.length}` : undefined);
     await beginStep(jobId, "persisting", undefined, { progress: 90 });
+    setStage("persisting");
 
     // ── Step 4: Persist (90-100%) ──
     checkDeadline("persisting");
@@ -1071,6 +1157,7 @@ async function processGenerationJob(jobId: string, programId: string, instructio
       checkDeadline("generating_skin");
       await endStep(jobId, "ok", `sessions=${sessionCount} actions=${actionCount} composites=${compositeCount}`);
       await beginStep(jobId, "generating_skin", undefined, { progress: 93 });
+      setStage("generating_skin");
 
       try {
         const skinTokens = await generateSkinFromVibe({

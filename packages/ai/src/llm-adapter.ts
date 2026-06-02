@@ -1065,24 +1065,59 @@ async function callAnthropic(input: GenerateInput): Promise<string> {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error("ANTHROPIC_API_KEY not set");
 
-  const res = await fetchWithTimeout("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": key,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
-      max_tokens: 32768,
-      messages: [{ role: "user", content: buildPrompt(input) }],
-    }),
-  }, GENERATION_TIMEOUT_MS);
+  // DIAGNOSTIC INSTRUMENTATION (2026-06-02): the harness observed the
+  // Anthropic fetch aborting at ~153s with bare "This operation was aborted"
+  // despite GENERATION_TIMEOUT_MS=600_000. Cause unknown — could be Anthropic
+  // LB drop, Vercel function instance recycling, or an AbortSignal injected
+  // elsewhere. This wrapper walks the err.cause chain so future aborts surface
+  // the underlying socket/error code (UND_ERR_SOCKET, ECONNRESET, etc.) and
+  // we can pick the right targeted fix in Phase 2. No behavior change vs the
+  // bare fetchWithTimeout — same timeout, same error rethrow.
+  const llmStart = Date.now();
+  try {
+    const res = await fetchWithTimeout("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
+        max_tokens: 32768,
+        messages: [{ role: "user", content: buildPrompt(input) }],
+      }),
+    }, GENERATION_TIMEOUT_MS);
 
-  if (!res.ok) throw new Error(`Anthropic API error: ${res.status}`);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const data: any = await res.json();
-  return data.content[0].text;
+    if (!res.ok) {
+      const bodyPreview = await res.text().catch(() => "");
+      throw new Error(`Anthropic API error: ${res.status} ${bodyPreview.slice(0, 200)}`);
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data: any = await res.json();
+    return data.content[0].text;
+  } catch (err) {
+    const elapsedMs = Date.now() - llmStart;
+    // Walk the .cause chain. undici wraps the original socket error inside
+    // .cause; the abort path can nest 2-3 deep. Capture name/code/message at
+    // each level. Avoid logging full message bodies (may include prompt content).
+    const chain: string[] = [];
+    let cur: unknown = err;
+    let depth = 0;
+    while (cur && typeof cur === "object" && depth < 5) {
+      const e = cur as { name?: string; message?: string; code?: string; cause?: unknown };
+      chain.push(
+        `${e.name ?? "?"}${e.code ? `/${e.code}` : ""}: ${(e.message ?? "?").slice(0, 200)}`,
+      );
+      cur = e.cause;
+      depth++;
+    }
+    console.error(
+      `[LLM] Anthropic fetch threw after ${elapsedMs}ms ` +
+        `(GENERATION_TIMEOUT_MS=${GENERATION_TIMEOUT_MS}ms) — cause chain: ${chain.join(" -> ")}`,
+    );
+    throw err;
+  }
 }
 
 async function callOpenAI(input: GenerateInput): Promise<string> {
