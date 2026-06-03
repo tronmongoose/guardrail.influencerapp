@@ -276,7 +276,7 @@ model SessionClip {
   compositeSessionId   String
   compositeSession     CompositeSession @relation(fields: [compositeSessionId], references: [id], onDelete: Cascade)
   youtubeVideoId       String
-  youtubeVideo         YouTubeVideo   @relation(fields: [youtubeVideoId], references: [id])
+  youtubeVideo         YouTubeVideo   @relation(fields: [youtubeVideoId], references: [id], onDelete: Cascade)
   startSeconds         Float?
   endSeconds           Float?
   orderIndex           Int
