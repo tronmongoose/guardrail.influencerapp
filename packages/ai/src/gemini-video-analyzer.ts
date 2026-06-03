@@ -468,7 +468,17 @@ export async function analyzeUploadedVideoWithGemini(
         return validated;
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
-        if (isRecitationError(lastError)) recitationDetected = true;
+        if (isRecitationError(lastError)) {
+          // RECITATION is deterministic per-content — retrying the same full
+          // prompt will fail the same way. Break out of the full-prompt loop
+          // immediately and let the reduced-prompt fallback below take over.
+          // Without this fast-fail, we waste ~4 min on remaining full-prompt
+          // attempts and risk Vercel's maxDuration killing the function
+          // before the reduced prompt even runs.
+          recitationDetected = true;
+          console.warn(`[gemini] upload analysis attempt ${attempt}/${ANALYSIS_MAX_ATTEMPTS} hit RECITATION for "${videoTitle}" — skipping remaining full-prompt attempts`);
+          break;
+        }
         if (attempt < ANALYSIS_MAX_ATTEMPTS) {
           console.warn(`[gemini] upload analysis attempt ${attempt}/${ANALYSIS_MAX_ATTEMPTS} failed for "${videoTitle}": ${lastError.message}`);
           await jitteredBackoff(attempt);
@@ -632,7 +642,12 @@ export async function analyzeVideoWithGemini(
       return finishYouTubeAnalysis(validated);
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
-      if (isRecitationError(lastError)) recitationDetected = true;
+      if (isRecitationError(lastError)) {
+        // Fast-fail on RECITATION — same rationale as the upload path above.
+        recitationDetected = true;
+        console.warn(`[gemini] attempt ${attempt}/${ANALYSIS_MAX_ATTEMPTS} hit RECITATION for "${videoTitle}" — skipping remaining full-prompt attempts`);
+        break;
+      }
       if (attempt < ANALYSIS_MAX_ATTEMPTS) {
         console.warn(`[gemini] attempt ${attempt}/${ANALYSIS_MAX_ATTEMPTS} failed for "${videoTitle}": ${lastError.message}`);
         await jitteredBackoff(attempt);
