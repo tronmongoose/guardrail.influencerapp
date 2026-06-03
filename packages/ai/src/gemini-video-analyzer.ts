@@ -47,6 +47,89 @@ async function jitteredBackoff(attempt: number): Promise<void> {
   await new Promise((r) => setTimeout(r, base + jitter));
 }
 
+/** Detect whether the error came from Gemini's RECITATION filter.
+ * formatGeminiDiagnostics emits `finishReason=RECITATION` into the message,
+ * so we can match on that. RECITATION is deterministic per-content: famous
+ * speeches, song lyrics, branded dialogue. Retrying the same full prompt
+ * always fails the same way, so we switch to a reduced prompt that doesn't
+ * ask for verbatim transcription. */
+function isRecitationError(err: Error | null): boolean {
+  return Boolean(err && err.message.includes("finishReason=RECITATION"));
+}
+
+/** Number of additional attempts after the main loop using the reduced
+ * (no-transcript) prompt when RECITATION was detected. Kept low because
+ * RECITATION is deterministic — if the first reduced attempt fails for some
+ * other reason, the second is unlikely to recover. */
+const REDUCED_PROMPT_ATTEMPTS = 2;
+
+/**
+ * "Reduced" analysis prompt — used as a fallback when the full prompt triggers
+ * Gemini's RECITATION filter (famous speeches, song lyrics, branded content).
+ *
+ * The full prompt asks for `fullTranscript` and per-segment `text`, which
+ * deterministically trips RECITATION on copyrighted material. This reduced
+ * prompt explicitly forbids verbatim transcription — Gemini still produces
+ * the structural metadata (segments, topics, key moments) needed for clip
+ * distribution and lesson generation, just without the literal text.
+ *
+ * Schema-compatible: `fullTranscript` and segment `text` come back as empty
+ * strings; the schema accepts both.
+ */
+function buildVideoAnalysisPromptReduced(videoTitle: string): string {
+  return `You are a video structure extractor. Without transcribing any spoken content, return structured JSON describing the video's segments, topics, and key moments.
+
+VIDEO TITLE: "${videoTitle}"
+
+CRITICAL — DO NOT REPRODUCE COPYRIGHTED CONTENT:
+- DO NOT transcribe what people say. DO NOT quote dialogue.
+- DO NOT reproduce song lyrics or musical content.
+- DESCRIBE what happens, do not quote.
+- Always leave fullTranscript and per-segment text as empty strings.
+
+Return this exact JSON shape (no markdown, no code fences):
+
+{
+  "summary": "2-3 sentence DESCRIPTION of the video's content and purpose. Describe — do not quote.",
+  "fullTranscript": "",
+  "segments": [
+    {
+      "startSeconds": 0,
+      "endSeconds": 45,
+      "text": "",
+      "topic": "Brief topic label for this segment (description, not a quote)",
+      "speakerName": "Name of speaker if identifiable, else null"
+    }
+  ],
+  "topics": [
+    {
+      "label": "Topic name (description, not a quote)",
+      "startSeconds": 0,
+      "endSeconds": 225,
+      "subtopics": ["sub-topic label", "another"]
+    }
+  ],
+  "keyMoments": [
+    {
+      "timestampSeconds": 135,
+      "description": "What makes this moment notable — describe, do not quote",
+      "significance": "high",
+      "type": "insight"
+    }
+  ],
+  "people": [{"name": "Person name", "role": "host"}],
+  "durationSeconds": 1234
+}
+
+REQUIREMENTS:
+- segments: Break into natural topic boundaries every ~30-90s. Leave text as "".
+- topics: 1-3 for ≤8min videos, 1-3 for 8-20min, 2-5 for 20+min.
+- keyMoments: type ∈ {insight, example, exercise, transition, summary}, significance ∈ {high, medium, low}.
+- Be precise with timestamps — used for clip generation.
+
+Return ONLY the JSON object.`;
+}
+
 function buildVideoAnalysisPrompt(videoTitle: string): string {
   return `You are an expert video content analyst. Analyze this video thoroughly and return structured JSON.
 
@@ -345,6 +428,7 @@ export async function analyzeUploadedVideoWithGemini(
 
     const timeoutMs = getGeminiAnalysisTimeoutMs(durationSeconds);
     let lastError: Error | null = null;
+    let recitationDetected = false;
     for (let attempt = 1; attempt <= ANALYSIS_MAX_ATTEMPTS; attempt++) {
       try {
         const res = await fetchWithTimeout(
@@ -384,13 +468,74 @@ export async function analyzeUploadedVideoWithGemini(
         return validated;
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
+        if (isRecitationError(lastError)) recitationDetected = true;
         if (attempt < ANALYSIS_MAX_ATTEMPTS) {
           console.warn(`[gemini] upload analysis attempt ${attempt}/${ANALYSIS_MAX_ATTEMPTS} failed for "${videoTitle}": ${lastError.message}`);
           await jitteredBackoff(attempt);
         }
       }
     }
-    throw new Error(`Gemini upload analysis failed after ${ANALYSIS_MAX_ATTEMPTS} attempts for "${videoTitle}": ${lastError?.message ?? "unknown error"}`);
+
+    // Tier 2 fallback: if any of the 3 full-prompt attempts hit RECITATION,
+    // retry with a reduced prompt that explicitly forbids verbatim
+    // transcription. Recovers content like TED talks and dance tutorials
+    // with copyrighted music — without this fallback those videos fall all
+    // the way through to the title-only stub digest, which kills downstream
+    // lesson quality.
+    if (recitationDetected) {
+      console.warn(`[gemini] RECITATION detected for "${videoTitle}" — retrying with reduced (no-transcript) prompt`);
+      const reducedBody = {
+        ...requestBody,
+        contents: [
+          {
+            parts: [
+              { fileData: { fileUri, mimeType } },
+              { text: buildVideoAnalysisPromptReduced(videoTitle) },
+            ],
+          },
+        ],
+      };
+      for (let attempt = 1; attempt <= REDUCED_PROMPT_ATTEMPTS; attempt++) {
+        try {
+          const res = await fetchWithTimeout(
+            `${GEMINI_API_BASE}/models/${model}:generateContent?key=${apiKey}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(reducedBody),
+            },
+            timeoutMs,
+          );
+          if (!res.ok) {
+            const errorBody = await res.text().catch(() => "");
+            throw new Error(`Gemini API error: ${res.status} - ${errorBody}`);
+          }
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const data: any = await res.json();
+          const candidates = data.candidates;
+          if (!candidates || candidates.length === 0) {
+            throw new Error(`Gemini returned no candidates${formatGeminiDiagnostics(data)}`);
+          }
+          const rawText = candidates[0].content?.parts?.[0]?.text;
+          if (!rawText) {
+            throw new Error(`Gemini returned empty response${formatGeminiDiagnostics(data)}`);
+          }
+          const json = extractJSON(rawText);
+          const parsed = JSON.parse(json);
+          const validated = VideoAnalysisOutputSchema.parse(parsed);
+          console.info(
+            `[gemini] Reduced-prompt analysis recovered "${videoTitle}" on attempt ${attempt}/${REDUCED_PROMPT_ATTEMPTS}: ${validated.segments.length} segments, ${validated.topics.length} topics (transcript omitted by design)`,
+          );
+          return validated;
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error(String(err));
+          console.warn(`[gemini] reduced-prompt attempt ${attempt}/${REDUCED_PROMPT_ATTEMPTS} failed for "${videoTitle}": ${lastError.message}`);
+          if (attempt < REDUCED_PROMPT_ATTEMPTS) await jitteredBackoff(attempt);
+        }
+      }
+    }
+
+    throw new Error(`Gemini upload analysis failed after ${ANALYSIS_MAX_ATTEMPTS} attempts${recitationDetected ? ` + ${REDUCED_PROMPT_ATTEMPTS} reduced-prompt attempts` : ""} for "${videoTitle}": ${lastError?.message ?? "unknown error"}`);
   } finally {
     // Always clean up the uploaded file
     if (fileName && apiKey) {
@@ -446,6 +591,7 @@ export async function analyzeVideoWithGemini(
   // those recover by attempt 2 per corpus run 2026-05-31). On the final
   // attempt's failure the error message includes finishReason/promptFeedback.
   let lastError: Error | null = null;
+  let recitationDetected = false;
   for (let attempt = 1; attempt <= ANALYSIS_MAX_ATTEMPTS; attempt++) {
     try {
       const res = await fetchWithTimeout(
@@ -486,13 +632,71 @@ export async function analyzeVideoWithGemini(
       return finishYouTubeAnalysis(validated);
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
+      if (isRecitationError(lastError)) recitationDetected = true;
       if (attempt < ANALYSIS_MAX_ATTEMPTS) {
         console.warn(`[gemini] attempt ${attempt}/${ANALYSIS_MAX_ATTEMPTS} failed for "${videoTitle}": ${lastError.message}`);
         await jitteredBackoff(attempt);
       }
     }
   }
-  throw new Error(`Gemini analysis failed after ${ANALYSIS_MAX_ATTEMPTS} attempts for "${videoTitle}": ${lastError?.message ?? "unknown error"}`);
+
+  // Tier 2 fallback: reduced (no-transcript) prompt for RECITATION-blocked content.
+  // See the equivalent block in analyzeUploadedVideoWithGemini for full rationale.
+  if (recitationDetected) {
+    console.warn(`[gemini] RECITATION detected for "${videoTitle}" — retrying with reduced (no-transcript) prompt`);
+    const reducedBody = {
+      ...requestBody,
+      contents: [
+        {
+          parts: [
+            { fileData: { fileUri: youtubeUrl } },
+            { text: buildVideoAnalysisPromptReduced(videoTitle) },
+          ],
+        },
+      ],
+    };
+    for (let attempt = 1; attempt <= REDUCED_PROMPT_ATTEMPTS; attempt++) {
+      try {
+        const res = await fetchWithTimeout(
+          `${GEMINI_API_BASE}/models/${model}:generateContent?key=${apiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(reducedBody),
+          },
+          timeoutMs,
+        );
+        if (!res.ok) {
+          const errorBody = await res.text().catch(() => "");
+          throw new Error(`Gemini API error: ${res.status} - ${errorBody}`);
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const data: any = await res.json();
+        const candidates = data.candidates;
+        if (!candidates || candidates.length === 0) {
+          throw new Error(`Gemini returned no candidates${formatGeminiDiagnostics(data)}`);
+        }
+        const rawText = candidates[0].content?.parts?.[0]?.text;
+        if (!rawText) {
+          throw new Error(`Gemini returned empty response${formatGeminiDiagnostics(data)}`);
+        }
+        const json = extractJSON(rawText);
+        const parsed = JSON.parse(json);
+        const validated = VideoAnalysisOutputSchema.parse(parsed);
+        console.info(
+          `[gemini] Reduced-prompt analysis recovered "${videoTitle}" on attempt ${attempt}/${REDUCED_PROMPT_ATTEMPTS}: ${validated.segments.length} segments, ${validated.topics.length} topics (transcript omitted by design)`,
+        );
+        // eslint-disable-next-line @typescript-eslint/no-use-before-define
+        return finishYouTubeAnalysis(validated);
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        console.warn(`[gemini] reduced-prompt attempt ${attempt}/${REDUCED_PROMPT_ATTEMPTS} failed for "${videoTitle}": ${lastError.message}`);
+        if (attempt < REDUCED_PROMPT_ATTEMPTS) await jitteredBackoff(attempt);
+      }
+    }
+  }
+
+  throw new Error(`Gemini analysis failed after ${ANALYSIS_MAX_ATTEMPTS} attempts${recitationDetected ? ` + ${REDUCED_PROMPT_ATTEMPTS} reduced-prompt attempts` : ""} for "${videoTitle}": ${lastError?.message ?? "unknown error"}`);
 }
 
 function finishYouTubeAnalysis(validated: VideoAnalysisOutput): VideoAnalysisOutput {
