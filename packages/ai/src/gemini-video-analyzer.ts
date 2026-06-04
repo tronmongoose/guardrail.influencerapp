@@ -486,14 +486,20 @@ export async function analyzeUploadedVideoWithGemini(
       }
     }
 
-    // Tier 2 fallback: if any of the 3 full-prompt attempts hit RECITATION,
-    // retry with a reduced prompt that explicitly forbids verbatim
-    // transcription. Recovers content like TED talks and dance tutorials
-    // with copyrighted music — without this fallback those videos fall all
-    // the way through to the title-only stub digest, which kills downstream
-    // lesson quality.
-    if (recitationDetected) {
-      console.warn(`[gemini] RECITATION detected for "${videoTitle}" — retrying with reduced (no-transcript) prompt`);
+    // Tier 2 fallback: if the full-prompt loop exhausted, retry with the
+    // reduced prompt. RECITATION is the primary target (deterministic, common
+    // for famous content), but the reduced prompt also recovers other modes
+    // — schema-validation failures on verbose JSON, finishReason=STOP with
+    // truncated output, etc. — that can't be told apart from transient
+    // failures by error message alone. We always have lastError set here
+    // (loop didn't return), so the gate is "loop exhausted" rather than
+    // "RECITATION was seen". Cost: at most 2 extra Gemini calls per video,
+    // bounded by REDUCED_PROMPT_ATTEMPTS.
+    if (lastError) {
+      const reason = recitationDetected
+        ? "RECITATION on first attempt"
+        : `full-prompt loop exhausted — last error: ${lastError.message.slice(0, 120)}`;
+      console.warn(`[gemini] ${reason} for "${videoTitle}" — retrying with reduced (no-transcript) prompt`);
       const reducedBody = {
         ...requestBody,
         contents: [
@@ -655,10 +661,14 @@ export async function analyzeVideoWithGemini(
     }
   }
 
-  // Tier 2 fallback: reduced (no-transcript) prompt for RECITATION-blocked content.
-  // See the equivalent block in analyzeUploadedVideoWithGemini for full rationale.
-  if (recitationDetected) {
-    console.warn(`[gemini] RECITATION detected for "${videoTitle}" — retrying with reduced (no-transcript) prompt`);
+  // Tier 2 fallback (parallel to upload path): try reduced prompt on any
+  // exhausted full-prompt loop, not just RECITATION. See equivalent block in
+  // analyzeUploadedVideoWithGemini for full rationale.
+  if (lastError) {
+    const reason = recitationDetected
+      ? "RECITATION on first attempt"
+      : `full-prompt loop exhausted — last error: ${lastError.message.slice(0, 120)}`;
+    console.warn(`[gemini] ${reason} for "${videoTitle}" — retrying with reduced (no-transcript) prompt`);
     const reducedBody = {
       ...requestBody,
       contents: [
