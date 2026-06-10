@@ -26,6 +26,7 @@ import { useGenerationSteps } from "@/components/generation/useGenerationSteps";
 import { GenerationSteps } from "@/components/generation/GenerationSteps";
 import { useGeneration } from "@/components/generation/GenerationProvider";
 import { createStripeLoginLink } from "@/app/actions/stripe";
+import { FeedbackWidget } from "@/components/feedback/FeedbackWidget";
 
 interface StripeConnectStatus {
   connected: boolean;
@@ -424,36 +425,37 @@ export default function ProgramEditPage() {
   }, [program, genStatusChecked, asyncGenerating, lastGenError, searchParams]);
 
   // Returning from /onboarding/upgrade with platform_access=success means the
-  // creator already pressed Generate once in the wizard. Auto-fire generation
-  // for them instead of forcing a redo. Runs exactly once per page load.
+  // creator already pressed Publish once and got bounced by the platform-access
+  // gate. Auto-fire publish for them instead of forcing a redo. Runs exactly
+  // once per page load. Skip when the program hasn't been generated yet — the
+  // gate isn't reachable from the wizard anymore, so an unauth'd ?platform_access=success
+  // on an empty program means something else is going on.
   useEffect(() => {
     if (!platformAccessSuccess) return;
     if (platformAccessAutoFiredRef.current) return;
     if (!program || !genStatusChecked) return;
     if (asyncGenerating || lastGenError) return;
-    if (program.weeks.length > 0) return;
+    if (program.weeks.length === 0) return;
 
     // Lock dismissal + close the wizard SYNCHRONOUSLY before any async work
     // or URL mutation. Without this, the replaceState below strips
     // ?platform_access=success → useSearchParams updates → the auto-show
     // effect re-runs with all guards failing (ref still false because Next 15
-    // SSRs this Client Component with empty searchParams; lastGenError still
-    // null; asyncGenerating still false because generateStructure's fetch
-    // hasn't resolved) → wizard opens at currentStep=0. Three prior fixes
-    // missed this; the ref guard is the only one that survives every race.
+    // SSRs this Client Component with empty searchParams) → wizard opens at
+    // currentStep=0. Three prior fixes missed this; the ref guard is the
+    // only one that survives every race.
     wizardDismissedRef.current = true;
     setShowWizard(false);
 
     platformAccessAutoFiredRef.current = true;
-    setActiveTab("curriculum");
-    generateStructure();
+    publishProgram();
 
     // Clean the URL so a manual refresh doesn't re-fire.
     const url = new URL(window.location.href);
     url.searchParams.delete("platform_access");
     url.searchParams.delete("wizard");
     window.history.replaceState({}, "", url.pathname + (url.search ? url.search : ""));
-    // generateStructure is stable for this purpose; keep the dep list focused
+    // publishProgram is stable for this purpose; keep the dep list focused
     // on the trigger inputs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [platformAccessSuccess, program, genStatusChecked, asyncGenerating, lastGenError]);
@@ -505,10 +507,12 @@ export default function ProgramEditPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        // Handle platform access gate — redirect to upgrade page with promo code input
+        // Handle platform access gate — redirect to upgrade page with promo code input.
+        // Pass `from=${id}` so the upgrade page can route the creator back to this
+        // program after payment/promo, where the auto-fire effect re-runs publish.
         if (data.code === "PLATFORM_ACCESS_REQUIRED") {
           setPublishing(false);
-          router.push("/onboarding/upgrade");
+          router.push(`/onboarding/upgrade?from=${id}`);
           return;
         }
         // Handle Stripe requirement for paid programs
@@ -1981,6 +1985,7 @@ export default function ProgramEditPage() {
     )}
 
     </div>
+    <FeedbackWidget />
     </>
   );
 }

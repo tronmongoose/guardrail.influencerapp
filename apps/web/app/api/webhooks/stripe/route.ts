@@ -42,22 +42,55 @@ export async function POST(req: NextRequest) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
 
-      // Platform access payment (one-time creator fee)
-      if (session.metadata?.type === "platform_access") {
+      // Per-program platform fee (NEW path)
+      if (session.metadata?.type === "program_fee") {
         const userId = session.metadata.userId;
-        if (userId) {
-          // Raw SQL so new columns work before Prisma client restart
-          await prisma.$executeRaw`
-            UPDATE "User"
-            SET "platformPaymentComplete" = true, "platformStripeSessionId" = ${session.id}
-            WHERE id = ${userId}
-          `;
-          logger.info({
-            operation: "stripe.webhook.platform_access_granted",
-            userId,
+        const programId = session.metadata.programId;
+        if (!userId || !programId) {
+          logger.warn({
+            operation: "stripe.webhook.program_fee_missing_metadata",
             sessionId: session.id,
           });
+          break;
         }
+        try {
+          await prisma.program.update({
+            where: { id: programId },
+            data: {
+              platformFeePaid: true,
+              platformFeeSessionId: session.id,
+              platformFeePaidAt: new Date(),
+            },
+          });
+          logger.info({
+            operation: "stripe.webhook.program_fee_paid",
+            userId,
+            programId,
+            sessionId: session.id,
+          });
+        } catch (err) {
+          // P2002 = unique violation on platformFeeSessionId → webhook replay, safe to no-op
+          logger.info({
+            operation: "stripe.webhook.program_fee_replay_or_error",
+            userId,
+            programId,
+            sessionId: session.id,
+            err: err instanceof Error ? err.message : String(err),
+          });
+        }
+        break;
+      }
+
+      // Legacy account-level platform access — kept as a logged no-op for the
+      // deploy window so any in-flight checkouts don't error at the webhook.
+      // Existing creators with platformPaymentComplete=true stay grandfathered;
+      // there's nothing to update here. Remove this branch in a follow-up.
+      if (session.metadata?.type === "platform_access") {
+        logger.info({
+          operation: "stripe.webhook.legacy_platform_access_noop",
+          userId: session.metadata.userId,
+          sessionId: session.id,
+        });
         break;
       }
 

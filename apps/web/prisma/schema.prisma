@@ -85,6 +85,12 @@ model Program {
   status           ProgramStatus @default(DRAFT)  // Deprecated: use `published` instead. Remove in next migration.
   stripeProductId  String?
   stripePriceId    String?
+
+  // Per-program $99 platform fee. Set on Stripe webhook (program_fee) or promo redemption.
+  platformFeePaid       Boolean   @default(false)
+  platformFeeSessionId  String?   @unique
+  platformFeePaidAt     DateTime?
+
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 

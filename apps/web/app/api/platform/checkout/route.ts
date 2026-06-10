@@ -3,16 +3,7 @@ import { getOrCreateUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
 import { logger } from "@/lib/logger";
-
-type AccessRow = { platformPromoGranted: boolean; platformPaymentComplete: boolean };
-
-async function getPlatformAccess(userId: string): Promise<AccessRow> {
-  const rows = await prisma.$queryRaw<AccessRow[]>`
-    SELECT "platformPromoGranted", "platformPaymentComplete"
-    FROM "User" WHERE id = ${userId} LIMIT 1
-  `;
-  return rows[0] ?? { platformPromoGranted: false, platformPaymentComplete: false };
-}
+import { isPlatformFeeExempt } from "@/lib/platform-fee";
 
 export async function POST(req: Request) {
   try {
@@ -21,20 +12,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Use raw SQL so new columns work before Prisma client restart
-    const access = await getPlatformAccess(user.id);
-
-    // Parse body once: amount (optional) + from (optional in-progress programId)
-    // First-time creators hit this route via the wizard's PLATFORM_ACCESS_REQUIRED
-    // detour; honoring `from` routes them back to their in-progress program
-    // instead of dumping them on /dashboard.
-    let bodyAmount: number | null = null;
+    // Parse body: from (REQUIRED programId). Per-program billing means every
+    // payment attaches to a specific Program. The fee amount is locked to
+    // PLATFORM_ACCESS_FEE_CENTS server-side — clients can't override it.
     let fromProgramId: string | null = null;
     try {
       const body = await req.json();
-      if (body.amount && typeof body.amount === "number" && body.amount > 0) {
-        bodyAmount = Math.round(body.amount * 100); // convert dollars to cents
-      }
       if (typeof body.from === "string" && body.from.length > 0) {
         fromProgramId = body.from;
       }
@@ -42,30 +25,41 @@ export async function POST(req: Request) {
       // no body is fine
     }
 
-    // platform_access=success triggers the edit page's auto-fire generation
-    // effect. Without it, the free-grant + already-has-access return paths
-    // would land the creator back in the wizard with no auto-start, exactly
-    // mirroring the original "Generate brings me back to step 1" bug for
-    // promo/free creators.
-    const accessRedirect = fromProgramId
-      ? `/programs/${fromProgramId}/edit?wizard=true&platform_access=success`
-      : "/dashboard";
+    if (!fromProgramId) {
+      return NextResponse.json(
+        { error: "Missing program context. Open the program edit page and click Publish to start checkout." },
+        { status: 400 }
+      );
+    }
 
-    // Already has access
-    if (access.platformPromoGranted || access.platformPaymentComplete) {
+    // Authorize: program must exist and be owned by the requesting user
+    const program = await prisma.program.findUnique({
+      where: { id: fromProgramId },
+      select: { id: true, creatorId: true, platformFeePaid: true },
+    });
+    if (!program || program.creatorId !== user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const accessRedirect = `/programs/${fromProgramId}/edit?wizard=true&platform_access=success`;
+
+    // Already paid for this program OR creator is exempt — short-circuit.
+    const grandfathered = user.platformPaymentComplete || user.platformPromoGranted;
+    const exempt = isPlatformFeeExempt(user.email) || grandfathered;
+    if (program.platformFeePaid || exempt) {
       return NextResponse.json({ redirectUrl: accessRedirect });
     }
 
-    const envFeeCents = parseInt(process.env.PLATFORM_ACCESS_FEE_CENTS ?? "0", 10);
-    const feeCents = bodyAmount ?? envFeeCents;
+    const feeCents = parseInt(process.env.PLATFORM_ACCESS_FEE_CENTS ?? "0", 10);
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
-    // If fee is 0 or Stripe not configured, grant access immediately via raw SQL
+    // If fee is 0 or Stripe not configured, flip the program flag directly
     if (feeCents === 0 || !isStripeConfigured()) {
-      await prisma.$executeRaw`
-        UPDATE "User" SET "platformPaymentComplete" = true WHERE id = ${user.id}
-      `;
-      logger.info({ operation: "platform.checkout.free_grant", userId: user.id });
+      await prisma.program.update({
+        where: { id: fromProgramId },
+        data: { platformFeePaid: true, platformFeePaidAt: new Date() },
+      });
+      logger.info({ operation: "platform.checkout.free_grant", userId: user.id, programId: fromProgramId });
       return NextResponse.json({ redirectUrl: accessRedirect });
     }
 
@@ -74,35 +68,34 @@ export async function POST(req: Request) {
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       payment_method_types: ["card"],
+      allow_promotion_codes: true,
       line_items: [
         {
           price_data: {
             currency: "usd",
             unit_amount: feeCents,
             product_data: {
-              name: "Journeyline Creator Access",
-              description: "One-time fee for full creator access to Journeyline",
+              name: "Journeyline Program Publish Fee",
+              description: "One-time fee to publish this program",
             },
           },
           quantity: 1,
         },
       ],
-      success_url: fromProgramId
-        ? `${appUrl}/programs/${fromProgramId}/edit?wizard=true&platform_access=success`
-        : `${appUrl}/dashboard?platform_access=success`,
-      cancel_url: fromProgramId
-        ? `${appUrl}/onboarding/upgrade?from=${fromProgramId}`
-        : `${appUrl}/onboarding/upgrade`,
+      success_url: `${appUrl}/programs/${fromProgramId}/edit?wizard=true&platform_access=success`,
+      cancel_url: `${appUrl}/onboarding/upgrade?from=${fromProgramId}`,
       customer_email: user.email,
       metadata: {
-        type: "platform_access",
+        type: "program_fee",
         userId: user.id,
+        programId: fromProgramId,
       },
     });
 
     logger.info({
       operation: "platform.checkout.session_created",
       userId: user.id,
+      programId: fromProgramId,
       sessionId: session.id,
       feeCents,
     });

@@ -5,8 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { Spinner } from "@/components/ui/spinner";
 
-const PRESET_PRICES = [25, 50, 100, 500];
-
 const FEATURES = [
   "Turn your videos into structured weekly programs",
   "Built-in payments, directly into your account — keep 100% of every sale",
@@ -33,42 +31,17 @@ function UpgradePageInner() {
   // in-progress program after access is granted instead of dumping them
   // on /dashboard.
   const fromProgramId = searchParams.get("from");
-  // platform_access=success is what the edit page watches for to auto-fire
-  // generation. The promo path was missing this param entirely, so promo
-  // creators always landed back in the wizard with no auto-start.
-  const successDestination = fromProgramId
-    ? `/programs/${fromProgramId}/edit?wizard=true&platform_access=success`
-    : "/dashboard";
   const { isLoaded, isSignedIn } = useUser();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedPrice, setSelectedPrice] = useState<number | null>(null);
-  const [customPrice, setCustomPrice] = useState("");
-
-  // Promo code state
-  const [showPromo, setShowPromo] = useState(false);
-  const [promoCode, setPromoCode] = useState("");
-  const [promoLoading, setPromoLoading] = useState(false);
-  const [promoError, setPromoError] = useState<string | null>(null);
 
   const envFeeCents = parseInt(process.env.NEXT_PUBLIC_PLATFORM_ACCESS_FEE_CENTS ?? "0", 10);
   const isFree = envFeeCents === 0;
+  const feeDollars = Math.round(envFeeCents / 100);
 
-  const chosenDollars = isFree
-    ? 0
-    : selectedPrice !== null
-    ? selectedPrice
-    : customPrice !== ""
-    ? parseFloat(customPrice) || null
-    : null;
-
-  const buttonLabel = (() => {
-    if (isFree) return "Get Started Free";
-    if (chosenDollars && chosenDollars > 0) return `Pay $${chosenDollars} & Get Started`;
-    return "Select an amount to continue";
-  })();
-
-  const isButtonDisabled = loading || (!isFree && (!chosenDollars || chosenDollars <= 0));
+  const buttonLabel = isFree
+    ? "Get Started Free"
+    : `Pay $${feeDollars} to publish this program`;
 
   const handleGetStarted = async () => {
     if (!isSignedIn) {
@@ -81,12 +54,6 @@ function UpgradePageInner() {
 
     try {
       const body: Record<string, unknown> = {};
-      if (!isFree && chosenDollars && chosenDollars > 0) {
-        body.amount = chosenDollars;
-      }
-      // Send `from` so the server can route the redirectUrl (free grant) and
-      // Stripe success_url (paid) back to the in-progress wizard rather than
-      // dumping the creator on /dashboard.
       if (fromProgramId) {
         body.from = fromProgramId;
       }
@@ -119,38 +86,6 @@ function UpgradePageInner() {
     }
   };
 
-  const handleRedeemPromo = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isSignedIn) {
-      router.push("/sign-in");
-      return;
-    }
-
-    setPromoLoading(true);
-    setPromoError(null);
-
-    try {
-      const res = await fetch("/api/platform/redeem-promo", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: promoCode }),
-      });
-
-      const data: { success?: boolean; error?: string } = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Invalid promo code");
-      }
-
-      // Access granted — back to the program if we came from a wizard,
-      // otherwise default to the dashboard.
-      window.location.href = successDestination;
-    } catch (err) {
-      setPromoError(err instanceof Error ? err.message : "Something went wrong");
-      setPromoLoading(false);
-    }
-  };
-
   if (!isLoaded) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
@@ -174,55 +109,14 @@ function UpgradePageInner() {
 
           {/* Heading */}
           <div className="space-y-2">
-            <h1 className="text-2xl font-bold text-gray-900">Unlock Journeyline</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Publish your Journeyline</h1>
+            {!isFree && (
+              <p className="text-4xl font-bold text-gray-900 pt-2">${feeDollars}</p>
+            )}
             <p className="text-sm text-gray-500">
-              One-time payment to create and publish your programs to learners around the world.
+              One-time fee to publish this program to learners around the world.
             </p>
           </div>
-
-          {/* Price picker */}
-          {!isFree && (
-            <div className="space-y-3">
-              <p className="text-sm font-medium text-gray-700 text-left">Choose your amount</p>
-              <div className="grid grid-cols-4 gap-2">
-                {PRESET_PRICES.map((price) => (
-                  <button
-                    key={price}
-                    type="button"
-                    onClick={() => {
-                      setSelectedPrice(price);
-                      setCustomPrice("");
-                    }}
-                    className={`py-2.5 rounded-lg border text-sm font-semibold transition-colors ${
-                      selectedPrice === price
-                        ? "bg-neon-cyan border-neon-cyan text-surface-dark"
-                        : "border-gray-200 text-gray-700 hover:border-gray-400"
-                    }`}
-                  >
-                    ${price}
-                  </button>
-                ))}
-              </div>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
-                <input
-                  type="number"
-                  min="1"
-                  placeholder="Other amount"
-                  value={customPrice}
-                  onChange={(e) => {
-                    setCustomPrice(e.target.value);
-                    setSelectedPrice(null);
-                  }}
-                  className={`w-full pl-7 pr-3 py-2.5 rounded-lg border text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-neon-cyan/40 ${
-                    customPrice !== "" && selectedPrice === null
-                      ? "border-neon-cyan"
-                      : "border-gray-200"
-                  }`}
-                />
-              </div>
-            </div>
-          )}
 
           {/* Features */}
           <ul className="text-sm text-gray-600 space-y-2 text-left">
@@ -244,7 +138,7 @@ function UpgradePageInner() {
           {/* CTA */}
           <button
             onClick={handleGetStarted}
-            disabled={isButtonDisabled}
+            disabled={loading}
             className="w-full btn-neon py-3 rounded-xl text-surface-dark font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {loading ? (
@@ -261,52 +155,9 @@ function UpgradePageInner() {
             <p className="text-sm text-red-500">{error}</p>
           )}
 
-          {/* Promo code section */}
-          <div className="border-t border-gray-100 pt-4">
-            {!showPromo ? (
-              <button
-                type="button"
-                onClick={() => setShowPromo(true)}
-                className="text-xs text-gray-400 hover:text-gray-600 underline transition"
-              >
-                Have a promo code?
-              </button>
-            ) : (
-              <form onSubmit={handleRedeemPromo} className="space-y-2">
-                <p className="text-xs font-medium text-gray-600 text-left">Enter promo code</p>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={promoCode}
-                    onChange={(e) => {
-                      setPromoCode(e.target.value.toUpperCase());
-                      setPromoError(null);
-                    }}
-                    placeholder="e.g. JOURNEY"
-                    autoFocus
-                    className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-sm font-mono uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-neon-cyan/40 focus:border-neon-cyan"
-                  />
-                  <button
-                    type="submit"
-                    disabled={promoLoading || !promoCode.trim()}
-                    className="px-4 py-2 rounded-lg bg-neon-cyan text-surface-dark text-sm font-semibold disabled:opacity-50 flex items-center gap-1.5 transition-opacity"
-                  >
-                    {promoLoading ? <Spinner size="sm" color="pink" /> : "Apply"}
-                  </button>
-                </div>
-                {promoError && (
-                  <p className="text-xs text-red-500 text-left">{promoError}</p>
-                )}
-                <button
-                  type="button"
-                  onClick={() => { setShowPromo(false); setPromoCode(""); setPromoError(null); }}
-                  className="text-xs text-gray-400 hover:text-gray-500 transition"
-                >
-                  Cancel
-                </button>
-              </form>
-            )}
-          </div>
+          <p className="text-xs text-gray-400 pt-2">
+            Have a discount code? Apply it on the next page at checkout.
+          </p>
         </div>
       </div>
     </div>
