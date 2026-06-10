@@ -735,7 +735,7 @@ REFLECT RULE:
       : "";
 
     const distributionRule = hasPlan
-      ? `2. Follow the VIDEO ASSIGNMENT PLAN exactly — clip assignments are pre-computed and mandatory. Do NOT change youtubeVideoId, startSeconds, or endSeconds values. You may only add chapterTitle, chapterDescription, transitionType, and overlay details. EVERY chapterTitle and chapterDescription MUST describe what actually happens in that clip's timestamped transcript excerpt — never the source video's title, never an adjacent clip's content, never a guess. **NEVER UNDERSELL**: if the clip range spans multiple distinct exercises, topics, sub-topics, or segments in the source, the chapterTitle MUST name them all (or summarize them collectively — e.g., "Press, Cable Fly, Chest Fly, and Decline Crossover" or "All four chest exercises"). It is wrong to title a multi-topic clip after only its first topic. The chapterDescription must enumerate every distinct activity inside the clip's time range — anything visible in the transcript excerpts is in-scope and must be reflected.`
+      ? `2. Follow the VIDEO ASSIGNMENT PLAN exactly — clip assignments are pre-computed and mandatory. Do NOT change youtubeVideoId, startSeconds, or endSeconds values. You may only add chapterTitle, chapterDescription, transitionType, and overlay details. EVERY chapterTitle and chapterDescription MUST describe what actually happens in that clip's timestamped transcript excerpt — never the source video's title, never an adjacent clip's content, never a guess. **NEVER UNDERSELL**: if the clip range spans multiple distinct exercises, topics, sub-topics, or segments in the source, the chapterTitle MUST reflect all of them — either by enumerating when short enough (e.g., "Press, Cable Fly, Chest Fly, and Decline Crossover") OR by summarizing collectively when enumeration would exceed the 200-character cap (e.g., "All four chest exercises", "Carbs, protein, fat, and bio-individuality"). It is wrong to title a multi-topic clip after only its first topic. The chapterDescription must enumerate every distinct activity inside the clip's time range — anything visible in the transcript excerpts is in-scope and must be reflected (≤ 2000 characters).`
       : `2. Distribute content logically across all ${input.durationWeeks} lessons (~${contentPerWeek} source(s) per lesson)`;
 
     // When a distribution plan exists, it already pre-computed the correct lesson count.
@@ -803,7 +803,7 @@ CRITICAL REQUIREMENTS:
 ${weekCountRule}
 ${distributionRule}
 3. Each lesson needs an outcome-oriented title (see LESSON TITLE RULES above) and a clear theme building toward the transformation
-4. Each session MUST include keyTakeaways (2-3 items, each ≤ 200 characters) drawn directly from the transcripts
+4. Each session MUST include keyTakeaways (2-3 items, each ≤ 200 characters) drawn directly from the transcripts. Every clip's chapterTitle MUST be ≤ 200 characters; chapterDescription MUST be ≤ 2000 characters. When a clip spans multiple distinct subtopics, summarize them collectively (e.g., "All four chest exercises", "Carbs, protein, fat, and bio-individuality") rather than listing every one — staying under the cap matters more than enumerating.
 5. Each session MUST include a "clips" array with video clip segments
 6. Each session MUST include an "overlays" array (at minimum a TITLE_CARD)
 7. Each session MUST include actions: at least one DO action (imperative verb, physical activity) and EXACTLY ONE REFLECT action whose \`reflectionPrompt\` ends with "?" and is open-ended
@@ -1251,7 +1251,7 @@ Rewrite the JSON above so every \`weeks[]\` entry has \`title\`, \`weekNumber\`,
         max_tokens: 32768,
         messages: [{ role: "user", content: repairPrompt }],
       }),
-    }, LLM_TIMEOUT_MS);
+    }, GENERATION_TIMEOUT_MS);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data: any = await res.json();
     return data.content[0].text;
@@ -1270,7 +1270,7 @@ Rewrite the JSON above so every \`weeks[]\` entry has \`title\`, \`weekNumber\`,
           generationConfig: { responseMimeType: "application/json", temperature: 0.1 },
         }),
       },
-      LLM_TIMEOUT_MS,
+      GENERATION_TIMEOUT_MS,
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data: any = await res.json();
@@ -1290,7 +1290,7 @@ Rewrite the JSON above so every \`weeks[]\` entry has \`title\`, \`weekNumber\`,
       messages: [{ role: "user", content: repairPrompt }],
       max_tokens: 16384, // GPT-4o cap
     }),
-  }, LLM_TIMEOUT_MS);
+  }, GENERATION_TIMEOUT_MS);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data: any = await res.json();
   return data.choices[0].message.content;
