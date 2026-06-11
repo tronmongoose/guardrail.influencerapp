@@ -9,7 +9,6 @@ import {
   ProgramBuilderSplit,
   type WeekData,
   type YouTubeVideoData,
-  type SessionData,
 } from "@/components/builder";
 import { ProgramWizard } from "@/components/wizard/ProgramWizard";
 import { SkinSidebar } from "@/components/skins/SkinSidebar";
@@ -20,7 +19,7 @@ import { tokensToSkin, getTokenCSSVars } from "@/lib/skin-bridge";
 import { getSkinDecorations, getHeadingEffectStyle, resolveColorKey } from "@/lib/skin-decorations";
 import { getPatternCSS } from "@/lib/decoration-patterns";
 import { ProgramOverviewPreview } from "@/components/preview/ProgramOverviewPreview";
-import { SessionPreview } from "@/components/preview/SessionPreview";
+import { LearnerTimeline } from "@/app/learn/[programId]/timeline";
 import { CreatorAvatarUpload } from "@/components/builder/CreatorAvatarUpload";
 import { useGenerationSteps } from "@/components/generation/useGenerationSteps";
 import { GenerationSteps } from "@/components/generation/GenerationSteps";
@@ -60,6 +59,7 @@ interface Program {
   customSkin: { id: string; tokens: unknown } | null;
   transitionMode: "NONE" | "SIMPLE" | "BRANDED";
   creatorAvatarUrl: string | null;
+  creator?: { name: string | null } | null;
   durationWeeks: number;
   pacingMode: "DRIP_BY_WEEK" | "UNLOCK_ON_COMPLETE";
   followUploadOrder: boolean;
@@ -69,6 +69,77 @@ interface Program {
   videos: YouTubeVideoData[];
   drafts: { id: string; status: string; createdAt: string }[];
   weeks: WeekData[];
+}
+
+function toLearnerPreviewProgram(program: Program) {
+  const videoLookup = new Map<string, YouTubeVideoData>();
+  for (const v of program.videos) videoLookup.set(v.videoId, v);
+
+  return {
+    id: program.id,
+    title: program.title,
+    weeks: program.weeks.map((w) => ({
+      id: w.id,
+      title: w.title,
+      weekNumber: w.weekNumber,
+      sessions: w.sessions.map((s) => ({
+        id: s.id,
+        title: s.title,
+        actions: s.actions.map((a) => {
+          const enriched = a.youtubeVideo
+            ? videoLookup.get(a.youtubeVideo.videoId) ?? null
+            : null;
+          return {
+            id: a.id,
+            title: a.title,
+            type: a.type,
+            instructions: a.instructions,
+            reflectionPrompt: a.reflectionPrompt,
+            youtubeVideo: enriched
+              ? {
+                  videoId: enriched.videoId,
+                  title: enriched.title,
+                  url: enriched.url,
+                  muxPlaybackId: enriched.muxPlaybackId ?? null,
+                }
+              : null,
+            progress: [],
+          };
+        }),
+        compositeSession: s.compositeSession
+          ? {
+              clips: s.compositeSession.clips.map((c) => {
+                // Runtime returns the full YouTubeVideo row even though the
+                // TS type narrows it. Cast to read fields not on the narrow type.
+                const yt = c.youtubeVideo as
+                  | (NonNullable<typeof c.youtubeVideo> & {
+                      videoId?: string;
+                      url?: string;
+                    })
+                  | null
+                  | undefined;
+                return {
+                  id: c.id,
+                  startSeconds: c.startSeconds,
+                  endSeconds: c.endSeconds,
+                  chapterTitle: c.chapterTitle,
+                  orderIndex: c.orderIndex,
+                  youtubeVideo: yt
+                    ? {
+                        videoId: yt.videoId ?? "",
+                        title: yt.title ?? null,
+                        url: yt.url ?? "",
+                        muxPlaybackId: yt.muxPlaybackId ?? null,
+                        thumbnailUrl: yt.thumbnailUrl ?? null,
+                      }
+                    : null,
+                };
+              }),
+            }
+          : null,
+      })),
+    })),
+  };
 }
 
 const AMBIENT_HEADERS = [
@@ -115,6 +186,7 @@ function GenerationProgress({ stage, progress, onCancel, creatorEmail, programTi
         steps={stepsData.steps}
         activeStepIndex={stepsData.activeStepIndex}
         displayProgress={stepsData.displayProgress}
+        estimatedMinutesRemaining={stepsData.estimatedMinutesRemaining}
         variant="full"
       />
 
@@ -162,9 +234,8 @@ export default function ProgramEditPage() {
   const wizardDismissedRef = useRef(platformAccessSuccess);
   const platformAccessAutoFiredRef = useRef(false);
   const [activeTab, setActiveTab] = useState<"details" | "curriculum" | "payments" | "preview">("details");
-  const [previewView, setPreviewView] = useState<"overview" | "session">("overview");
   const [previewDeviceMode, setPreviewDeviceMode] = useState<"desktop" | "mobile">("desktop");
-  const [previewSelectedSessionId, setPreviewSelectedSessionId] = useState<string | null>(null);
+  const [previewAudience, setPreviewAudience] = useState<"public" | "learner">("public");
   const [skinSidebarOpen, setSkinSidebarOpen] = useState(true);
   const [hoveredSkinId, setHoveredSkinId] = useState<string | null>(null);
 
@@ -199,6 +270,12 @@ export default function ProgramEditPage() {
   const [lastGenError, setLastGenError] = useState<string | null>(null);
   const [isProgramDetailsOpen, setIsProgramDetailsOpen] = useState(true);
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  const dismissWelcomeModal = useCallback(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("jl.tabsTourSeen", "1");
+    }
+    setShowWelcomeModal(false);
+  }, []);
 
   // Controlled state for program details form fields — synced from `program` whenever it loads/reloads
   const [detailsTitle, setDetailsTitle] = useState("");
@@ -333,7 +410,12 @@ export default function ProgramEditPage() {
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<{ programId: string }>).detail;
-      if (detail.programId === id) load();
+      if (detail.programId !== id) return;
+      load();
+      setActiveTab("preview");
+      if (typeof window !== "undefined" && window.localStorage.getItem("jl.tabsTourSeen") !== "1") {
+        setShowWelcomeModal(true);
+      }
     };
     window.addEventListener("generation-complete", handler);
     return () => window.removeEventListener("generation-complete", handler);
@@ -388,7 +470,10 @@ export default function ProgramEditPage() {
           setAsyncGenerating(false);
           await load();
           showToast("Program generated!", "success");
-          setShowWelcomeModal(true);
+          setActiveTab("preview");
+          if (typeof window !== "undefined" && window.localStorage.getItem("jl.tabsTourSeen") !== "1") {
+            setShowWelcomeModal(true);
+          }
         } else if (data.status === "FAILED") {
           setAsyncGenerating(false);
           setLastGenError(data.error || "Generation failed");
@@ -448,12 +533,33 @@ export default function ProgramEditPage() {
     setShowWizard(false);
 
     platformAccessAutoFiredRef.current = true;
-    publishProgram();
+
+    // Close the success_url-vs-webhook race: synchronously confirm payment
+    // via Stripe before firing publish. Without this, fast redirects can beat
+    // the webhook and bounce the creator back to the paywall they just paid.
+    // Idempotent with the webhook handler (same Program.update + unique
+    // constraint on platformFeeSessionId).
+    const sessionId = searchParams.get("session_id");
+    (async () => {
+      if (sessionId) {
+        try {
+          await fetch("/api/platform/checkout/confirm", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ session_id: sessionId }),
+          });
+        } catch {
+          // Confirm failed — try publish anyway in case webhook fired in parallel.
+        }
+      }
+      publishProgram();
+    })();
 
     // Clean the URL so a manual refresh doesn't re-fire.
     const url = new URL(window.location.href);
     url.searchParams.delete("platform_access");
     url.searchParams.delete("wizard");
+    url.searchParams.delete("session_id");
     window.history.replaceState({}, "", url.pathname + (url.search ? url.search : ""));
     // publishProgram is stable for this purpose; keep the dep list focused
     // on the trigger inputs.
@@ -719,10 +825,6 @@ export default function ProgramEditPage() {
   const previewCssVars = getTokenCSSVars(effectiveTokens);
   const effectiveSkinId = hoveredSkinId && hoveredSkinId !== "auto-generate" && !hoveredSkinId.startsWith("custom:") ? hoveredSkinId : program.skinId;
   const previewDecorations = getSkinDecorations(effectiveSkinId, effectiveTokens);
-  const previewSelectedSession = previewSelectedSessionId
-    ? program.weeks.flatMap((w) => w.sessions).find((s) => s.id === previewSelectedSessionId)
-    : null;
-
   const weekCount = program.weeks.length;
   const sessionCount = program.weeks.reduce((sum, w) => sum + w.sessions.length, 0);
 
@@ -735,7 +837,7 @@ export default function ProgramEditPage() {
           {/* Hero */}
           <div className="relative px-8 pt-8 pb-6 border-b border-gray-800 bg-gradient-to-br from-teal-500/10 via-transparent to-pink-500/10">
             <button
-              onClick={() => setShowWelcomeModal(false)}
+              onClick={dismissWelcomeModal}
               className="absolute top-4 right-4 p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-gray-800 transition"
               aria-label="Close"
             >
@@ -768,7 +870,7 @@ export default function ProgramEditPage() {
           {/* Tab tiles */}
           <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button
-              onClick={() => { setActiveTab("details"); setShowWelcomeModal(false); }}
+              onClick={() => { setActiveTab("details"); dismissWelcomeModal(); }}
               className="text-left p-4 rounded-xl bg-gray-900/60 border border-gray-800 hover:border-teal-500/60 hover:bg-gray-900 transition group"
             >
               <div className="flex items-center gap-2 mb-1.5">
@@ -783,7 +885,7 @@ export default function ProgramEditPage() {
             </button>
 
             <button
-              onClick={() => { setActiveTab("curriculum"); setShowWelcomeModal(false); }}
+              onClick={() => { setActiveTab("curriculum"); dismissWelcomeModal(); }}
               className="text-left p-4 rounded-xl bg-gray-900/60 border border-gray-800 hover:border-teal-500/60 hover:bg-gray-900 transition group"
             >
               <div className="flex items-center gap-2 mb-1.5">
@@ -798,7 +900,7 @@ export default function ProgramEditPage() {
             </button>
 
             <button
-              onClick={() => { setActiveTab("payments"); setShowWelcomeModal(false); }}
+              onClick={() => { setActiveTab("payments"); dismissWelcomeModal(); }}
               className="text-left p-4 rounded-xl bg-gray-900/60 border border-gray-800 hover:border-teal-500/60 hover:bg-gray-900 transition group"
             >
               <div className="flex items-center gap-2 mb-1.5">
@@ -813,7 +915,7 @@ export default function ProgramEditPage() {
             </button>
 
             <button
-              onClick={() => { setActiveTab("preview"); setShowWelcomeModal(false); }}
+              onClick={() => { setActiveTab("preview"); dismissWelcomeModal(); }}
               className="text-left p-4 rounded-xl bg-gray-900/60 border border-gray-800 hover:border-teal-500/60 hover:bg-gray-900 transition group"
             >
               <div className="flex items-center gap-2 mb-1.5">
@@ -831,16 +933,16 @@ export default function ProgramEditPage() {
           {/* Footer */}
           <div className="px-5 pb-5 pt-1 flex flex-col-reverse sm:flex-row gap-2">
             <button
-              onClick={() => setShowWelcomeModal(false)}
+              onClick={() => { setActiveTab("curriculum"); dismissWelcomeModal(); }}
               className="flex-1 px-4 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white border border-gray-800 hover:border-gray-600 transition"
             >
-              I&apos;ll look around
+              Edit the curriculum
             </button>
             <button
-              onClick={() => { setActiveTab("curriculum"); setShowWelcomeModal(false); }}
+              onClick={dismissWelcomeModal}
               className="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold bg-gradient-to-r from-teal-500 to-pink-500 text-white hover:opacity-90 transition shadow-lg shadow-teal-500/10"
             >
-              Start with the curriculum →
+              Got it — show me the preview
             </button>
           </div>
         </div>
@@ -858,7 +960,7 @@ export default function ProgramEditPage() {
 
           {/* Program summary */}
           <div className="flex items-center gap-4 text-sm text-gray-500 mb-6 justify-center flex-wrap">
-            <span><span className="text-gray-900 font-medium">{program.weeks.length}</span> week{program.weeks.length !== 1 ? "s" : ""}</span>
+            <span><span className="text-gray-900 font-medium">{program.weeks.length}</span> lesson{program.weeks.length !== 1 ? "s" : ""}</span>
             <span className="text-gray-200">|</span>
             <span><span className="text-gray-900 font-medium">{program.weeks.reduce((sum, w) => sum + w.sessions.length, 0)}</span> sessions</span>
             <span className="text-gray-200">|</span>
@@ -894,7 +996,7 @@ export default function ProgramEditPage() {
           <div className="bg-gray-50 rounded-lg p-4 mb-6 text-sm">
             <p className="text-gray-900 font-medium mb-2">After publishing</p>
             <p className="text-gray-400 mb-2">Your program remains fully editable. You can update titles, descriptions, instructions, and add new content at any time.</p>
-            <p className="text-gray-500 text-xs">Just be careful removing weeks or sessions that learners may have already started.</p>
+            <p className="text-gray-500 text-xs">Just be careful removing lessons or sessions that learners may have already started.</p>
           </div>
 
           <div className="flex gap-3">
@@ -1735,21 +1837,20 @@ export default function ProgramEditPage() {
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-1 bg-gray-800 rounded-lg p-0.5">
                   <button
-                    onClick={() => setPreviewView("overview")}
+                    onClick={() => setPreviewAudience("public")}
                     className={`px-3 py-1 text-xs rounded transition ${
-                      previewView === "overview" ? "bg-white text-gray-900" : "text-gray-400 hover:text-white"
+                      previewAudience === "public" ? "bg-white text-gray-900" : "text-gray-400 hover:text-white"
                     }`}
                   >
-                    Overview
+                    Public Site
                   </button>
                   <button
-                    onClick={() => setPreviewView("session")}
-                    disabled={!previewSelectedSessionId}
+                    onClick={() => setPreviewAudience("learner")}
                     className={`px-3 py-1 text-xs rounded transition ${
-                      previewView === "session" ? "bg-white text-gray-900" : "text-gray-400 hover:text-white disabled:opacity-50"
+                      previewAudience === "learner" ? "bg-white text-gray-900" : "text-gray-400 hover:text-white"
                     }`}
                   >
-                    Session
+                    Learner View
                   </button>
                 </div>
                 <div className="flex items-center gap-1 bg-gray-800 rounded-lg p-0.5">
@@ -1811,29 +1912,31 @@ export default function ProgramEditPage() {
                     boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
                   }}
                 >
-                  {previewView === "overview" ? (
+                  {previewAudience === "learner" ? (
+                    <LearnerTimeline
+                      previewMode
+                      layout={previewDeviceMode === "mobile" ? "mobile" : "auto"}
+                      program={toLearnerPreviewProgram(program)}
+                      userId="preview"
+                      enrolledAt={new Date().toISOString()}
+                      currentWeek={program.durationWeeks}
+                      completedWeeks={[]}
+                      pacingMode={program.pacingMode}
+                      skinId={program.skinId}
+                      skinCSSVars={previewCssVars as Record<string, string>}
+                      creatorName={program.creator?.name ?? null}
+                      creatorAvatarUrl={program.creatorAvatarUrl}
+                      targetTransformation={program.targetTransformation}
+                      durationWeeks={program.durationWeeks}
+                      initialWatchedClipKeys={[]}
+                    />
+                  ) : (
                     <ProgramOverviewPreview
                       program={program}
                       skin={previewSkin}
                       layout={previewDeviceMode === "mobile" ? "mobile" : "auto"}
-                      onSelectSession={(sessionId) => {
-                        setPreviewSelectedSessionId(sessionId);
-                        setPreviewView("session");
-                      }}
+                      onSelectSession={() => {}}
                     />
-                  ) : previewSelectedSession ? (
-                    <SessionPreview
-                      session={previewSelectedSession as SessionData & { keyTakeaways?: string[] }}
-                      skin={previewSkin}
-                      onBack={() => {
-                        setPreviewView("overview");
-                        setPreviewSelectedSessionId(null);
-                      }}
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-64">
-                      <p style={{ color: previewSkin.colors.textMuted }}>Select a session from the overview</p>
-                    </div>
                   )}
                   {/* Decoration overlays — rendered ON TOP of content */}
                   {previewDecorations.backgroundPattern && (() => {

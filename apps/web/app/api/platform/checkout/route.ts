@@ -82,7 +82,7 @@ export async function POST(req: Request) {
           quantity: 1,
         },
       ],
-      success_url: `${appUrl}/programs/${fromProgramId}/edit?wizard=true&platform_access=success`,
+      success_url: `${appUrl}/programs/${fromProgramId}/edit?wizard=true&platform_access=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${appUrl}/onboarding/upgrade?from=${fromProgramId}`,
       customer_email: user.email,
       metadata: {
