@@ -1,7 +1,10 @@
 "use client";
 
 import { createContext, useContext, useState, useCallback, ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { GenerationNotification } from "./GenerationNotification";
+import { GenerationDebugPanel } from "./GenerationDebugPanel";
+import { useIsDebugUser } from "./useIsDebugUser";
 
 interface GenerationContextType {
   startGeneration: (programId: string) => void;
@@ -25,6 +28,10 @@ interface GenerationProviderProps {
 
 export function GenerationProvider({ children }: GenerationProviderProps) {
   const [activeGenerations, setActiveGenerations] = useState<string[]>([]);
+  const isDebug = useIsDebugUser();
+  const pathname = usePathname();
+  const editProgramId = pathname?.match(/^\/programs\/([^/]+)\/edit/)?.[1] ?? null;
+  const debugProgramId = activeGenerations[0] ?? editProgramId;
 
   const startGeneration = useCallback((programId: string) => {
     setActiveGenerations((prev) => {
@@ -50,6 +57,13 @@ export function GenerationProvider({ children }: GenerationProviderProps) {
           onDismiss={() => dismissGeneration(programId)}
         />
       ))}
+
+      {/* Debug panel — allowlisted creators, mounted any time there's an active
+          generation OR they're on a /programs/[id]/edit page (so they can
+          inspect past jobs even when nothing's running). */}
+      {isDebug && debugProgramId && (
+        <GenerationDebugPanel programId={debugProgramId} />
+      )}
     </GenerationContext.Provider>
   );
 }
