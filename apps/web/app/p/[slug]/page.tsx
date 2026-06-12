@@ -306,7 +306,7 @@ export default async function SalesPage({ params }: { params: Promise<{ slug: st
                 wordBreak: "break-word",
               }}
             >
-              {stripWrappingQuotes(program.targetTransformation || program.title)}
+              {stripWrappingQuotes(program.title || program.targetTransformation || "")}
             </h1>
 
             {/* Subtitle */}

@@ -217,7 +217,7 @@ export function SkinPicker({ value, onChange, thumbnailUrl, programId, programTi
       {/* ══ DESKTOP layout (md+): side-by-side ══════════════════════════════════ */}
       <div
         className="hidden md:flex border border-gray-200 rounded-xl overflow-hidden shadow-sm"
-        style={{ height: 560 }}
+        style={{ height: "min(560px, calc(100vh - 380px))", minHeight: 380 }}
         onMouseLeave={() => setHoveredSkinId(null)}
       >
         {/* Left panel — 25% */}
