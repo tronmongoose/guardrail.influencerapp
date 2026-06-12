@@ -1,9 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { getMux, isMuxConfigured } from "@/lib/mux";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 
 export async function POST(req: NextRequest) {
+  after(() => Sentry.flush(2000));
+
   if (!isMuxConfigured()) {
     return NextResponse.json({ error: "Mux not configured" }, { status: 501 });
   }
