@@ -6,6 +6,7 @@ interface GenerationStepsProps {
   steps: GenerationStep[];
   activeStepIndex: number;
   displayProgress: number;
+  estimatedMinutesRemaining: number | null;
   variant: "full" | "compact";
 }
 
@@ -54,14 +55,14 @@ function SpinnerIcon() {
   );
 }
 
-export function GenerationSteps({ steps, activeStepIndex, displayProgress, variant }: GenerationStepsProps) {
+export function GenerationSteps({ steps, activeStepIndex, displayProgress, estimatedMinutesRemaining, variant }: GenerationStepsProps) {
   if (variant === "compact") {
-    return <CompactSteps steps={steps} activeStepIndex={activeStepIndex} displayProgress={displayProgress} />;
+    return <CompactSteps steps={steps} activeStepIndex={activeStepIndex} displayProgress={displayProgress} estimatedMinutesRemaining={estimatedMinutesRemaining} />;
   }
-  return <FullSteps steps={steps} activeStepIndex={activeStepIndex} displayProgress={displayProgress} />;
+  return <FullSteps steps={steps} activeStepIndex={activeStepIndex} displayProgress={displayProgress} estimatedMinutesRemaining={estimatedMinutesRemaining} />;
 }
 
-function FullSteps({ steps, activeStepIndex, displayProgress }: Omit<GenerationStepsProps, "variant">) {
+function FullSteps({ steps, activeStepIndex, displayProgress, estimatedMinutesRemaining }: Omit<GenerationStepsProps, "variant">) {
   return (
     <div role="progressbar" aria-valuenow={displayProgress} aria-valuemin={0} aria-valuemax={100}>
       {/* Step list */}
@@ -136,13 +137,16 @@ function FullSteps({ steps, activeStepIndex, displayProgress }: Omit<GenerationS
             style={{ width: `${displayProgress}%` }}
           />
         </div>
-        <p className="text-sm text-gray-500 mt-2">{Math.round(displayProgress)}% complete</p>
+        <p className="text-sm text-gray-500 mt-2">
+          {Math.round(displayProgress)}% complete
+          {estimatedMinutesRemaining !== null && ` (${estimatedMinutesRemaining} min remaining)`}
+        </p>
       </div>
     </div>
   );
 }
 
-function CompactSteps({ steps, activeStepIndex, displayProgress }: Omit<GenerationStepsProps, "variant">) {
+function CompactSteps({ steps, activeStepIndex, displayProgress, estimatedMinutesRemaining }: Omit<GenerationStepsProps, "variant">) {
   const activeStep = steps[activeStepIndex];
   const completedCount = steps.filter((s) => s.status === "completed").length;
 
@@ -169,7 +173,10 @@ function CompactSteps({ steps, activeStepIndex, displayProgress }: Omit<Generati
         <p className="text-[10px] text-gray-500">
           {completedCount} of {steps.length} steps
         </p>
-        <p className="text-[10px] text-gray-500">{Math.round(displayProgress)}%</p>
+        <p className="text-[10px] text-gray-500">
+          {Math.round(displayProgress)}%
+          {estimatedMinutesRemaining !== null && ` (${estimatedMinutesRemaining} min)`}
+        </p>
       </div>
     </div>
   );

@@ -291,6 +291,7 @@ function CompactProgress({ stage, progress, status }: { stage: string | null; pr
         steps={stepsData.steps}
         activeStepIndex={stepsData.activeStepIndex}
         displayProgress={stepsData.displayProgress}
+        estimatedMinutesRemaining={stepsData.estimatedMinutesRemaining}
         variant="compact"
       />
     </div>

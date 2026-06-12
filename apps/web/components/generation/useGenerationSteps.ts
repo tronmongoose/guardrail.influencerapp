@@ -30,6 +30,7 @@ interface UseGenerationStepsResult {
   steps: GenerationStep[];
   activeStepIndex: number;
   displayProgress: number;
+  estimatedMinutesRemaining: number | null;
 }
 
 // Per-stage simulation: each stage has a ceiling (max % it can reach) and an
@@ -169,9 +170,38 @@ export function useGenerationSteps(input: UseGenerationStepsInput): UseGeneratio
     });
   }, [rawSteps, displayedActiveIndex, rawActiveIndex]);
 
+  // Walk stage ceilings to derive minutes remaining. Within the current stage,
+  // remaining seconds scale linearly with the bar slice (ceiling - prevCeiling);
+  // later stages contribute their full expectedSeconds. Floors at 1 min so the
+  // bar never reads "0 min remaining" while still actively generating.
+  const estimatedMinutesRemaining = useMemo((): number | null => {
+    if (stage === "complete" || displayProgress >= 100) return null;
+    let prevCeiling = 0;
+    let totalRemainingSeconds = 0;
+    let foundCurrent = false;
+    for (const cfg of Object.values(STAGES)) {
+      if (!foundCurrent) {
+        if (displayProgress < cfg.ceiling) {
+          const slice = cfg.ceiling - prevCeiling;
+          const remainingInStage = slice > 0
+            ? (cfg.expectedSeconds * (cfg.ceiling - displayProgress)) / slice
+            : 0;
+          totalRemainingSeconds += remainingInStage;
+          foundCurrent = true;
+        }
+      } else {
+        totalRemainingSeconds += cfg.expectedSeconds;
+      }
+      prevCeiling = cfg.ceiling;
+    }
+    if (!foundCurrent) return null;
+    return Math.max(1, Math.ceil(totalRemainingSeconds / 60));
+  }, [stage, displayProgress]);
+
   return {
     steps,
     activeStepIndex: displayedActiveIndex,
     displayProgress,
+    estimatedMinutesRemaining,
   };
 }
