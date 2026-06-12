@@ -9,14 +9,17 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Fetch all creator programs with enrollment counts and prices
+  // Fetch all creator programs with their entitlements' paid amounts. Reading
+  // per-entitlement (not priceInCents × count) keeps the dashboard truthful
+  // even after a price edit — the actual amount each learner paid is locked
+  // in on the entitlement row at enrollment.
   const programs = await prisma.program.findMany({
     where: { creatorId: user.id },
     select: {
       priceInCents: true,
       platformFeePaid: true,
-      _count: {
-        select: { entitlements: true },
+      entitlements: {
+        select: { amountPaidCents: true },
       },
     },
   });
@@ -27,18 +30,28 @@ export async function GET() {
     email: user.email,
   };
 
-  const totalEnrollments = programs.reduce((sum, p) => sum + p._count.entitlements, 0);
-  // Net revenue: gross price × enrollments minus JourneyLine's per-program
-  // take rate. Grandfathered programs/creators get 0% — getTakeRateBps applies
-  // the same rules used at checkout, so the dashboard matches what Stripe paid out.
+  const totalEnrollments = programs.reduce(
+    (sum, p) => sum + p.entitlements.length,
+    0
+  );
+  // Net revenue: sum each entitlement's paid amount minus JourneyLine's
+  // per-program take rate. Grandfathered programs/creators get 0% — same
+  // rules as checkout, so the dashboard matches what Stripe paid out.
+  // Legacy entitlements (created before amountPaidCents existed) fall back
+  // to the current program priceInCents — best-effort for old data.
   const totalRevenueCents = programs.reduce((sum, p) => {
-    const grossCents = p.priceInCents * p._count.entitlements;
     const bps = getTakeRateBps({
       program: { platformFeePaid: p.platformFeePaid },
       creator: creatorTakeRateInput,
     });
-    const feeCents = computeApplicationFeeCents(grossCents, bps);
-    return sum + (grossCents - feeCents);
+    return (
+      sum +
+      p.entitlements.reduce((entSum, ent) => {
+        const grossCents = ent.amountPaidCents ?? p.priceInCents;
+        const feeCents = computeApplicationFeeCents(grossCents, bps);
+        return entSum + (grossCents - feeCents);
+      }, 0)
+    );
   }, 0);
 
   return NextResponse.json({

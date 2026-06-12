@@ -413,15 +413,48 @@ export async function notifyAdminEnrollment(
   learner: { email: string; name?: string | null },
   program: { title: string; id: string },
   enrollmentType: "paid" | "free" | "promo",
+  amount?: {
+    grossCents: number;
+    platformCents: number;
+    creatorCents: number;
+    currency: string;
+  },
+  creator?: { id: string; email?: string | null; name?: string | null },
 ): Promise<void> {
   const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL;
   if (!adminEmail) return;
 
+  const currency = amount?.currency ?? "usd";
+
+  const amountLines = amount
+    ? `\nLearner paid (creator price): ${formatMoney(amount.grossCents, currency)}\nPlatform take: ${formatMoney(amount.platformCents, currency)}\nCreator payout: ${formatMoney(amount.creatorCents, currency)}`
+    : "";
+
+  let creatorLines = "";
+  if (creator) {
+    const stats = await getCreatorLifetimeStats(creator.id).catch(() => null);
+    const who = creator.name || creator.email || creator.id;
+    creatorLines = stats
+      ? `\nCreator: ${who}\nCreator lifetime: ${stats.enrollmentCount} enrollments · ${formatMoney(stats.grossEarnedCents, currency)} earned`
+      : `\nCreator: ${who}`;
+  }
+
   await sendEmail({
     to: adminEmail,
     subject: `[Journeyline] New enrollment (${enrollmentType}): "${program.title}"`,
-    text: `A learner just enrolled in a program.\n\nLearner: ${learner.name || "Anonymous"} (${learner.email})\nProgram: ${program.title}\nEnrollment type: ${enrollmentType}\nProgram ID: ${program.id}\n\n--\nJourneyline Admin Notifications`,
+    text: `A learner just enrolled in a program.\n\nLearner: ${learner.name || "Anonymous"} (${learner.email})\nProgram: ${program.title}\nEnrollment type: ${enrollmentType}\nProgram ID: ${program.id}${amountLines}${creatorLines}\n\n--\nJourneyline Admin Notifications`,
   });
+}
+
+function formatMoney(cents: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: currency.toUpperCase(),
+    }).format(cents / 100);
+  } catch {
+    return `${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`;
+  }
 }
 
 export async function sendProgramReadyEmail(

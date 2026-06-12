@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getOrCreateUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slug";
+import { getStripe, isStripeConfigured } from "@/lib/stripe";
+import { logger } from "@/lib/logger";
 
 export async function GET(
   _req: NextRequest,
@@ -97,7 +99,14 @@ export async function PATCH(
   // Verify ownership before allowing update
   const existing = await prisma.program.findUnique({
     where: { id },
-    select: { creatorId: true, published: true }
+    select: {
+      creatorId: true,
+      published: true,
+      priceInCents: true,
+      currency: true,
+      stripeProductId: true,
+      stripePriceId: true,
+    },
   });
   if (!existing) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -153,6 +162,77 @@ export async function PATCH(
     }
   }
   if (body.creatorAvatarUrl !== undefined) data.creatorAvatarUrl = body.creatorAvatarUrl;
+
+  // Stripe Prices are immutable — when the creator edits the price of a
+  // published program we must create a new Price and swap stripePriceId.
+  // Without this, checkout keeps using the original Price and learners are
+  // billed the old amount. Free→paid and paid→free aren't handled here —
+  // those re-flow through /publish or the $0 short-circuit in checkout.
+  const newPriceCents = body.priceInCents;
+  const priceChanged =
+    typeof newPriceCents === "number" &&
+    newPriceCents > 0 &&
+    newPriceCents !== existing.priceInCents &&
+    !!existing.stripeProductId;
+
+  if (priceChanged) {
+    if (!isStripeConfigured()) {
+      return NextResponse.json(
+        { error: "Payments not configured — cannot sync price" },
+        { status: 503 }
+      );
+    }
+    try {
+      const stripe = getStripe();
+      const newPrice = await stripe.prices.create({
+        product: existing.stripeProductId!,
+        unit_amount: newPriceCents,
+        currency: existing.currency || "usd",
+      });
+      data.stripePriceId = newPrice.id;
+
+      // Archive the old Price so the Stripe dashboard stays clean. Fire-and-
+      // forget — Stripe Prices remain usable by existing sessions even when
+      // archived, and a failure here shouldn't block the price update.
+      if (existing.stripePriceId) {
+        stripe.prices
+          .update(existing.stripePriceId, { active: false })
+          .catch((archiveErr) => {
+            logger.warn({
+              operation: "program.update.archive_old_price_failed",
+              programId: id,
+              oldPriceId: existing.stripePriceId,
+              error:
+                archiveErr instanceof Error
+                  ? archiveErr.message
+                  : String(archiveErr),
+            });
+          });
+      }
+
+      logger.info({
+        operation: "program.update.stripe_price_synced",
+        programId: id,
+        oldPriceInCents: existing.priceInCents,
+        newPriceInCents: newPriceCents,
+        oldStripePriceId: existing.stripePriceId,
+        newStripePriceId: newPrice.id,
+      });
+    } catch (err) {
+      logger.error(
+        {
+          operation: "program.update.stripe_price_sync_failed",
+          programId: id,
+          newPriceInCents: newPriceCents,
+        },
+        err
+      );
+      return NextResponse.json(
+        { error: "Failed to sync price with Stripe — try again" },
+        { status: 502 }
+      );
+    }
+  }
 
   const program = await prisma.program.update({ where: { id }, data });
   return NextResponse.json(program);

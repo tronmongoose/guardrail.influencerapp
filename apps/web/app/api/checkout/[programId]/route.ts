@@ -132,7 +132,10 @@ export async function POST(
     await prisma.$executeRaw`UPDATE "PromoCode" SET uses = uses + 1 WHERE id = ${promo.id}`;
     await prisma.entitlement.upsert({
       where: { userId_programId: { userId: user.id, programId } },
-      create: { userId: user.id, programId, status: "ACTIVE" },
+      // Promo enrollment — no money changed hands. Set amountPaidCents on create
+      // so dashboard revenue stays truthful. Don't overwrite on update in case a
+      // prior real purchase exists.
+      create: { userId: user.id, programId, status: "ACTIVE", amountPaidCents: 0 },
       update: { status: "ACTIVE" },
     });
 
@@ -147,6 +150,8 @@ export async function POST(
       { email: user.email, name: user.name },
       { title: program.title, id: programId },
       "promo",
+      undefined,
+      { id: program.creator.id, email: program.creator.email, name: program.creator.name },
     ).catch(() => {});
 
     // Branded welcome email + creator notification (fire-and-forget)
@@ -168,7 +173,7 @@ export async function POST(
   if (program.priceInCents === 0) {
     await prisma.entitlement.upsert({
       where: { userId_programId: { userId: user.id, programId } },
-      create: { userId: user.id, programId, status: "ACTIVE" },
+      create: { userId: user.id, programId, status: "ACTIVE", amountPaidCents: 0 },
       update: { status: "ACTIVE" },
     });
 
@@ -182,6 +187,8 @@ export async function POST(
       { email: user.email, name: user.name },
       { title: program.title, id: programId },
       "free",
+      undefined,
+      { id: program.creator.id, email: program.creator.email, name: program.creator.name },
     ).catch(() => {});
 
     // Branded welcome email + "you got a new student" notification

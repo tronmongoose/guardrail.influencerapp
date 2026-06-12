@@ -8,6 +8,7 @@ import {
   notifyAdminEnrollment,
 } from "@/lib/email";
 import { logger } from "@/lib/logger";
+import { getTakeRateBps, computeApplicationFeeCents } from "@/lib/take-rate";
 import Stripe from "stripe";
 
 export async function POST(req: NextRequest) {
@@ -85,7 +86,10 @@ export async function POST(req: NextRequest) {
         priorEntitlement?.status === "ACTIVE" &&
         priorEntitlement.stripeSessionId === session.id;
 
-      // Create or update entitlement
+      // Create or update entitlement. amount_total is the source of truth
+      // for what the learner actually paid — the creator dashboard reads it
+      // so revenue stays accurate even if program.priceInCents is edited.
+      const amountPaidCents = session.amount_total ?? 0;
       await prisma.entitlement.upsert({
         where: { userId_programId: { userId, programId } },
         create: {
@@ -97,6 +101,7 @@ export async function POST(req: NextRequest) {
             typeof session.payment_intent === "string"
               ? session.payment_intent
               : session.payment_intent?.id,
+          amountPaidCents,
           currentWeek: 1, // Start at week 1
         },
         update: {
@@ -106,6 +111,7 @@ export async function POST(req: NextRequest) {
             typeof session.payment_intent === "string"
               ? session.payment_intent
               : session.payment_intent?.id,
+          amountPaidCents,
         },
       });
 
@@ -128,15 +134,34 @@ export async function POST(req: NextRequest) {
       const program = await prisma.program.findUnique({
         where: { id: programId },
         include: {
-          creator: { select: { id: true, email: true, name: true } },
+          creator: {
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              platformPaymentComplete: true,
+              platformPromoGranted: true,
+            },
+          },
         },
       });
 
       if (user && program) {
+        const grossCents = session.amount_total ?? program.priceInCents;
+        const currency = session.currency || program.currency;
+        const bps = getTakeRateBps({
+          program: { platformFeePaid: program.platformFeePaid },
+          creator: program.creator,
+        });
+        const platformCents = computeApplicationFeeCents(grossCents, bps);
+        const creatorCents = grossCents - platformCents;
+
         notifyAdminEnrollment(
           { email: user.email, name: user.name },
           { title: program.title, id: programId },
           "paid",
+          { grossCents, platformCents, creatorCents, currency },
+          { id: program.creator.id, email: program.creator.email, name: program.creator.name },
         ).catch(() => {});
 
         // Generate magic link, embed in branded welcome email
@@ -159,8 +184,8 @@ export async function POST(req: NextRequest) {
           programTitle: program.title,
           learnerEmail: user.email,
           stripeSessionId: session.id,
-          fallbackAmountCents: session.amount_total ?? program.priceInCents,
-          fallbackCurrency: session.currency || program.currency,
+          fallbackAmountCents: grossCents,
+          fallbackCurrency: currency,
         }).catch((err) => {
           logger.warn({
             operation: "stripe.webhook.creator_email_failed",

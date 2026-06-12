@@ -94,16 +94,22 @@ export async function claimAccessFromStripeSession(
   // already sent." If we wrote sessionId here, a fast success-page flow
   // would silence the webhook's email and the learner would have no email
   // to return from another device.
+  //
+  // amountPaidCents is safe to write — not used as an idempotency signal,
+  // and the webhook will set the same value when it eventually fires.
+  const amountPaidCents = session.amount_total ?? 0;
   await prisma.entitlement.upsert({
     where: { userId_programId: { userId, programId } },
     create: {
       userId,
       programId,
       status: "ACTIVE",
+      amountPaidCents,
       currentWeek: 1,
     },
     update: {
       status: "ACTIVE",
+      amountPaidCents,
     },
   });
 

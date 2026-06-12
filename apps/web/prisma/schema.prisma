@@ -426,6 +426,10 @@ model Entitlement {
   program             Program  @relation(fields: [programId], references: [id])
   stripeSessionId     String?  @unique
   stripePaymentIntent String?
+  // Actual amount the learner paid (cents) at enrollment time. Stored so the
+  // creator dashboard reports real revenue even after price edits. Nullable
+  // for entitlements created before this column existed.
+  amountPaidCents     Int?
   status              EntitlementStatus @default(ACTIVE)
   currentWeek         Int      @default(1)  // Which week the learner has access to
   createdAt           DateTime @default(now())
