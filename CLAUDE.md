@@ -190,12 +190,12 @@ Uploaded videos are transcoded by Mux into HLS for universal browser playback.
 
 ## AI Pipeline
 
-1. Creator uploads videos (Mux direct upload) or pastes YouTube URLs
+1. Creator uploads videos via Mux direct upload (YouTube URL paste is legacy — no current creator path adds new YouTube URLs; the `YouTubeVideo` model name is a relic and now stores any uploaded video)
 2. **Video segmentation** ([packages/ai/src/video-segmentation.ts](packages/ai/src/video-segmentation.ts)): long videos (>10 min) are split into virtual child records using Gemini topic timestamps — no physical file splitting
 3. HuggingFace generates embeddings from video metadata/transcripts ([packages/ai/src/hf-embeddings.ts](packages/ai/src/hf-embeddings.ts))
 4. K-means clustering groups related videos ([packages/ai/src/clustering.ts](packages/ai/src/clustering.ts))
 5. LLM generates a structured program draft (lessons/sessions/actions) ([packages/ai/src/llm-adapter.ts](packages/ai/src/llm-adapter.ts))
-6. Gemini 2.5 Flash analyzes individual videos for full topic extraction, segment boundaries, transcripts ([packages/ai/src/gemini-video-analyzer.ts](packages/ai/src/gemini-video-analyzer.ts))
+6. Gemini analyzes individual videos for full topic extraction, segment boundaries, transcripts ([packages/ai/src/gemini-video-analyzer.ts](packages/ai/src/gemini-video-analyzer.ts)). Models are configurable via env vars; defaults live in [packages/ai/src/constants.ts](packages/ai/src/constants.ts) — currently `gemini-3.1-pro-preview` for video and `gemini-3-flash-preview` for text.
 7. Async generation pipeline handles segmented videos as independent content pieces
 8. Creator reviews the `ProgramDraft` and approves or edits before publishing
 

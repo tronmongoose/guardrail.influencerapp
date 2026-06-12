@@ -362,6 +362,36 @@ Suggested commit organization when shipping:
 
 ---
 
+## 🟧 Stage name `fetching_transcripts` is misleading — actually does Mux wait + Gemini analysis — 2026-06-02
+
+**Severity:** low — naming clarity only, no functional impact. Surfaced when explaining the harness 5-video run results to a stakeholder who reasonably thought "Gemini is step 3" but it appears inside `fetching_transcripts` in the stage trace, causing confusion about where failures originate.
+
+**Background:** the stage name dates back to when the pipeline scraped YouTube transcripts as the primary content source. The Mux + Gemini path replaced that flow but the stage label was never updated.
+
+**Current stage → conceptual step mapping:**
+| Internal stage | What it does |
+|---|---|
+| `preparing` | DB read, setup |
+| `fetching_transcripts` | **Mux rendition wait + Gemini video analysis (4-way parallel)** — confusingly named |
+| `analyzing` | LLM digest extraction |
+| `generating` | LLM program-draft generation |
+| `validating` | Schema + clip distribution check |
+| `persisting` | DB writes |
+| `generating_skin` | Optional skin gen |
+
+**Proposed rename:** `fetching_transcripts` → `analyzing_videos` (or `analyzing_content` if we want to include artifact processing too).
+
+**Touch points** for the rename:
+- [generate-async/route.ts:235](../../apps/web/app/api/programs/[id]/generate-async/route.ts) — `beginStep(..., "fetching_transcripts", ...)` + `setStage("fetching_transcripts")` + 4 `checkDeadline("fetching_transcripts")` calls
+- `STAGE_BUDGETS_MS` map key
+- Any debug-panel UI strings that surface stage labels to creators
+- Test fixtures / OPEN-FINDINGS references in this file
+- `GenerationJob.steps[].stage` historical rows in prod DB will retain `"fetching_transcripts"` — either backfill them or accept the discontinuity
+
+Defer until next time we're in this code; not worth a standalone PR.
+
+---
+
 ## 🟧 Route-level `JOB_TIMEOUT_MS` (10 min) is consumed by `fetching_transcripts` waits, leaving zero budget for `persisting` — 2026-06-02
 
 **Severity:** medium — silent failure mode on real uploads with longer videos. Surfaced by [apps/web/scripts/bulk-mux-upload.ts](../../apps/web/scripts/bulk-mux-upload.ts) (upload harness Script A) on its first end-to-end run.
