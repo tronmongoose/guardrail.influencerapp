@@ -1188,3 +1188,57 @@ describe("distributeClipsToLessons — same-video lessons must cluster contiguou
     expect(transitions).toHaveLength(1);
   });
 });
+
+describe("distributeClipsToLessons — single-video lessons preferred over cross-video bundling", () => {
+  // Reproduces the Box and Get It 2026-05-29 failure: the bin-packer's
+  // different-video-first swap pushed Video #1's second topic past Video #2's
+  // first topic in the clip queue, causing a single lesson to bundle V2's
+  // intro stance with V1's advanced flow combinations. The judge dropped
+  // boundary respect from 5 to 3 over that single mixed lesson.
+  it("never bundles clips from two different videos in one lesson when single-video packing fits", () => {
+    const v1 = makeEnrichedDigest(
+      "v1",
+      "Box Boxing Techniques #1",
+      [
+        { label: "Boxing Fundamentals", startSeconds: 0, endSeconds: 421 },
+        { label: "Flow and Combinations", startSeconds: 421, endSeconds: 802 },
+      ],
+      802,
+    );
+    const v2 = makeEnrichedDigest(
+      "v2",
+      "Box Boxing Techniques #2",
+      [
+        { label: "Stance and Straight Punches", startSeconds: 0, endSeconds: 316 },
+        { label: "Uppercuts and Hooks", startSeconds: 316, endSeconds: 526 },
+        { label: "Defense and Combinations", startSeconds: 526, endSeconds: 805 },
+      ],
+      805,
+    );
+    const v3 = makeEnrichedDigest(
+      "v3",
+      "Box and Flow — Flow Thru the Fight",
+      [
+        { label: "Vinyasa Flow and Standing Poses", startSeconds: 0, endSeconds: 498 },
+        { label: "Floor Work, Backbends, and Cool Down", startSeconds: 498, endSeconds: 766 },
+      ],
+      766,
+    );
+
+    const plan = distributeClipsToLessons([v1, v2, v3], [], 6);
+
+    // Every lesson must contain clips from exactly one video. 7 clips into 6
+    // lessons is feasible without cross-video bundling: merge a same-video
+    // pair instead.
+    for (const lesson of plan.lessons) {
+      const videoIds = new Set(lesson.clips.map((c) => c.videoId));
+      expect(videoIds.size).toBe(1);
+    }
+
+    // All three videos still represented.
+    const allVideoIds = new Set(
+      plan.lessons.flatMap((l) => l.clips.map((c) => c.videoId)),
+    );
+    expect(allVideoIds).toEqual(new Set(["v1", "v2", "v3"]));
+  });
+});
