@@ -39,18 +39,30 @@ export async function getOrCreateUser() {
     return promoted;
   }
 
-  const newUser = await prisma.user.create({
-    data: {
-      clerkId: userId,
-      email,
-      name: clerkUser.firstName
-        ? `${clerkUser.firstName} ${clerkUser.lastName ?? ""}`.trim()
-        : undefined,
-      role: "CREATOR",
-    },
-  });
-  notifyAdminNewCreator(newUser).catch(() => {});
-  return newUser;
+  try {
+    const newUser = await prisma.user.create({
+      data: {
+        clerkId: userId,
+        email,
+        name: clerkUser.firstName
+          ? `${clerkUser.firstName} ${clerkUser.lastName ?? ""}`.trim()
+          : undefined,
+        role: "CREATOR",
+      },
+    });
+    notifyAdminNewCreator(newUser).catch(() => {});
+    return newUser;
+  } catch (err) {
+    // P2002 = unique constraint. A concurrent request from the same Clerk
+    // session won the create; re-fetch and return its row instead of 500ing.
+    if ((err as { code?: string })?.code === "P2002") {
+      const recovered =
+        (await prisma.user.findUnique({ where: { clerkId: userId } })) ??
+        (await prisma.user.findUnique({ where: { email } }));
+      if (recovered) return recovered;
+    }
+    throw err;
+  }
 }
 
 /**
