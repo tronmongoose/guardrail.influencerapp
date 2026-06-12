@@ -68,6 +68,20 @@ interface Props {
    * pre-loaded server-side. One key per individually-completable clip.
    */
   initialWatchedClipKeys: string[];
+  /**
+   * When true, completion interactions update local UI state but skip the
+   * /api/progress* writes — used by the creator's Preview tab so clicking
+   * around the learner view doesn't dirty real progress data.
+   */
+  previewMode?: boolean;
+  /**
+   * Force the single-column mobile layout regardless of viewport width.
+   * Used by the editor's Preview tab when the device toggle is set to
+   * "mobile" — the timeline renders inside a 375px-wide frame on a desktop
+   * viewport, so Tailwind's md:/sm: breakpoints would otherwise apply the
+   * desktop layout and squeeze it.
+   */
+  layout?: "auto" | "mobile";
 }
 
 export function LearnerTimeline({
@@ -82,7 +96,10 @@ export function LearnerTimeline({
   targetTransformation,
   durationWeeks,
   initialWatchedClipKeys,
+  previewMode = false,
+  layout = "auto",
 }: Props) {
+  const m = layout === "mobile";
   const { showToast } = useToast();
 
   const groupLabel = "Lesson";
@@ -127,6 +144,7 @@ export function LearnerTimeline({
         else next.delete(key);
         return next;
       });
+      if (previewMode) return;
       try {
         const res = await fetch("/api/progress/session", {
           method: "POST",
@@ -138,7 +156,7 @@ export function LearnerTimeline({
         setWatchedClipKeys(prev);
       }
     },
-    [watchedClipKeys],
+    [watchedClipKeys, previewMode],
   );
 
   // Celebration overlay state (week milestones only — not final week)
@@ -230,20 +248,38 @@ export function LearnerTimeline({
   ) {
     setSavingAction(actionId);
     try {
-      const res = await fetch("/api/progress", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          actionId,
-          reflectionText,
-          programId: program.id,
-          weekNumber,
-        }),
-      });
+      let data: { weekCompleted: boolean; nextWeekUnlocked: boolean; newCurrentWeek?: number };
+      if (previewMode) {
+        const week = program.weeks.find((w) => w.weekNumber === weekNumber);
+        const weekActionIds = week?.sessions.flatMap((s) => s.actions.map((a) => a.id)) ?? [];
+        const weekCompleted = weekActionIds.every(
+          (id) => id === actionId || completedActions.has(id),
+        );
+        const nextWeekUnlocked =
+          weekCompleted &&
+          pacingMode === "UNLOCK_ON_COMPLETE" &&
+          weekNumber < durationWeeks;
+        data = {
+          weekCompleted,
+          nextWeekUnlocked,
+          newCurrentWeek: nextWeekUnlocked ? weekNumber + 1 : undefined,
+        };
+      } else {
+        const res = await fetch("/api/progress", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            actionId,
+            reflectionText,
+            programId: program.id,
+            weekNumber,
+          }),
+        });
 
-      if (!res.ok) throw new Error("Failed to save");
+        if (!res.ok) throw new Error("Failed to save");
 
-      const data = await res.json();
+        data = await res.json();
+      }
 
       // Trigger completion animation
       setJustCompleted(actionId);
@@ -339,7 +375,7 @@ export function LearnerTimeline({
           borderBottom: "1px solid var(--token-color-border-subtle)",
         }}
       >
-        <div className="flex items-center justify-between px-4 py-3 max-w-xl md:max-w-5xl mx-auto">
+        <div className={`flex items-center justify-between px-4 py-3 max-w-xl mx-auto ${m ? "" : "md:max-w-5xl"}`}>
           <Link
             href="/"
             className="text-sm font-bold"
@@ -348,7 +384,7 @@ export function LearnerTimeline({
             &larr;
           </Link>
           {/* Mobile: centered title */}
-          <div className="flex-1 text-center px-4 md:hidden">
+          <div className={`flex-1 text-center px-4 ${m ? "" : "md:hidden"}`}>
             <h1
               className="text-sm font-semibold truncate heading-display"
               style={{ color: "var(--token-color-text-primary)" }}
@@ -357,7 +393,7 @@ export function LearnerTimeline({
             </h1>
           </div>
           {/* Desktop: spacer (title is in sidebar) */}
-          <div className="hidden md:block flex-1" />
+          <div className={`hidden flex-1 ${m ? "" : "md:block"}`} />
           {/* Progress circle */}
           <div className="relative w-10 h-10 flex-shrink-0">
             <svg className="w-10 h-10 -rotate-90" viewBox="0 0 40 40">
@@ -395,10 +431,10 @@ export function LearnerTimeline({
       </nav>
 
       {/* Layout wrapper: sidebar on desktop, single column on mobile */}
-      <div className="md:flex md:gap-8 md:max-w-5xl md:mx-auto md:px-6 md:py-8">
+      <div className={m ? "" : "md:flex md:gap-8 md:max-w-5xl md:mx-auto md:px-6 md:py-8"}>
         {/* Desktop sticky sidebar */}
         <aside
-          className="hidden md:block w-72 flex-shrink-0 sticky top-16 self-start h-fit max-h-[calc(100vh-5rem)] overflow-y-auto space-y-6 pb-8"
+          className={`hidden w-72 flex-shrink-0 sticky top-16 self-start h-fit max-h-[calc(100vh-5rem)] overflow-y-auto space-y-6 pb-8 ${m ? "" : "md:block"}`}
         >
           {/* Program identity */}
           <div>
@@ -543,10 +579,10 @@ export function LearnerTimeline({
         </aside>
 
         {/* Main content column */}
-        <main className="flex-1 max-w-xl md:max-w-2xl mx-auto md:mx-0 px-4 md:px-0 py-6 md:py-0 pb-24 space-y-4">
+        <main className={`flex-1 max-w-xl mx-auto px-4 py-6 pb-24 space-y-4 ${m ? "" : "md:max-w-2xl md:mx-0 md:px-0 md:py-0"}`}>
           {/* Mobile program hero card */}
           <div
-            className="p-4 mb-2 md:hidden"
+            className={`p-4 mb-2 ${m ? "" : "md:hidden"}`}
             style={{
               borderRadius: "var(--token-radius-lg)",
               backgroundColor: "var(--token-color-bg-elevated)",
@@ -603,7 +639,7 @@ export function LearnerTimeline({
           </div>
 
           {/* Progress summary (mobile only — desktop has sidebar ring) */}
-          <div className="text-center mb-2 md:hidden">
+          <div className={`text-center mb-2 ${m ? "" : "md:hidden"}`}>
             <p
               className="text-xs"
               style={{ color: "var(--token-color-text-secondary)" }}
@@ -1172,7 +1208,7 @@ export function LearnerTimeline({
               className="text-sm"
               style={{ color: "var(--token-color-text-secondary)" }}
             >
-              You completed all {totalActions} actions across {program.weeks.length} weeks
+              You completed all {totalActions} actions across {program.weeks.length} {program.weeks.length === 1 ? "lesson" : "lessons"}
             </p>
           </div>
         )}
@@ -1236,7 +1272,7 @@ export function LearnerTimeline({
               {celebration.weekNumber === 1
                 ? "You started. That's the hardest part."
                 : celebration.weekNumber === 2
-                  ? "Two weeks in. You're building momentum."
+                  ? "Two lessons in. You're building momentum."
                   : "Halfway there. Keep going."}
             </p>
             <button
@@ -1271,7 +1307,7 @@ export function LearnerTimeline({
 
       {/* Floating continue button (mobile) */}
       {nextActionId && !expandedAction && !celebration && !isProgramComplete && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 sm:hidden">
+        <div className={`bottom-0 left-0 right-0 z-40 ${m ? "absolute" : "fixed sm:hidden"}`}>
           <div
             className="backdrop-blur-sm px-4 py-3"
             style={{
@@ -1397,7 +1433,7 @@ function ProgramCompleteOverlay({
           className="text-center text-[13px] mb-5"
           style={{ color: "#9ca3af" }}
         >
-          You completed all {weekCount} weeks and {actionCount} actions
+          You completed all {weekCount} {weekCount === 1 ? "lesson" : "lessons"} and {actionCount} actions
         </p>
 
         <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.08)", marginBottom: "20px" }} />
@@ -1406,7 +1442,7 @@ function ProgramCompleteOverlay({
           className="text-center text-[13px] italic mb-6"
           style={{ color: "var(--token-color-text-secondary)" }}
         >
-          You finished every week. That&apos;s rare.
+          You finished every lesson. That&apos;s rare.
         </p>
 
         <Link

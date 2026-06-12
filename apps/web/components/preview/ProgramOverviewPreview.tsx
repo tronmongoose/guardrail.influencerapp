@@ -3,26 +3,40 @@
 import { getActionTypeBg, ACTION_TYPE_LABELS } from "@/lib/action-type-styles";
 import { stripWrappingQuotes } from "@/lib/strip-quotes";
 import type { WeekData, SessionData } from "@/components/builder";
+import { MuxVideoPlayer } from "@/components/viewer/MuxVideoPlayer";
 
-function getSessionThumbnail(session: SessionData): string | null {
+interface SessionVideo {
+  muxPlaybackId: string | null;
+  thumbnailUrl: string | null;
+  title: string | null;
+}
+
+function getSessionVideo(session: SessionData): SessionVideo | null {
   const firstClip = session.compositeSession?.clips?.[0];
   const watch = session.actions.find((a) => a.type === "WATCH");
   if (!firstClip && !watch) return null;
 
-  const muxId =
+  const muxPlaybackId =
     firstClip?.youtubeVideo?.muxPlaybackId ??
     watch?.muxPlaybackId ??
     watch?.youtubeVideo?.muxPlaybackId ??
     null;
-  if (muxId) return `https://image.mux.com/${muxId}/thumbnail.jpg?time=2&width=640`;
 
-  return (
-    firstClip?.youtubeVideo?.thumbnailUrl ??
-    watch?.youtubeVideo?.thumbnailUrl ??
-    (watch?.youtubeVideo?.videoId
-      ? `https://img.youtube.com/vi/${watch.youtubeVideo.videoId}/hqdefault.jpg`
-      : null)
-  );
+  const thumbnailUrl = muxPlaybackId
+    ? `https://image.mux.com/${muxPlaybackId}/thumbnail.jpg?time=2&width=640`
+    : firstClip?.youtubeVideo?.thumbnailUrl ??
+      watch?.youtubeVideo?.thumbnailUrl ??
+      (watch?.youtubeVideo?.videoId
+        ? `https://img.youtube.com/vi/${watch.youtubeVideo.videoId}/hqdefault.jpg`
+        : null);
+
+  const title = firstClip?.chapterTitle ?? watch?.title ?? null;
+
+  return { muxPlaybackId, thumbnailUrl, title };
+}
+
+function getSessionThumbnail(session: SessionData): string | null {
+  return getSessionVideo(session)?.thumbnailUrl ?? null;
 }
 
 interface ProgramOverviewPreviewProps {
@@ -87,15 +101,16 @@ export function ProgramOverviewPreview({
   const creatorName = program.creator?.name;
   const durationWeeks = program.durationWeeks ?? program.weeks.length;
 
-  const heroThumbnail = (() => {
+  const heroVideo = (() => {
     for (const week of program.weeks) {
       for (const session of week.sessions) {
-        const t = getSessionThumbnail(session);
-        if (t) return t;
+        const v = getSessionVideo(session);
+        if (v && (v.muxPlaybackId || v.thumbnailUrl)) return v;
       }
     }
     return null;
   })();
+  const heroThumbnail = heroVideo?.thumbnailUrl ?? null;
 
   return (
     <div
@@ -149,7 +164,7 @@ export function ProgramOverviewPreview({
                 wordBreak: "break-word",
               }}
             >
-              {stripWrappingQuotes(program.targetTransformation || program.title)}
+              {stripWrappingQuotes(program.title || program.targetTransformation || "")}
             </h1>
 
             {program.description && (
@@ -185,38 +200,51 @@ export function ProgramOverviewPreview({
             </div>
           </div>
 
-          {/* Right: Video thumbnail (desktop only) — falls back to At a Glance card */}
-          {heroThumbnail ? (
+          {/* Right: Video (desktop only) — falls back to At a Glance card */}
+          {heroVideo ? (
             <div className={`${isMobile ? "hidden" : "hidden md:flex"} flex-col gap-4`}>
-              {/* Thumbnail */}
-              <div
-                className="relative overflow-hidden"
-                style={{
-                  aspectRatio: "16/9",
-                  borderRadius: "var(--token-radius-lg)",
-                  boxShadow: "var(--token-shadow-md)",
-                }}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={heroThumbnail}
-                  alt=""
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
-                {/* Dark scrim */}
-                <div className="absolute inset-0" style={{ background: "rgba(0,0,0,0.3)" }} />
-                {/* Play button */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div
-                    className="w-14 h-14 rounded-full flex items-center justify-center shadow-lg"
-                    style={{ backgroundColor: "var(--token-color-accent)" }}
-                  >
-                    <svg className="w-6 h-6 ml-1" fill="currentColor" viewBox="0 0 24 24" style={{ color: "#fff" }}>
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
+              {/* Player when available, static thumbnail fallback otherwise */}
+              {heroVideo.muxPlaybackId ? (
+                <div
+                  style={{
+                    borderRadius: "var(--token-radius-lg)",
+                    overflow: "hidden",
+                    boxShadow: "var(--token-shadow-md)",
+                  }}
+                >
+                  <MuxVideoPlayer
+                    playbackId={heroVideo.muxPlaybackId}
+                    title={heroVideo.title ?? program.title}
+                  />
+                </div>
+              ) : (
+                <div
+                  className="relative overflow-hidden"
+                  style={{
+                    aspectRatio: "16/9",
+                    borderRadius: "var(--token-radius-lg)",
+                    boxShadow: "var(--token-shadow-md)",
+                  }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={heroThumbnail ?? ""}
+                    alt=""
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                  <div className="absolute inset-0" style={{ background: "rgba(0,0,0,0.3)" }} />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div
+                      className="w-14 h-14 rounded-full flex items-center justify-center shadow-lg"
+                      style={{ backgroundColor: "var(--token-color-accent)" }}
+                    >
+                      <svg className="w-6 h-6 ml-1" fill="currentColor" viewBox="0 0 24 24" style={{ color: "#fff" }}>
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
               {/* Compact stats */}
               <p
                 className="flex flex-wrap gap-x-2"
@@ -226,7 +254,7 @@ export function ProgramOverviewPreview({
                   color: "var(--token-color-text-secondary)",
                 }}
               >
-                <span>{durationWeeks} weeks</span>
+                <span>{durationWeeks} {durationWeeks === 1 ? "lesson" : "lessons"}</span>
                 <span>·</span>
                 <span>{totalSessions} sessions</span>
                 <span>·</span>
@@ -284,7 +312,7 @@ export function ProgramOverviewPreview({
 
               <div className="flex gap-6">
                 {[
-                  { label: "Weeks", value: durationWeeks },
+                  { label: "Lessons", value: durationWeeks },
                   { label: "Sessions", value: totalSessions },
                   { label: "Actions", value: allActions.length },
                 ].map(({ label, value }) => (
@@ -352,35 +380,50 @@ export function ProgramOverviewPreview({
         </div>
       </section>
 
-      {/* ── Mobile hero thumbnail ─────────────────────────────────────────────── */}
-      {heroThumbnail && (
+      {/* ── Mobile hero video ─────────────────────────────────────────────── */}
+      {heroVideo && (
         <div className={`${isMobile ? "block" : "md:hidden"} px-6 pb-6 max-w-5xl mx-auto`}>
-          <div
-            className="relative overflow-hidden"
-            style={{
-              aspectRatio: "16/9",
-              borderRadius: "var(--token-radius-lg)",
-              boxShadow: "var(--token-shadow-md)",
-            }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={heroThumbnail}
-              alt=""
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
-            <div className="absolute inset-0" style={{ background: "rgba(0,0,0,0.3)" }} />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div
-                className="w-14 h-14 rounded-full flex items-center justify-center shadow-lg"
-                style={{ backgroundColor: "var(--token-color-accent)" }}
-              >
-                <svg className="w-6 h-6 ml-1" fill="currentColor" viewBox="0 0 24 24" style={{ color: "#fff" }}>
-                  <path d="M8 5v14l11-7z" />
-                </svg>
+          {heroVideo.muxPlaybackId ? (
+            <div
+              style={{
+                borderRadius: "var(--token-radius-lg)",
+                overflow: "hidden",
+                boxShadow: "var(--token-shadow-md)",
+              }}
+            >
+              <MuxVideoPlayer
+                playbackId={heroVideo.muxPlaybackId}
+                title={heroVideo.title ?? program.title}
+              />
+            </div>
+          ) : (
+            <div
+              className="relative overflow-hidden"
+              style={{
+                aspectRatio: "16/9",
+                borderRadius: "var(--token-radius-lg)",
+                boxShadow: "var(--token-shadow-md)",
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={heroThumbnail ?? ""}
+                alt=""
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              />
+              <div className="absolute inset-0" style={{ background: "rgba(0,0,0,0.3)" }} />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div
+                  className="w-14 h-14 rounded-full flex items-center justify-center shadow-lg"
+                  style={{ backgroundColor: "var(--token-color-accent)" }}
+                >
+                  <svg className="w-6 h-6 ml-1" fill="currentColor" viewBox="0 0 24 24" style={{ color: "#fff" }}>
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -394,7 +437,7 @@ export function ProgramOverviewPreview({
             color: "var(--token-color-text-secondary)",
           }}
         >
-          <span>{durationWeeks} weeks</span>
+          <span>{durationWeeks} {durationWeeks === 1 ? "lesson" : "lessons"}</span>
           <span>·</span>
           <span>{totalSessions} sessions</span>
           <span>·</span>

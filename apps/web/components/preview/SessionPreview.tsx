@@ -3,6 +3,7 @@
 import type { Skin } from "@/lib/skins";
 import type { SessionData } from "@/components/builder";
 import { stripWrappingQuotes } from "@/lib/strip-quotes";
+import { MuxVideoPlayer } from "@/components/viewer/MuxVideoPlayer";
 
 interface SessionPreviewProps {
   session: SessionData & { keyTakeaways?: string[] };
@@ -38,7 +39,7 @@ export function SessionPreview({ session, skin, onBack }: SessionPreviewProps) {
 
       {/* Content */}
       <div className="p-4 space-y-6">
-        {/* Video hero with thumbnail + play button */}
+        {/* Video hero — playable Mux player when available, static thumbnail fallback otherwise */}
         {(() => {
           // Scene-mode: use first composite clip; classic-mode: use first WATCH action
           const firstClip = session.compositeSession?.clips?.[0];
@@ -50,14 +51,24 @@ export function SessionPreview({ session, skin, onBack }: SessionPreviewProps) {
             watchAction?.muxPlaybackId ??
             watchAction?.youtubeVideo?.muxPlaybackId ??
             null;
-          const thumbnailUrl = muxId
-            ? `https://image.mux.com/${muxId}/thumbnail.jpg?time=2&width=640`
-            : firstClip?.youtubeVideo?.thumbnailUrl ??
-              watchAction?.youtubeVideo?.thumbnailUrl ??
-              (watchAction?.youtubeVideo?.videoId
-                ? `https://img.youtube.com/vi/${watchAction.youtubeVideo.videoId}/hqdefault.jpg`
-                : null);
           const videoTitle = firstClip?.chapterTitle ?? watchAction?.title ?? "Video";
+
+          if (muxId) {
+            return (
+              <div
+                className={`overflow-hidden ${skin.videoFrame === "rounded" ? "rounded-xl" : "rounded"}`}
+              >
+                <MuxVideoPlayer playbackId={muxId} title={videoTitle} />
+              </div>
+            );
+          }
+
+          const thumbnailUrl =
+            firstClip?.youtubeVideo?.thumbnailUrl ??
+            watchAction?.youtubeVideo?.thumbnailUrl ??
+            (watchAction?.youtubeVideo?.videoId
+              ? `https://img.youtube.com/vi/${watchAction.youtubeVideo.videoId}/hqdefault.jpg`
+              : null);
 
           return (
             <div
@@ -78,9 +89,7 @@ export function SessionPreview({ session, skin, onBack }: SessionPreviewProps) {
                   style={{ backgroundColor: skin.colors.bgSecondary }}
                 />
               )}
-              {/* Dark scrim so play button is always visible */}
               <div className="absolute inset-0 bg-black/30" />
-              {/* Play button */}
               <div className="absolute inset-0 flex items-center justify-center">
                 <div
                   className="w-16 h-16 rounded-full flex items-center justify-center shadow-lg"
