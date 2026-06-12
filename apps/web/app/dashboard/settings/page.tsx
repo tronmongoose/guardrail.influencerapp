@@ -30,6 +30,7 @@ export default function SettingsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [grandfathered, setGrandfathered] = useState(false);
 
   // Form state
   const [newCode, setNewCode] = useState("");
@@ -41,10 +42,17 @@ export default function SettingsPage() {
     Promise.all([
       fetch("/api/programs").then((r) => r.json()),
       fetch("/api/promo-codes").then((r) => r.json()),
+      fetch("/api/user/onboarding").then((r) => r.json()),
     ])
-      .then(([programsData, codesData]) => {
+      .then(([programsData, codesData, onboardingData]) => {
         setPrograms(Array.isArray(programsData) ? programsData : []);
         setCodes(Array.isArray(codesData) ? codesData : []);
+        setGrandfathered(
+          Boolean(
+            onboardingData?.platformPromoGranted ||
+              onboardingData?.platformPaymentComplete,
+          ),
+        );
       })
       .catch(() => setError("Failed to load settings"))
       .finally(() => setLoading(false));
@@ -130,6 +138,24 @@ export default function SettingsPage() {
 
         <div className="max-w-2xl mx-auto px-5 py-10 space-y-10">
           <h1 className="text-2xl font-bold text-white">Settings</h1>
+
+          {/* Revenue share disclosure */}
+          <section className="space-y-3">
+            <h2 className="text-lg font-semibold text-white">Payouts &amp; revenue share</h2>
+            {grandfathered ? (
+              <p className="text-sm text-gray-400">
+                You&apos;re grandfathered into the original flat-fee plan — JourneyLine takes
+                <span className="text-white font-medium"> 0% </span>
+                on your program sales. Thank you for being an early creator.
+              </p>
+            ) : (
+              <p className="text-sm text-gray-400">
+                Publishing is free. JourneyLine takes
+                <span className="text-white font-medium"> 10% </span>
+                of each program sale; you keep 90%, paid out via Stripe Connect.
+              </p>
+            )}
+          </section>
 
           {/* Promo Codes Section */}
           <section className="space-y-5">

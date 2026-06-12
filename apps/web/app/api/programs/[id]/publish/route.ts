@@ -5,7 +5,6 @@ import { getStripe, isStripeConfigured } from "@/lib/stripe";
 import { slugify } from "@/lib/slug";
 import { logger } from "@/lib/logger";
 import { notifyAdminProgramPublished } from "@/lib/email";
-import { isPlatformFeeExempt } from "@/lib/platform-fee";
 
 interface ValidationError {
   field: string;
@@ -127,22 +126,10 @@ export async function POST(
     }
   }
 
-  // Per-program platform fee gate. The old account-level flags
-  // (platformPaymentComplete, platformPromoGranted) now function as lifetime
-  // grandfather markers — any user with either flag set today keeps publishing
-  // freely. Going forward, fees attach to Program via platformFeePaid.
-  const grandfathered = user.platformPaymentComplete || user.platformPromoGranted;
-  const exempt = isPlatformFeeExempt(user.email) || grandfathered;
-  if (!program.platformFeePaid && !exempt) {
-    return NextResponse.json(
-      {
-        error: "Platform access required",
-        code: "PLATFORM_ACCESS_REQUIRED",
-        message: "Please complete platform setup to publish this program.",
-      },
-      { status: 402 }
-    );
-  }
+  // Publishing is free under the 10% revenue-share model. Existing flags
+  // (Program.platformFeePaid, User.platformPaymentComplete,
+  // User.platformPromoGranted, PLATFORM_FEE_EXEMPT_EMAILS) now drive the
+  // grandfathered 0% take rate at checkout time — see lib/take-rate.ts.
 
   // Check Stripe Connect requirement for paid programs
   if (program.priceInCents > 0) {

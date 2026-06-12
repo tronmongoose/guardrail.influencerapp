@@ -66,6 +66,7 @@ interface Program {
   slug: string;
   published: boolean;
   priceInCents: number;
+  platformFeePaid?: boolean;
   videos: YouTubeVideoData[];
   drafts: { id: string; status: string; createdAt: string }[];
   weeks: WeekData[];
@@ -222,17 +223,8 @@ export default function ProgramEditPage() {
   const [program, setProgram] = useState<Program | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  // If the upgrade flow sent the creator back with platform_access=success,
-  // they've already gone through the wizard once. Skip showing it again —
-  // we'll auto-fire generation from the effect below. Without this guard the
-  // wizard re-mounts fresh at step 0 and forces them to click through Basics
-  // → Content → ... → Create all over again.
-  const platformAccessSuccess = searchParams.get("platform_access") === "success";
-  const [showWizard, setShowWizard] = useState(
-    searchParams.get("wizard") === "true" && !platformAccessSuccess,
-  );
-  const wizardDismissedRef = useRef(platformAccessSuccess);
-  const platformAccessAutoFiredRef = useRef(false);
+  const [showWizard, setShowWizard] = useState(searchParams.get("wizard") === "true");
+  const wizardDismissedRef = useRef(false);
   const [activeTab, setActiveTab] = useState<"details" | "curriculum" | "payments" | "preview">("details");
   const [previewDeviceMode, setPreviewDeviceMode] = useState<"desktop" | "mobile">("desktop");
   const [previewAudience, setPreviewAudience] = useState<"public" | "learner">("public");
@@ -250,6 +242,7 @@ export default function ProgramEditPage() {
   const [showStripePrompt, setShowStripePrompt] = useState(false);
   const [connectingStripe, setConnectingStripe] = useState(false);
   const [openingStripeDashboard, setOpeningStripeDashboard] = useState(false);
+  const [creatorGrandfathered, setCreatorGrandfathered] = useState(false);
   const payoutCardRef = useRef<HTMLDivElement | null>(null);
 
   // Promo codes for this program
@@ -405,6 +398,20 @@ export default function ProgramEditPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Fetch the creator's grandfather flags once to drive net-earnings copy on
+  // the Pricing tab. The 10% take rate doesn't apply to creators who paid the
+  // legacy $99 platform fee or were promo-granted lifetime access.
+  useEffect(() => {
+    fetch("/api/user/onboarding")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.platformPromoGranted || data?.platformPaymentComplete) {
+          setCreatorGrandfathered(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Listen for generation-complete event dispatched by GenerationNotification when on this page.
   // This fires load() even when asyncGenerating is false (e.g. status was already COMPLETED on mount).
   useEffect(() => {
@@ -491,80 +498,13 @@ export default function ProgramEditPage() {
   // Skip when there's a known generation failure — the in-page "Generation failed"
   // panel surfaces the error + retry button instead, so the user doesn't get silently
   // re-thrown into the wizard with no idea the previous attempt failed.
-  //
-  // Re-reads ?platform_access=success directly from searchParams instead of
-  // trusting the wizardDismissedRef seeded at mount. Reason: this page is a
-  // Client Component using useSearchParams() with no Suspense boundary, so
-  // Next 15 prerenders it with empty searchParams; the useState/useRef
-  // initializers see platformAccessSuccess=false on first render, the ref
-  // gets stuck at false, then this effect re-opens the wizard at step 0 even
-  // though the creator just round-tripped through Stripe. Bit us repeatedly
-  // on mobile (9th-degree 2026-05-24) — three prior "fixes" treated symptoms.
   useEffect(() => {
     if (!program || !genStatusChecked || wizardDismissedRef.current) return;
     if (lastGenError) return;
-    if (searchParams.get("platform_access") === "success") return;
     if (program.weeks.length === 0 && !asyncGenerating) {
       setShowWizard(true);
     }
-  }, [program, genStatusChecked, asyncGenerating, lastGenError, searchParams]);
-
-  // Returning from /onboarding/upgrade with platform_access=success means the
-  // creator already pressed Publish once and got bounced by the platform-access
-  // gate. Auto-fire publish for them instead of forcing a redo. Runs exactly
-  // once per page load. Skip when the program hasn't been generated yet — the
-  // gate isn't reachable from the wizard anymore, so an unauth'd ?platform_access=success
-  // on an empty program means something else is going on.
-  useEffect(() => {
-    if (!platformAccessSuccess) return;
-    if (platformAccessAutoFiredRef.current) return;
-    if (!program || !genStatusChecked) return;
-    if (asyncGenerating || lastGenError) return;
-    if (program.weeks.length === 0) return;
-
-    // Lock dismissal + close the wizard SYNCHRONOUSLY before any async work
-    // or URL mutation. Without this, the replaceState below strips
-    // ?platform_access=success → useSearchParams updates → the auto-show
-    // effect re-runs with all guards failing (ref still false because Next 15
-    // SSRs this Client Component with empty searchParams) → wizard opens at
-    // currentStep=0. Three prior fixes missed this; the ref guard is the
-    // only one that survives every race.
-    wizardDismissedRef.current = true;
-    setShowWizard(false);
-
-    platformAccessAutoFiredRef.current = true;
-
-    // Close the success_url-vs-webhook race: synchronously confirm payment
-    // via Stripe before firing publish. Without this, fast redirects can beat
-    // the webhook and bounce the creator back to the paywall they just paid.
-    // Idempotent with the webhook handler (same Program.update + unique
-    // constraint on platformFeeSessionId).
-    const sessionId = searchParams.get("session_id");
-    (async () => {
-      if (sessionId) {
-        try {
-          await fetch("/api/platform/checkout/confirm", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ session_id: sessionId }),
-          });
-        } catch {
-          // Confirm failed — try publish anyway in case webhook fired in parallel.
-        }
-      }
-      publishProgram();
-    })();
-
-    // Clean the URL so a manual refresh doesn't re-fire.
-    const url = new URL(window.location.href);
-    url.searchParams.delete("platform_access");
-    url.searchParams.delete("wizard");
-    url.searchParams.delete("session_id");
-    window.history.replaceState({}, "", url.pathname + (url.search ? url.search : ""));
-    // publishProgram is stable for this purpose; keep the dep list focused
-    // on the trigger inputs.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [platformAccessSuccess, program, genStatusChecked, asyncGenerating, lastGenError]);
+  }, [program, genStatusChecked, asyncGenerating, lastGenError]);
 
   async function cancelGeneration() {
     try {
@@ -613,14 +553,6 @@ export default function ProgramEditPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        // Handle platform access gate — redirect to upgrade page with promo code input.
-        // Pass `from=${id}` so the upgrade page can route the creator back to this
-        // program after payment/promo, where the auto-fire effect re-runs publish.
-        if (data.code === "PLATFORM_ACCESS_REQUIRED") {
-          setPublishing(false);
-          router.push(`/onboarding/upgrade?from=${id}`);
-          return;
-        }
         // Handle Stripe requirement for paid programs
         if (data.code === "STRIPE_REQUIRED") {
           setPublishing(false);
@@ -1581,6 +1513,26 @@ export default function ProgramEditPage() {
                 </div>
                 <span className="text-xs text-gray-600">custom amount</span>
               </div>
+
+              {/* Net earnings preview */}
+              {program.priceInCents > 0 && (() => {
+                const grandfathered = creatorGrandfathered || program.platformFeePaid === true;
+                const feeCents = grandfathered ? 0 : Math.round(program.priceInCents * 0.1);
+                const netCents = program.priceInCents - feeCents;
+                const fmt = (c: number) => `$${(c / 100).toFixed(2)}`;
+                return (
+                  <div className="rounded-xl border border-gray-800 bg-gray-900/40 px-4 py-3 text-sm text-gray-300">
+                    Learner pays <span className="text-white font-medium">{fmt(program.priceInCents)}</span>
+                    {" → "}
+                    you earn <span className="text-teal-400 font-medium">{fmt(netCents)}</span>{" "}
+                    {grandfathered ? (
+                      <span className="text-xs text-gray-500">(grandfathered — JourneyLine takes 0%)</span>
+                    ) : (
+                      <span className="text-xs text-gray-500">(after 10% JourneyLine fee)</span>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
 
             <div ref={payoutCardRef} className="space-y-3 scroll-mt-24">

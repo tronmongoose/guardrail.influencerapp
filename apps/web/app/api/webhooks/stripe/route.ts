@@ -42,53 +42,21 @@ export async function POST(req: NextRequest) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
 
-      // Per-program platform fee (NEW path)
-      if (session.metadata?.type === "program_fee") {
-        const userId = session.metadata.userId;
-        const programId = session.metadata.programId;
-        if (!userId || !programId) {
-          logger.warn({
-            operation: "stripe.webhook.program_fee_missing_metadata",
-            sessionId: session.id,
-          });
-          break;
-        }
-        try {
-          await prisma.program.update({
-            where: { id: programId },
-            data: {
-              platformFeePaid: true,
-              platformFeeSessionId: session.id,
-              platformFeePaidAt: new Date(),
-            },
-          });
-          logger.info({
-            operation: "stripe.webhook.program_fee_paid",
-            userId,
-            programId,
-            sessionId: session.id,
-          });
-        } catch (err) {
-          // P2002 = unique violation on platformFeeSessionId → webhook replay, safe to no-op
-          logger.info({
-            operation: "stripe.webhook.program_fee_replay_or_error",
-            userId,
-            programId,
-            sessionId: session.id,
-            err: err instanceof Error ? err.message : String(err),
-          });
-        }
-        break;
-      }
-
-      // Legacy account-level platform access — kept as a logged no-op for the
-      // deploy window so any in-flight checkouts don't error at the webhook.
-      // Existing creators with platformPaymentComplete=true stay grandfathered;
-      // there's nothing to update here. Remove this branch in a follow-up.
-      if (session.metadata?.type === "platform_access") {
+      // Legacy platform-fee sessions ($99 per-program "program_fee" + the
+      // earlier account-level "platform_access"). The fee path was retired
+      // when we pivoted to a 10% revenue share. Keep this branch as a logged
+      // no-op so any in-flight checkout that completes after deploy doesn't
+      // 500 the webhook. Creators on platformFeePaid=true and account-level
+      // grandfather flags are honored at checkout time via lib/take-rate.ts.
+      if (
+        session.metadata?.type === "program_fee" ||
+        session.metadata?.type === "platform_access"
+      ) {
         logger.info({
-          operation: "stripe.webhook.legacy_platform_access_noop",
+          operation: "stripe.webhook.legacy_platform_fee_noop",
+          metadataType: session.metadata.type,
           userId: session.metadata.userId,
+          programId: session.metadata.programId,
           sessionId: session.id,
         });
         break;

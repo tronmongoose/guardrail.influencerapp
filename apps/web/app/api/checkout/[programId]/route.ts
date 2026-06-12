@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
 import { createMagicLink, getMagicLinkUrl } from "@/lib/magic-link";
 import { logger } from "@/lib/logger";
+import { getTakeRateBps, computeApplicationFeeCents } from "@/lib/take-rate";
 import {
   notifyAdminEnrollment,
   sendLearnerWelcomeEmail,
@@ -45,6 +46,8 @@ export async function POST(
           name: true,
           stripeAccountId: true,
           stripeOnboardingComplete: true,
+          platformPaymentComplete: true,
+          platformPromoGranted: true,
         },
       },
     },
@@ -238,13 +241,22 @@ export async function POST(
     // webhook still receives it via session.customer_details.email.
   };
 
-  // Route 100% of the learner payment to the creator via Stripe Connect.
-  // JourneyLine's revenue comes from a separate $99 platform fee, not a rev split.
+  // Route the learner payment to the creator via Stripe Connect destination
+  // charge. JourneyLine takes a 10% application fee on the destination charge;
+  // grandfathered programs/creators (paid the legacy $99 fee or were promo'd)
+  // get a 0% take rate forever — see lib/take-rate.ts.
   if (program.creator.stripeAccountId && program.creator.stripeOnboardingComplete) {
+    const bps = getTakeRateBps({
+      program: { platformFeePaid: program.platformFeePaid },
+      creator: program.creator,
+    });
+    const applicationFeeCents = computeApplicationFeeCents(program.priceInCents, bps);
+
     sessionConfig.payment_intent_data = {
       transfer_data: {
         destination: program.creator.stripeAccountId,
       },
+      ...(applicationFeeCents > 0 ? { application_fee_amount: applicationFeeCents } : {}),
     };
 
     logger.info({
@@ -252,6 +264,8 @@ export async function POST(
       userId: user.id,
       programId,
       creatorAccountId: program.creator.stripeAccountId,
+      takeRateBps: bps,
+      applicationFeeCents,
     });
   } else {
     // No Stripe Connect - all funds go to platform
