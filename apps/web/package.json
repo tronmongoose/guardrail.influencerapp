@@ -23,6 +23,7 @@
     "@prisma/client": "^6.2.0",
     "@react-email/components": "^1.0.12",
     "@react-email/render": "^2.0.7",
+    "@sentry/nextjs": "^10.57.0",
     "@vercel/blob": "^2.3.2",
     "lucide-react": "^1.11.0",
     "mammoth": "^1.11.0",

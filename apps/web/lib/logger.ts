@@ -8,6 +8,8 @@
  * - Error details without exposing internals
  */
 
+import * as Sentry from "@sentry/nextjs";
+
 type LogLevel = "info" | "warn" | "error";
 
 interface LogContext {
@@ -70,6 +72,17 @@ export const logger = {
       errorCode,
       success: false,
     }));
+
+    Sentry.withScope((scope) => {
+      scope.setTag("operation", context.operation);
+      if (context.programId) scope.setTag("programId", context.programId);
+      if (context.videoId) scope.setTag("videoId", context.videoId);
+      if (errorCode) scope.setTag("errorCode", errorCode);
+      scope.setContext("logger", { ...context, ...extra });
+      Sentry.captureException(
+        error instanceof Error ? error : new Error(errorMessage),
+      );
+    });
   },
 };
 
