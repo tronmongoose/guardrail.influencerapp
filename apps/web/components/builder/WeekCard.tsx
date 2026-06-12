@@ -84,7 +84,7 @@ export function WeekCard({ week, programId, videos, onUpdate }: WeekCardProps) {
   }
 
   async function handleDelete() {
-    if (!confirm(`Delete "${week.title}"? This will delete all sessions and actions in this week.`)) {
+    if (!confirm(`Delete "${week.title}"? This will delete all sessions and actions in this lesson.`)) {
       return;
     }
 

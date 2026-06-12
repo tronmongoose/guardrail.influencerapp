@@ -6,7 +6,7 @@ import { useUser } from "@clerk/nextjs";
 import { Spinner } from "@/components/ui/spinner";
 
 const FEATURES = [
-  "Turn your videos into structured weekly programs",
+  "Turn your videos into structured paced programs",
   "Built-in payments, directly into your account — keep 100% of every sale",
   "AI-powered structure and sequencing",
   "Custom branding & themes for every program",

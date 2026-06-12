@@ -821,7 +821,7 @@ function LearnerJourneySection({ displayTitle }: { displayTitle: string }) {
           </div>
         </section>
 
-        {/* Weeks 2–3 — Locked */}
+        {/* Lessons 2–3 — Locked */}
         {[
           { week: 2, title: "Building Core Strength" },
           { week: 3, title: "Progressive Overload" },
@@ -1137,7 +1137,7 @@ function ProgramCoversSection({ displayTitle }: { displayTitle: string }) {
                 color: "var(--token-comp-chip-text)",
               }}
             >
-              8 weeks
+              8 lessons
             </span>
             <span
               className="px-2 py-0.5 text-[9px] font-semibold"
@@ -1180,7 +1180,7 @@ function ProgramCoversSection({ displayTitle }: { displayTitle: string }) {
               Yoga Flow Fundamentals
             </p>
             <p style={{ fontSize: "10px", color: "var(--token-color-text-secondary)" }}>
-              Maya Chen · 4 weeks · Free
+              Maya Chen · 4 lessons · Free
             </p>
           </div>
         </div>
@@ -1390,7 +1390,7 @@ function DesignTokensSection({ tokens }: { tokens: SkinTokens }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export function SkinPreviewPanel({ skinId, viewMode = "mobile", thumbnailUrl, tokens: tokenOverride, programTitle, customEmojis }: SkinPreviewPanelProps) {
-  const displayTitle = stripWrappingQuotes(programTitle ?? "").trim() || "8-Week Strength Foundation";
+  const displayTitle = stripWrappingQuotes(programTitle ?? "").trim() || "Strength Foundation";
   const tokens = useMemo(() => tokenOverride ?? getSkinTokens(skinId), [skinId, tokenOverride]);
   const cssVars = useMemo(() => getTokenCSSVars(tokens), [tokens]);
   const entry = getSkinCatalogEntry(skinId);

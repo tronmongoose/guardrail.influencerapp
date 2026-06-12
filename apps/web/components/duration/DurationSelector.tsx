@@ -20,7 +20,7 @@ export function DurationSelector({
   pacingMode,
   presets,
 }: DurationSelectorProps) {
-  const unit = pacingMode === "unlock_on_complete" ? "sessions" : "weeks";
+  const unit = pacingMode === "unlock_on_complete" ? "sessions" : "lessons";
 
   return (
     <div className="grid grid-cols-3 gap-3">

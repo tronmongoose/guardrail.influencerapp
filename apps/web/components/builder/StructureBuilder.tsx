@@ -179,7 +179,7 @@ export function StructureBuilder({
               Adding...
             </>
           ) : (
-            "+ Add First Week"
+            "+ Add First Lesson"
           )}
         </button>
       </div>
@@ -220,7 +220,7 @@ export function StructureBuilder({
             Adding...
           </>
         ) : (
-          "+ Add Week"
+          "+ Add Lesson"
         )}
       </button>
     </div>

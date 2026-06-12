@@ -31,7 +31,7 @@ export function StepBasics({ value, onChange }: StepBasicsProps) {
           type="text"
           value={value.title}
           onChange={(e) => onChange({ title: e.target.value })}
-          placeholder="e.g., 12-Week Strength Foundation"
+          placeholder="e.g., Strength Foundation"
           className="w-full px-4 py-3 bg-surface-dark border border-surface-border rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:border-neon-cyan focus:ring-1 focus:ring-neon-cyan"
         />
       </div>
@@ -71,7 +71,7 @@ export function StepBasics({ value, onChange }: StepBasicsProps) {
         <textarea
           value={value.targetTransformation}
           onChange={(e) => onChange({ targetTransformation: e.target.value })}
-          placeholder="e.g., Build a consistent workout habit and gain 10lbs of lean muscle in 12 weeks"
+          placeholder="e.g., Build a consistent workout habit and gain 10lbs of lean muscle in 90 days"
           rows={2}
           className="w-full px-4 py-3 bg-surface-dark border border-surface-border rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:border-neon-cyan focus:ring-1 focus:ring-neon-cyan resize-none"
         />
@@ -89,7 +89,7 @@ export function StepBasics({ value, onChange }: StepBasicsProps) {
         <h4 className="text-sm font-medium text-neon-cyan mb-2">What helps the AI the most:</h4>
         <ul className="text-xs text-gray-400 space-y-1">
           <li>• A specific audience (e.g., &quot;beginner runners&quot; beats &quot;fitness people&quot;)</li>
-          <li>• A measurable transformation (e.g., &quot;run a 5K in 8 weeks&quot; beats &quot;get fit&quot;)</li>
+          <li>• A measurable transformation (e.g., &quot;run a 5K in 60 days&quot; beats &quot;get fit&quot;)</li>
           <li>• Anything is better than nothing — you can refine it all after generation</li>
           <li>• Type a rough draft and hit <strong className="text-neon-cyan">Improve with AI</strong> to polish it instantly</li>
         </ul>

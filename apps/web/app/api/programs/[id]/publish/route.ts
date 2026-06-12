@@ -82,9 +82,9 @@ export async function POST(
     errors.push({ field: "title", message: "Program must have a title" });
   }
 
-  // Required: At least 1 week
+  // Required: At least 1 lesson
   if (program.weeks.length === 0) {
-    errors.push({ field: "weeks", message: "Program must have at least one week" });
+    errors.push({ field: "weeks", message: "Program must have at least one lesson" });
   }
 
   // Required: At least 1 session

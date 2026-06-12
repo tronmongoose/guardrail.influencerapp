@@ -375,7 +375,7 @@ export default async function SalesPage({ params }: { params: Promise<{ slug: st
                   color: "var(--token-color-text-secondary)",
                 }}
               >
-                <span>{program.durationWeeks} weeks</span>
+                <span>{program.durationWeeks} {program.durationWeeks === 1 ? "lesson" : "lessons"}</span>
                 <span>·</span>
                 <span>{totalSessions} sessions</span>
                 <span>·</span>
@@ -434,7 +434,7 @@ export default async function SalesPage({ params }: { params: Promise<{ slug: st
               {/* Key numbers */}
               <div className="flex gap-6">
                 {[
-                  { label: "Weeks", value: program.durationWeeks },
+                  { label: "Lessons", value: program.durationWeeks },
                   { label: "Sessions", value: totalSessions },
                   { label: "Actions", value: allActions.length },
                 ].map(({ label, value }) => (
@@ -546,7 +546,7 @@ export default async function SalesPage({ params }: { params: Promise<{ slug: st
             color: "var(--token-color-text-secondary)",
           }}
         >
-          <span>{program.durationWeeks} weeks</span>
+          <span>{program.durationWeeks} {program.durationWeeks === 1 ? "lesson" : "lessons"}</span>
           <span>·</span>
           <span>{totalSessions} sessions</span>
           <span>·</span>

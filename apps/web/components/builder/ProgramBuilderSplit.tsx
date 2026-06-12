@@ -201,7 +201,7 @@ export function ProgramBuilderSplit({
                 <p className="text-gray-400 text-sm mb-1">No session selected</p>
                 <p className="text-gray-600 text-xs">
                   {weeks.length === 0
-                    ? "Add a week to get started"
+                    ? "Add a lesson to get started"
                     : "Tap the bar above to pick a lesson"}
                 </p>
               </div>

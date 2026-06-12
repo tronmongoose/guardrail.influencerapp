@@ -405,7 +405,7 @@ export async function notifyAdminProgramPublished(
   await sendEmail({
     to: adminEmail,
     subject: `[Journeyline] Program published: "${program.title}"`,
-    text: `A program was just published on Journeyline.\n\nProgram: ${program.title}\nCreator: ${creator.name || "—"} (${creator.email})\nPrice: ${price}\nStructure: ${stats.weekCount} week(s), ${stats.sessionCount} session(s)\nPublic URL: ${appUrl}/p/${program.slug}\n\n--\nJourneyline Admin Notifications`,
+    text: `A program was just published on Journeyline.\n\nProgram: ${program.title}\nCreator: ${creator.name || "—"} (${creator.email})\nPrice: ${price}\nStructure: ${stats.weekCount} lesson(s), ${stats.sessionCount} session(s)\nPublic URL: ${appUrl}/p/${program.slug}\n\n--\nJourneyline Admin Notifications`,
   });
 }
 
