@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +12,7 @@ export async function GET(req: Request) {
       { operation: "sentry.test.logger" },
       new Error("Sentry test via logger.error — safe to delete"),
     );
+    await Sentry.flush(2000);
     return NextResponse.json({ ok: true, mode });
   }
 
