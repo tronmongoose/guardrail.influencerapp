@@ -1,54 +1,16 @@
 import Link from "next/link";
-import { cookies } from "next/headers";
-import { claimAccessFromStripeSession } from "@/lib/claim-access";
-import { logger } from "@/lib/logger";
 import { ResendMagicLink } from "./ResendMagicLink";
-
-const LEARNER_SESSION_COOKIE = "guiderail_learner_session";
-const SESSION_MAX_AGE = 60 * 60 * 24 * 90; // 90 days — match /auth/magic
 
 export const dynamic = "force-dynamic";
 
 export default async function CheckoutSuccessPage({
   searchParams,
 }: {
-  searchParams: Promise<{ programId?: string; session_id?: string }>;
+  searchParams: Promise<{ programId?: string; granted?: string }>;
 }) {
   const params = await searchParams;
   const programId = params.programId;
-  const sessionId = params.session_id;
-
-  // Try to auto-grant access. Falls back gracefully — the worst case is the
-  // user has to click the magic link in their email, which is the prior
-  // behavior anyway.
-  let granted = false;
-  if (programId && sessionId) {
-    const result = await claimAccessFromStripeSession(sessionId, programId);
-    if (result.ok) {
-      const cookieStore = await cookies();
-      cookieStore.set(LEARNER_SESSION_COOKIE, result.userId, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: SESSION_MAX_AGE,
-        path: "/",
-      });
-      granted = true;
-      logger.info({
-        operation: "checkout.success.access_granted",
-        programId,
-        sessionId,
-        entitlementCreated: result.entitlementCreated,
-      });
-    } else {
-      logger.warn({
-        operation: "checkout.success.claim_failed",
-        programId,
-        sessionId,
-        reason: result.reason,
-      });
-    }
-  }
+  const granted = params.granted === "1";
 
   return (
     <div className="min-h-screen gradient-bg-radial grid-bg flex items-center justify-center px-6">
