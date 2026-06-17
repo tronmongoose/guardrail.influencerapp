@@ -21,8 +21,7 @@ import { getPatternCSS } from "@/lib/decoration-patterns";
 import { ProgramOverviewPreview } from "@/components/preview/ProgramOverviewPreview";
 import { LearnerTimeline } from "@/app/learn/[programId]/timeline";
 import { CreatorAvatarUpload } from "@/components/builder/CreatorAvatarUpload";
-import { useGenerationSteps } from "@/components/generation/useGenerationSteps";
-import { GenerationSteps } from "@/components/generation/GenerationSteps";
+import { GenerationProgress } from "@/components/generation/GenerationProgress";
 import { useGeneration } from "@/components/generation/GenerationProvider";
 import { createStripeLoginLink } from "@/app/actions/stripe";
 import { FeedbackWidget } from "@/components/feedback/FeedbackWidget";
@@ -143,73 +142,6 @@ function toLearnerPreviewProgram(program: Program) {
   };
 }
 
-const AMBIENT_HEADERS = [
-  "Great content deserves great structure",
-  "Your expertise is becoming a program",
-  "Turning knowledge into transformation",
-  "Every lesson is being crafted with intention",
-  "Building something your learners will love",
-];
-
-function GenerationProgress({ stage, progress, onCancel, creatorEmail, programTitle }: { stage: string | null; progress: number; onCancel?: () => void; creatorEmail?: string; programTitle?: string }) {
-  const stepsData = useGenerationSteps({ stage, progress, status: "PROCESSING" });
-  const [headerIndex, setHeaderIndex] = useState(0);
-  // Rotate ambient header every 8 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setHeaderIndex((prev) => (prev + 1) % AMBIENT_HEADERS.length);
-    }, 8000);
-    return () => clearInterval(interval);
-  }, []);
-
-  return (
-    <div className="max-w-lg mx-auto mt-16 text-center">
-      {/* Animated icon */}
-      <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-pink-900/30 border border-pink-700/50 flex items-center justify-center generation-icon-glow">
-        <svg className="w-10 h-10 text-pink-400 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-        </svg>
-      </div>
-
-      {/* Rotating ambient header */}
-      <p className="text-sm text-gray-500 mb-2 h-5 transition-opacity duration-700" key={headerIndex}>
-        {AMBIENT_HEADERS[headerIndex]}
-      </p>
-
-      <h2 className="text-2xl font-bold text-white mb-3">
-        {programTitle ? `Building "${programTitle}"` : "Building your program..."}
-      </h2>
-      <p className="text-gray-400 mb-8">
-        We&apos;re hard at work crafting your incredible journeyline! Feel free to navigate elsewhere — we&apos;ll email you when it&apos;s ready.
-      </p>
-
-      <GenerationSteps
-        steps={stepsData.steps}
-        activeStepIndex={stepsData.activeStepIndex}
-        displayProgress={stepsData.displayProgress}
-        estimatedMinutesRemaining={stepsData.estimatedMinutesRemaining}
-        variant="full"
-      />
-
-      {/* Async messaging */}
-      <div className="mt-6">
-        {creatorEmail && (
-          <p className="text-sm text-gray-500 mt-1">
-            We&apos;ll email <span className="text-gray-300">{creatorEmail}</span> when it&apos;s ready.
-          </p>
-        )}
-      </div>
-      {onCancel && (
-        <button
-          onClick={onCancel}
-          className="text-xs text-gray-500 hover:text-red-400 underline transition mt-2"
-        >
-          Cancel generation
-        </button>
-      )}
-    </div>
-  );
-}
 
 export default function ProgramEditPage() {
   const { id } = useParams<{ id: string }>();
@@ -257,6 +189,12 @@ export default function ProgramEditPage() {
 
   // Async generation tracking
   const [asyncGenerating, setAsyncGenerating] = useState(false);
+  // True between wizard.onComplete and the moment POST /generate-async
+  // returns. While true, we poll /readiness client-side and synthesize a
+  // stage="preparing_videos" so the GenerationProgress UI lights up its
+  // first step. Status polling for the real backend job is suppressed
+  // during this phase because there's no job to poll yet.
+  const [prepPhaseActive, setPrepPhaseActive] = useState(false);
   const [genStatusChecked, setGenStatusChecked] = useState(false); // true once the status API call has resolved
   const [asyncStage, setAsyncStage] = useState<string | null>(null);
   const [asyncProgress, setAsyncProgress] = useState(0);
@@ -437,8 +375,79 @@ export default function ProgramEditPage() {
   }, [activeGenerations, id, asyncGenerating, genStatusChecked]);
 
   // Poll for async generation progress (max 10 minutes)
+  // Client-side prep phase: poll /readiness, then POST /generate-async.
+  // The Mux static-rendition wait can take 5-15 min for long videos and
+  // would exceed Vercel maxDuration (800s) if we did it inside the
+  // function. Doing it client-side moves the wait out of the function.
+  useEffect(() => {
+    if (!prepPhaseActive) return;
+    let cancelled = false;
+    const POLL_INTERVAL_MS = 5_000;
+    const PREPARE_DEADLINE = Date.now() + 45 * 60_000;
+
+    (async () => {
+      while (!cancelled && Date.now() < PREPARE_DEADLINE) {
+        try {
+          const r = await fetch(`/api/programs/${id}/readiness`);
+          if (!r.ok) {
+            // If readiness check itself fails, fall through to POST anyway —
+            // generate-async's per-video wait + fail-loud throw is the backstop.
+            break;
+          }
+          const ready: {
+            readyCount: number;
+            totalCount: number;
+            slowestEstimateRemainingMs: number;
+          } = await r.json();
+          if (!cancelled) {
+            // Synthesize bar progress within the preparing_videos stage's
+            // ceiling (0-11%). Fully ready jumps to the ceiling; partial
+            // ready scales linearly.
+            const ratio = ready.totalCount === 0 ? 1 : ready.readyCount / ready.totalCount;
+            setAsyncProgress(Math.round(ratio * 10));
+          }
+          if (ready.totalCount === 0 || ready.readyCount >= ready.totalCount) break;
+        } catch {
+          // transient — retry
+        }
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+      }
+
+      if (cancelled) return;
+
+      try {
+        const genRes = await fetch(`/api/programs/${id}/generate-async`, { method: "POST" });
+        if (!genRes.ok) {
+          const error = await genRes.json().catch(() => ({}));
+          setLastGenError(error.detail || error.error || "Failed to start generation");
+          setAsyncGenerating(false);
+          setPrepPhaseActive(false);
+          return;
+        }
+      } catch {
+        setLastGenError("Failed to start generation");
+        setAsyncGenerating(false);
+        setPrepPhaseActive(false);
+        return;
+      }
+
+      // Hand off to status polling — clear asyncStage so the next status
+      // tick (below) overwrites it with the real backend stage.
+      setAsyncStage(null);
+      setPrepPhaseActive(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [prepPhaseActive, id]);
+
   useEffect(() => {
     if (!asyncGenerating) return;
+    // Don't poll backend status while we're still in the client-side prep
+    // phase — there's no job to poll yet, and a 404 would surface as
+    // "Generation ended unexpectedly."
+    if (prepPhaseActive) return;
 
     const MAX_POLL_MS = 10 * 60 * 1000; // 10 minutes
     const startTime = Date.now();
@@ -492,7 +501,7 @@ export default function ProgramEditPage() {
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [asyncGenerating, id, load, showToast]);
+  }, [asyncGenerating, prepPhaseActive, id, load, showToast]);
 
   // Auto-show wizard for programs that haven't completed generation.
   // Skip when there's a known generation failure — the in-page "Generation failed"
@@ -729,7 +738,13 @@ export default function ProgramEditPage() {
           // (e.g. on a brief asyncGenerating flicker during status polling).
           wizardDismissedRef.current = true;
           setShowWizard(false);
+          // Enter the client-side preparing phase. The pre-poll useEffect
+          // below polls Mux readiness, then POSTs /generate-async, then
+          // clears prepPhaseActive so the existing status polling takes over.
+          setPrepPhaseActive(true);
           setAsyncGenerating(true);
+          setAsyncStage("preparing_videos");
+          setAsyncProgress(0);
           setActiveTab("curriculum");
           load();
         }}

@@ -10,6 +10,7 @@ export interface GenerationStep {
 }
 
 const STEP_DEFINITIONS = [
+  { key: "preparing_videos", label: "Preparing your videos", subtitle: "Getting your videos ready for AI analysis" },
   { key: "watching", label: "Watching your videos", subtitle: "AI is analyzing every frame and word of your content" },
   { key: "analyzing", label: "Understanding your expertise", subtitle: "Identifying the concepts that make your teaching unique" },
   { key: "clustering", label: "Finding the natural structure", subtitle: "Organizing ideas into a sequence that clicks" },
@@ -47,22 +48,25 @@ interface UseGenerationStepsResult {
 // Ceilings are sized so the slowest stages (fetching_transcripts, generating)
 // own the biggest contiguous slices and the short stages don't jump much.
 const STAGES: Record<string, { ceiling: number; expectedSeconds: number }> = {
-  queued: { ceiling: 2, expectedSeconds: 2 },
-  preparing: { ceiling: 6, expectedSeconds: 4 },
-  fetching_transcripts: { ceiling: 48, expectedSeconds: 120 },
-  analyzing: { ceiling: 54, expectedSeconds: 8 },
-  generating: { ceiling: 86, expectedSeconds: 120 },
+  // Client-side stage emitted by the wizard/edit page while polling Mux
+  // readiness BEFORE generate-async has been posted. Long uploads can sit
+  // here for 5-15 min while Mux finishes the static rendition transcode.
+  preparing_videos: { ceiling: 11, expectedSeconds: 720 },
+  queued: { ceiling: 13, expectedSeconds: 2 },
+  preparing: { ceiling: 17, expectedSeconds: 4 },
+  fetching_transcripts: { ceiling: 49, expectedSeconds: 120 },
+  analyzing: { ceiling: 55, expectedSeconds: 8 },
+  generating: { ceiling: 87, expectedSeconds: 120 },
   validating: { ceiling: 90, expectedSeconds: 5 },
   persisting: { ceiling: 94, expectedSeconds: 10 },
   generating_skin: { ceiling: 98, expectedSeconds: 30 },
   complete: { ceiling: 100, expectedSeconds: 0 },
 };
 
-// Bubble step → bar-% threshold. 8 bubbles evenly distributed every 12.5% so
-// each one lights up as the bar crosses its slice — decouples cadence from
-// stage names entirely (which was the original "races through 4 bubbles in
-// 5 seconds" bug, since `analyzing` stage was tiny but owned 2 bubbles).
-const STEP_THRESHOLDS = [0, 12.5, 25, 37.5, 50, 62.5, 75, 87.5];
+// Bubble step → bar-% threshold. 9 bubbles evenly distributed every ~11.1%
+// so each one lights up as the bar crosses its slice — decouples cadence
+// from stage names entirely.
+const STEP_THRESHOLDS = [0, 11.11, 22.22, 33.33, 44.44, 55.55, 66.66, 77.78, 88.89];
 
 /**
  * Maps backend generation {stage, progress} to 8 rich frontend steps.

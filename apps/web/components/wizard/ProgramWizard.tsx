@@ -147,15 +147,6 @@ export function ProgramWizard({
     return { ...DEFAULT_STATE, ...initialState };
   });
   const [isGenerating, setIsGenerating] = useState(false);
-  // Mux-readiness pre-poll state, populated after the user clicks Generate
-  // and cleared once everything is ready. Null on the happy path for short
-  // videos because the first poll comes back fully ready.
-  const [preparingStatus, setPreparingStatus] = useState<{
-    readyCount: number;
-    totalCount: number;
-    estimateRemainingMs: number;
-    pendingTitles: string[];
-  } | null>(null);
 
   const analysisPollerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -351,67 +342,13 @@ export function ProgramWizard({
         }
       }
 
-      // Pre-poll Mux readiness before kicking off generation. The capped-1080p
-      // static rendition Gemini downloads takes time proportional to source
-      // length (~0.3-0.5× duration); for long videos this exceeds Vercel's
-      // maxDuration ceiling if we wait inside generate-async. Polling client-
-      // side moves the wait out of the function. Short videos pass through in
-      // a single iteration with no perceived delay. The pipeline's own
-      // per-video wait + fail-loud throw stays in as a defense-in-depth
-      // backstop.
-      const POLL_INTERVAL_MS = 5_000;
-      const PREPARE_DEADLINE = Date.now() + 45 * 60_000;
-      let attempts = 0;
-      while (Date.now() < PREPARE_DEADLINE) {
-        attempts++;
-        try {
-          const readyRes = await fetch(`/api/programs/${programId}/readiness`);
-          if (!readyRes.ok) {
-            console.warn("[wizard] readiness check failed, proceeding to generate anyway");
-            break;
-          }
-          const ready: {
-            readyCount: number;
-            totalCount: number;
-            slowestEstimateRemainingMs: number;
-            pendingTitles: string[];
-          } = await readyRes.json();
-
-          if (ready.totalCount === 0 || ready.readyCount >= ready.totalCount) {
-            setPreparingStatus(null);
-            break;
-          }
-          setPreparingStatus({
-            readyCount: ready.readyCount,
-            totalCount: ready.totalCount,
-            estimateRemainingMs: ready.slowestEstimateRemainingMs,
-            pendingTitles: ready.pendingTitles,
-          });
-        } catch (err) {
-          console.warn("[wizard] readiness poll error", err);
-          if (attempts >= 3) break;
-        }
-        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-      }
-      setPreparingStatus(null);
-
-      // Start async generation (returns immediately)
-      const genRes = await fetch(`/api/programs/${programId}/generate-async`, {
-        method: "POST",
-      });
-
-      if (!genRes.ok) {
-        const error = await genRes.json();
-        throw new Error(error.detail || error.error || "Failed to start generation");
-      }
-
-      // Clear wizard state from localStorage
+      // Hand off immediately to the edit page. It owns the Mux-readiness
+      // pre-poll AND the POST /generate-async fire from here on, so the
+      // creator sees one continuous "Building your program" UI with
+      // "Preparing your videos" as the first step instead of two
+      // visually-separate progress phases. The wizard's job ends here.
       localStorage.removeItem(getStorageKey(programId));
-
-      // Register with notification system
       startGeneration(programId);
-
-      // Hand control back to the edit page — it will hide the wizard and show GenerationProgress
       onComplete();
     } catch (error) {
       console.error("Generation error:", error);
@@ -526,27 +463,6 @@ export function ProgramWizard({
               </div>
             )}
 
-            {preparingStatus && preparingStatus.readyCount < preparingStatus.totalCount && (
-              <div className="p-4 bg-neon-cyan/10 border border-neon-cyan/30 rounded-lg">
-                <div className="flex items-start gap-3">
-                  <svg className="w-5 h-5 text-neon-cyan flex-shrink-0 mt-0.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-neon-cyan">
-                      Preparing your videos for AI ({preparingStatus.readyCount} of {preparingStatus.totalCount} ready)
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      {preparingStatus.estimateRemainingMs > 60_000
-                        ? `Long videos take ~${Math.ceil(preparingStatus.estimateRemainingMs / 60_000)} min to process. Keep this tab open.`
-                        : "Almost done — finishing up."}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
             <div>
               <button
                 onClick={handleGenerate}
@@ -565,9 +481,7 @@ export function ProgramWizard({
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
-                    {preparingStatus && preparingStatus.readyCount < preparingStatus.totalCount
-                      ? "Preparing videos…"
-                      : "Starting generation…"}
+                    Starting generation…
                   </span>
                 ) : (
                   "Generate Journeyline →"
