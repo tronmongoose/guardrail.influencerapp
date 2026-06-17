@@ -157,7 +157,7 @@ export async function POST(
  */
 const STAGE_BUDGETS_MS = {
   preparing: 60_000,                  // beginStep DB write + program findUnique (cold Neon can be ≥15s)
-  fetching_transcripts: 16 * 60_000, // Mux wait (≤10 min/video, parallel) + Gemini analysis (~5-8 min for an 18-min video). 12 min cut it close on a single long video — the harness saw a dance-tutorial run hit this ceiling.
+  fetching_transcripts: 25 * 60_000, // Mux wait (now scaled per-video up to 15 min) + Gemini analysis (up to 10 min for ≥30-min videos). 16 min was too tight for a single 45-min upload because rendition + Gemini stacked to ~22 min in the worst case (cmqhciu… 2026-06-17 incident drove this).
   analyzing: 90_000,                  // LLM digest extraction
   generating: 6 * 60_000,             // LLM program draft (P95 observed ~154s; headroom for retries)
   validating: 30_000,                 // Schema + clip-distribution validation
