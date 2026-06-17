@@ -145,13 +145,13 @@ export default async function SalesPage({ params }: { params: Promise<{ slug: st
     const watch = session.actions.find((a) => a.type === "WATCH");
     if (watch) {
       const muxId = watch.muxPlaybackId ?? watch.youtubeVideo?.muxPlaybackId;
-      if (muxId) return `https://image.mux.com/${muxId}/thumbnail.jpg?time=2&width=640`;
+      if (muxId) return `https://image.mux.com/${muxId}/thumbnail.jpg?time=10&width=640`;
       if (watch.youtubeVideo?.thumbnailUrl) return watch.youtubeVideo.thumbnailUrl;
     }
     const firstClip = session.compositeSession?.clips?.[0];
     if (firstClip?.youtubeVideo) {
       const muxId = firstClip.youtubeVideo.muxPlaybackId;
-      if (muxId) return `https://image.mux.com/${muxId}/thumbnail.jpg?time=2&width=640`;
+      if (muxId) return `https://image.mux.com/${muxId}/thumbnail.jpg?time=10&width=640`;
       if (firstClip.youtubeVideo.thumbnailUrl) return firstClip.youtubeVideo.thumbnailUrl;
     }
     return null;

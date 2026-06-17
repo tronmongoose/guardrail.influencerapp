@@ -22,7 +22,7 @@ function getSessionVideo(session: SessionData): SessionVideo | null {
     null;
 
   const thumbnailUrl = muxPlaybackId
-    ? `https://image.mux.com/${muxPlaybackId}/thumbnail.jpg?time=2&width=640`
+    ? `https://image.mux.com/${muxPlaybackId}/thumbnail.jpg?time=10&width=640`
     : firstClip?.youtubeVideo?.thumbnailUrl ??
       watch?.youtubeVideo?.thumbnailUrl ??
       (watch?.youtubeVideo?.videoId
@@ -216,7 +216,7 @@ export function ProgramOverviewPreview({
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={heroThumbnail ?? (heroVideo.muxPlaybackId ? `https://image.mux.com/${heroVideo.muxPlaybackId}/thumbnail.jpg?time=2&width=1280` : "")}
+                  src={heroThumbnail ?? (heroVideo.muxPlaybackId ? `https://image.mux.com/${heroVideo.muxPlaybackId}/thumbnail.jpg?time=10&width=1280` : "")}
                   alt=""
                   style={{ width: "100%", height: "100%", objectFit: "cover" }}
                 />
@@ -380,7 +380,7 @@ export function ProgramOverviewPreview({
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={heroThumbnail ?? (heroVideo.muxPlaybackId ? `https://image.mux.com/${heroVideo.muxPlaybackId}/thumbnail.jpg?time=2&width=1280` : "")}
+              src={heroThumbnail ?? (heroVideo.muxPlaybackId ? `https://image.mux.com/${heroVideo.muxPlaybackId}/thumbnail.jpg?time=10&width=1280` : "")}
               alt=""
               style={{ width: "100%", height: "100%", objectFit: "cover" }}
             />
