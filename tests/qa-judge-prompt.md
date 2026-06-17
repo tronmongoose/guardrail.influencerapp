@@ -98,6 +98,12 @@ This is the pipeline-specific dimension. The clip distributor performs determini
 
 **How to evaluate:** Cross-reference each `SessionClip`'s `startSeconds`/`endSeconds` against the `topics` array in the source. A clip from 0:00–4:30 sitting inside a topic that runs 0:00–5:00 is clean. A clip from 4:00–8:00 that straddles a topic boundary at 5:00 is a violation worth flagging.
 
+**What this dimension does NOT measure:**
+
+- **Sub-chapter granularity inside a single topic.** If a video has one Gemini `topic` and the lesson uses one full-video clip, that is a perfect score. The dimension rewards respecting topic boundaries, not subdividing below them. Do not recommend splitting a single-topic clip into multiple sub-clips aligned to `segments` or `subtopics` — `segments` are a finer-grained signal the pipeline may intentionally ignore, and forcing sub-chapters on short content produces a worse learner experience.
+- **Short-form videos (≤ ~10 minutes / `durationSeconds` ≤ 600).** When the source videos are short, one clip per lesson covering the whole video is the expected, correct shape. Score 5 if those clips sit inside their topics. Do not deduct for "missing chapter markers" — a 3-minute tutorial does not need internal chapters.
+- **Intro/outro trimming.** Trimming dead air is a nice-to-have, not a topic-boundary issue. Mention it in Recommendations if relevant, but do not score it here.
+
 ---
 
 ## OUTPUT FORMAT
