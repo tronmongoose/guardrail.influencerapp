@@ -576,9 +576,21 @@ async function processGenerationJob(jobId: string, programId: string, instructio
 
           // Store transcript on video record too
           if (analysis.fullTranscript) {
+            // Gemini's analysis.durationSeconds is unreliable — it can hallucinate
+            // a wrong value in its JSON output even when it analyzed the full
+            // video (cmqhgei3m… 2026-06-17 — Gemini reported 463s for a 47-min
+            // file). Mux's Asset.duration is authoritative (set by the
+            // video.asset.ready webhook). Only let Gemini's value WIN if Mux
+            // hasn't filled it in or Gemini's is larger.
+            const muxDur = v.durationSeconds ?? null;
+            const geminiDur = analysis.durationSeconds ?? null;
+            const trustedDur =
+              muxDur != null && geminiDur != null
+                ? Math.max(muxDur, geminiDur)
+                : muxDur ?? geminiDur ?? undefined;
             await prisma.youTubeVideo.update({
               where: { id: v.id },
-              data: { transcript: analysis.fullTranscript, durationSeconds: analysis.durationSeconds ?? undefined },
+              data: { transcript: analysis.fullTranscript, durationSeconds: trustedDur ?? undefined },
             });
             (v as { transcript: string | null }).transcript = analysis.fullTranscript;
           }

@@ -3,7 +3,6 @@
 import { getActionTypeBg, ACTION_TYPE_LABELS } from "@/lib/action-type-styles";
 import { stripWrappingQuotes } from "@/lib/strip-quotes";
 import type { WeekData, SessionData } from "@/components/builder";
-import { MuxVideoPlayer } from "@/components/viewer/MuxVideoPlayer";
 
 interface SessionVideo {
   muxPlaybackId: string | null;
@@ -200,51 +199,39 @@ export function ProgramOverviewPreview({
             </div>
           </div>
 
-          {/* Right: Video (desktop only) — falls back to At a Glance card */}
+          {/* Right: Video thumbnail (desktop only) — matches the public site,
+              where learners see a locked play poster until they enroll. The
+              old MuxVideoPlayer branch leaked the full source video to the
+              creator preview, making it look like a learner could watch the
+              whole thing before purchase. */}
           {heroVideo ? (
             <div className={`${isMobile ? "hidden" : "hidden md:flex"} flex-col gap-4`}>
-              {/* Player when available, static thumbnail fallback otherwise */}
-              {heroVideo.muxPlaybackId ? (
-                <div
-                  style={{
-                    borderRadius: "var(--token-radius-lg)",
-                    overflow: "hidden",
-                    boxShadow: "var(--token-shadow-md)",
-                  }}
-                >
-                  <MuxVideoPlayer
-                    playbackId={heroVideo.muxPlaybackId}
-                    title={heroVideo.title ?? program.title}
-                  />
-                </div>
-              ) : (
-                <div
-                  className="relative overflow-hidden"
-                  style={{
-                    aspectRatio: "16/9",
-                    borderRadius: "var(--token-radius-lg)",
-                    boxShadow: "var(--token-shadow-md)",
-                  }}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={heroThumbnail ?? ""}
-                    alt=""
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                  />
-                  <div className="absolute inset-0" style={{ background: "rgba(0,0,0,0.3)" }} />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div
-                      className="w-14 h-14 rounded-full flex items-center justify-center shadow-lg"
-                      style={{ backgroundColor: "var(--token-color-accent)" }}
-                    >
-                      <svg className="w-6 h-6 ml-1" fill="currentColor" viewBox="0 0 24 24" style={{ color: "#fff" }}>
-                        <path d="M8 5v14l11-7z" />
-                      </svg>
-                    </div>
+              <div
+                className="relative overflow-hidden"
+                style={{
+                  aspectRatio: "16/9",
+                  borderRadius: "var(--token-radius-lg)",
+                  boxShadow: "var(--token-shadow-md)",
+                }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={heroThumbnail ?? (heroVideo.muxPlaybackId ? `https://image.mux.com/${heroVideo.muxPlaybackId}/thumbnail.jpg?time=2&width=1280` : "")}
+                  alt=""
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                />
+                <div className="absolute inset-0" style={{ background: "rgba(0,0,0,0.3)" }} />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div
+                    className="w-14 h-14 rounded-full flex items-center justify-center shadow-lg"
+                    style={{ backgroundColor: "var(--token-color-accent)" }}
+                  >
+                    <svg className="w-6 h-6 ml-1" fill="currentColor" viewBox="0 0 24 24" style={{ color: "#fff" }}>
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
                   </div>
                 </div>
-              )}
+              </div>
               {/* Compact stats */}
               <p
                 className="flex flex-wrap gap-x-2"
@@ -380,50 +367,35 @@ export function ProgramOverviewPreview({
         </div>
       </section>
 
-      {/* ── Mobile hero video ─────────────────────────────────────────────── */}
+      {/* ── Mobile hero thumbnail (matches public site — no playback) ────── */}
       {heroVideo && (
         <div className={`${isMobile ? "block" : "md:hidden"} px-6 pb-6 max-w-5xl mx-auto`}>
-          {heroVideo.muxPlaybackId ? (
-            <div
-              style={{
-                borderRadius: "var(--token-radius-lg)",
-                overflow: "hidden",
-                boxShadow: "var(--token-shadow-md)",
-              }}
-            >
-              <MuxVideoPlayer
-                playbackId={heroVideo.muxPlaybackId}
-                title={heroVideo.title ?? program.title}
-              />
-            </div>
-          ) : (
-            <div
-              className="relative overflow-hidden"
-              style={{
-                aspectRatio: "16/9",
-                borderRadius: "var(--token-radius-lg)",
-                boxShadow: "var(--token-shadow-md)",
-              }}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={heroThumbnail ?? ""}
-                alt=""
-                style={{ width: "100%", height: "100%", objectFit: "cover" }}
-              />
-              <div className="absolute inset-0" style={{ background: "rgba(0,0,0,0.3)" }} />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div
-                  className="w-14 h-14 rounded-full flex items-center justify-center shadow-lg"
-                  style={{ backgroundColor: "var(--token-color-accent)" }}
-                >
-                  <svg className="w-6 h-6 ml-1" fill="currentColor" viewBox="0 0 24 24" style={{ color: "#fff" }}>
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                </div>
+          <div
+            className="relative overflow-hidden"
+            style={{
+              aspectRatio: "16/9",
+              borderRadius: "var(--token-radius-lg)",
+              boxShadow: "var(--token-shadow-md)",
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={heroThumbnail ?? (heroVideo.muxPlaybackId ? `https://image.mux.com/${heroVideo.muxPlaybackId}/thumbnail.jpg?time=2&width=1280` : "")}
+              alt=""
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+            <div className="absolute inset-0" style={{ background: "rgba(0,0,0,0.3)" }} />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div
+                className="w-14 h-14 rounded-full flex items-center justify-center shadow-lg"
+                style={{ backgroundColor: "var(--token-color-accent)" }}
+              >
+                <svg className="w-6 h-6 ml-1" fill="currentColor" viewBox="0 0 24 24" style={{ color: "#fff" }}>
+                  <path d="M8 5v14l11-7z" />
+                </svg>
               </div>
             </div>
-          )}
+          </div>
         </div>
       )}
 
