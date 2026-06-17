@@ -539,8 +539,8 @@ export function ProgramWizard({
                     </p>
                     <p className="text-xs text-gray-400 mt-1">
                       {preparingStatus.estimateRemainingMs > 60_000
-                        ? `Long videos take ~${Math.ceil(preparingStatus.estimateRemainingMs / 60_000)} min on Mux. Keep this tab open.`
-                        : "Almost done — finishing up on Mux."}
+                        ? `Long videos take ~${Math.ceil(preparingStatus.estimateRemainingMs / 60_000)} min to process. Keep this tab open.`
+                        : "Almost done — finishing up."}
                     </p>
                   </div>
                 </div>
