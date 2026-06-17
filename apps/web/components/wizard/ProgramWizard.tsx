@@ -489,7 +489,7 @@ export function ProgramWizard({
               onChange={(transitionMode) => updateState("theme", { transitionMode })}
             />
 
-            {uploadsInProgress && (
+            {uploadsInProgress && !isGenerating && (
               <div className="p-4 bg-neon-cyan/10 border border-neon-cyan/30 rounded-lg">
                 <div className="flex items-start gap-3">
                   <svg className="w-5 h-5 text-neon-cyan flex-shrink-0 mt-0.5 animate-spin" fill="none" viewBox="0 0 24 24">
