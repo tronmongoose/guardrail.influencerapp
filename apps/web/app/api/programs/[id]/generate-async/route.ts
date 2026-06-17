@@ -442,7 +442,18 @@ async function processGenerationJob(jobId: string, programId: string, instructio
       console.info(`[generate-async] [GEMINI] ${videosNeedingAnalysis.length} video(s) need Gemini analysis`);
       const RENDITION_DB_POLL_MS = 2_000;
       const RENDITION_FALLBACK_AFTER_MS = 4 * 60_000; // After 4 min with no webhook, HEAD-check Mux directly as a webhook-delivery safety net
-      const RENDITION_MAX_MS = 6 * 60_000; // Total wait ceiling per video
+      // Per-video rendition wait ceiling — scales with video duration. Mux's
+      // capped-1080p.mp4 transcode time is roughly proportional to source
+      // length (~0.3-0.5× duration observed). The prior fixed 6-min cap
+      // silently skipped any video that took longer, leaving the LLM to
+      // hallucinate clip ranges from the title alone. Stage budget
+      // (fetching_transcripts = 16 min) is still the absolute ceiling.
+      const renditionMaxMsFor = (durationSeconds: number | null | undefined): number => {
+        const floor = 6 * 60_000;
+        const ceiling = 15 * 60_000; // stays under fetching_transcripts stage budget
+        if (!durationSeconds || durationSeconds <= 0) return 12 * 60_000;
+        return Math.max(floor, Math.min(ceiling, Math.round(durationSeconds * 0.6 * 1000)));
+      };
 
       // Run video analyses in parallel (bounded by ANALYSIS_CONCURRENCY). Each
       // task waits for the static-rendition flag the Mux webhook sets, then
@@ -450,9 +461,11 @@ async function processGenerationJob(jobId: string, programId: string, instructio
       // even when 20 webhooks land in the same second — webhooks can't bound
       // themselves across invocations, but the route can.
       let completedAnalyses = 0;
+      const skippedRenditions: { title: string; waitedSec: number; hadDuration: boolean }[] = [];
       await runWithBoundedConcurrency(videosNeedingAnalysis, ANALYSIS_CONCURRENCY, async (v) => {
         checkDeadline("fetching_transcripts");
         const mp4Url = `https://stream.mux.com/${v.muxPlaybackId}/capped-1080p.mp4`;
+        const RENDITION_MAX_MS = renditionMaxMsFor(v.durationSeconds);
 
         // Wait for the Mux video.asset.static_renditions.ready webhook to flip
         // muxStaticRenditionReadyAt. If the webhook is delayed past
@@ -510,7 +523,13 @@ async function processGenerationJob(jobId: string, programId: string, instructio
         }
 
         if (!mp4Ready) {
-          console.warn(`[generate-async] [GEMINI] ✗ Static rendition not ready after ${RENDITION_MAX_MS / 1000}s for "${v.title}" — skipping`);
+          const waitedSec = Math.round((Date.now() - renditionStart) / 1000);
+          console.warn(`[generate-async] [GEMINI] ✗ Static rendition not ready after ${waitedSec}s for "${v.title}" — will fail job after batch`);
+          skippedRenditions.push({
+            title: v.title ?? "Untitled",
+            waitedSec,
+            hadDuration: !!v.durationSeconds,
+          });
           completedAnalyses++;
           return;
         }
@@ -587,6 +606,23 @@ async function processGenerationJob(jobId: string, programId: string, instructio
           data: { progress: analysisProgress },
         });
       });
+
+      // Fail loud if any video's static rendition didn't land in time. Without
+      // this, the LLM gets only the title for the skipped video and silently
+      // hallucinates clip ranges (cmqhciu… 2026-06-17 — a 47-min step-by-step
+      // tutorial was truncated to a 0–10 min clip because rendition arrived
+      // 6 min late). Better UX is a clear retry prompt than a "complete" job
+      // with most of the source content missing.
+      if (skippedRenditions.length > 0) {
+        const detail = skippedRenditions
+          .map((s) => `"${s.title}" (waited ${s.waitedSec}s${s.hadDuration ? "" : ", duration unknown"})`)
+          .join(", ");
+        throw new Error(
+          `Video processing timed out for ${skippedRenditions.length} of ${videosNeedingAnalysis.length} videos: ${detail}. ` +
+          `Long videos can take 10–15 min to finish transcoding on Mux. ` +
+          `Your uploads aren't lost — please wait a few minutes and retry generation.`,
+        );
+      }
     } else if (videosNeedingAnalysis.length > 0) {
       console.warn(`[generate-async] ${videosNeedingAnalysis.length} video(s) need analysis but GOOGLE_AI_API_KEY is not set`);
     }

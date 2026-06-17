@@ -107,6 +107,12 @@ export async function POST(req: NextRequest) {
       const assetId: string = event.data?.id ?? "";
       const playbackId: string = event.data?.playback_ids?.[0]?.id ?? "";
       const uploadId: string = event.data?.upload_id ?? "";
+      // Mux Asset.duration is a float64 (seconds). Round to int for the column.
+      const rawDuration: unknown = event.data?.duration;
+      const durationSeconds =
+        typeof rawDuration === "number" && Number.isFinite(rawDuration) && rawDuration > 0
+          ? Math.round(rawDuration)
+          : null;
 
       if (!assetId || !playbackId) {
         logger.warn({
@@ -164,6 +170,10 @@ export async function POST(req: NextRequest) {
             muxPlaybackId: playbackId,
             muxStatus: "ready",
             url: `https://stream.mux.com/${playbackId}`,
+            // Persist real duration so the generate-async per-video rendition
+            // wait can scale by video length. Without this the 6-min fixed cap
+            // silently skipped long videos (cmqhciu… 2026-06-17 incident).
+            ...(durationSeconds != null ? { durationSeconds } : {}),
           },
         });
         logger.info({
@@ -171,6 +181,7 @@ export async function POST(req: NextRequest) {
           youtubeVideoId: ytVideo.id,
           assetId,
           playbackId,
+          durationSeconds,
           lookupBy: ytVideo.muxAssetId ? "assetId" : "uploadId",
         });
         // Gemini analysis runs on video.asset.static_renditions.ready below,
