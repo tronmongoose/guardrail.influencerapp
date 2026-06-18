@@ -21,8 +21,14 @@ function getSessionVideo(session: SessionData): SessionVideo | null {
     watch?.youtubeVideo?.muxPlaybackId ??
     null;
 
+  // Thumbnail each lesson at ~5 sec into its own clip range so a program built
+  // from a single source video still gets visually distinct lesson cards.
+  // Falls back to a global 10 sec for sessions with no clip range.
+  const thumbTime = firstClip?.startSeconds != null
+    ? Math.max(10, Math.round(firstClip.startSeconds + 5))
+    : 10;
   const thumbnailUrl = muxPlaybackId
-    ? `https://image.mux.com/${muxPlaybackId}/thumbnail.jpg?time=10&width=640`
+    ? `https://image.mux.com/${muxPlaybackId}/thumbnail.jpg?time=${thumbTime}&width=640`
     : firstClip?.youtubeVideo?.thumbnailUrl ??
       watch?.youtubeVideo?.thumbnailUrl ??
       (watch?.youtubeVideo?.videoId

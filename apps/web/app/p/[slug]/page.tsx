@@ -151,7 +151,14 @@ export default async function SalesPage({ params }: { params: Promise<{ slug: st
     const firstClip = session.compositeSession?.clips?.[0];
     if (firstClip?.youtubeVideo) {
       const muxId = firstClip.youtubeVideo.muxPlaybackId;
-      if (muxId) return `https://image.mux.com/${muxId}/thumbnail.jpg?time=10&width=640`;
+      if (muxId) {
+        // Thumbnail each lesson at ~5 sec into its own clip range, so a
+        // program built from a single source video still gets visually
+        // distinct lesson cards. Fallback to 10 sec for missing ranges.
+        const clipStart = firstClip.startSeconds ?? 0;
+        const thumbTime = Math.max(10, Math.round(clipStart + 5));
+        return `https://image.mux.com/${muxId}/thumbnail.jpg?time=${thumbTime}&width=640`;
+      }
       if (firstClip.youtubeVideo.thumbnailUrl) return firstClip.youtubeVideo.thumbnailUrl;
     }
     return null;

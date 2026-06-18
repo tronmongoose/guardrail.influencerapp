@@ -76,10 +76,13 @@ const REDUCED_PROMPT_ATTEMPTS = 2;
  * Schema-compatible: `fullTranscript` and segment `text` come back as empty
  * strings; the schema accepts both.
  */
-function buildVideoAnalysisPromptReduced(videoTitle: string): string {
+function buildVideoAnalysisPromptReduced(videoTitle: string, durationSeconds?: number): string {
+  const durationLine = durationSeconds && durationSeconds > 0
+    ? `\n\nVIDEO DURATION: ${durationSeconds} seconds (${Math.round(durationSeconds / 60)} minutes). Your segments and topics MUST collectively cover the ENTIRE video from 0 to ${durationSeconds} seconds. Do NOT stop early. The last segment's endSeconds MUST be within 30 seconds of ${durationSeconds}. If you can only describe part of the video, still produce segments and topics that span the full duration with brief description placeholders for the parts you can't analyze in detail.`
+    : "";
   return `You are a video structure extractor. Without transcribing any spoken content, return structured JSON describing the video's segments, topics, and key moments.
 
-VIDEO TITLE: "${videoTitle}"
+VIDEO TITLE: "${videoTitle}"${durationLine}
 
 CRITICAL — DO NOT REPRODUCE COPYRIGHTED CONTENT:
 - DO NOT transcribe what people say. DO NOT quote dialogue.
@@ -130,10 +133,13 @@ REQUIREMENTS:
 Return ONLY the JSON object.`;
 }
 
-function buildVideoAnalysisPrompt(videoTitle: string): string {
+function buildVideoAnalysisPrompt(videoTitle: string, durationSeconds?: number): string {
+  const durationLine = durationSeconds && durationSeconds > 0
+    ? `\n\nVIDEO DURATION: ${durationSeconds} seconds (${Math.round(durationSeconds / 60)} minutes). Your segments and topics MUST collectively cover the ENTIRE video from 0 to ${durationSeconds} seconds. Do NOT stop early. The last segment's endSeconds MUST be within 30 seconds of ${durationSeconds}.`
+    : "";
   return `You are an expert video content analyst. Analyze this video thoroughly and return structured JSON.
 
-VIDEO TITLE: "${videoTitle}"
+VIDEO TITLE: "${videoTitle}"${durationLine}
 
 Extract the following information as a single JSON object (no markdown, no code fences):
 
@@ -410,7 +416,7 @@ export async function analyzeUploadedVideoWithGemini(
 
     console.info(`[gemini] File uploaded, analyzing: "${videoTitle}" via ${model}`);
 
-    const prompt = buildVideoAnalysisPrompt(videoTitle);
+    const prompt = buildVideoAnalysisPrompt(videoTitle, durationSeconds);
     const requestBody = {
       contents: [
         {
@@ -462,6 +468,22 @@ export async function analyzeUploadedVideoWithGemini(
         const parsed = JSON.parse(json);
         const validated = VideoAnalysisOutputSchema.parse(parsed);
 
+        // Coverage check: when we know the real video duration (from Mux),
+        // reject analyses whose segments only cover the early portion of the
+        // video. Gemini sometimes silently truncates — particularly under
+        // RECITATION conditions — and the LLM downstream scopes the program
+        // to whatever range Gemini reported. Live repro: cmqiqq32d… 2026-06-18
+        // a 47-min Bad Romance tutorial came back with segments to 7:45.
+        if (durationSeconds && durationSeconds > 0) {
+          const maxEnd = Math.max(0, ...validated.segments.map((s) => s.endSeconds ?? 0));
+          const coverageRatio = maxEnd / durationSeconds;
+          if (coverageRatio < 0.7) {
+            throw new Error(
+              `Gemini undercovered "${videoTitle}": segments stop at ${Math.round(maxEnd)}s but video is ${durationSeconds}s (${Math.round(coverageRatio * 100)}% coverage)`,
+            );
+          }
+        }
+
         console.info(
           `[gemini] Upload analysis complete: ${validated.segments.length} segments, ${validated.topics.length} topics (attempt ${attempt})`,
         );
@@ -506,7 +528,7 @@ export async function analyzeUploadedVideoWithGemini(
           {
             parts: [
               { fileData: { fileUri, mimeType } },
-              { text: buildVideoAnalysisPromptReduced(videoTitle) },
+              { text: buildVideoAnalysisPromptReduced(videoTitle, durationSeconds) },
             ],
           },
         ],
@@ -539,6 +561,20 @@ export async function analyzeUploadedVideoWithGemini(
           const json = extractJSON(rawText);
           const parsed = JSON.parse(json);
           const validated = VideoAnalysisOutputSchema.parse(parsed);
+
+          // Same coverage check as the full-prompt path. Reduced-prompt
+          // outputs are MORE likely to undercover because they describe
+          // instead of transcribe, and Gemini can quit early.
+          if (durationSeconds && durationSeconds > 0) {
+            const maxEnd = Math.max(0, ...validated.segments.map((s) => s.endSeconds ?? 0));
+            const coverageRatio = maxEnd / durationSeconds;
+            if (coverageRatio < 0.7) {
+              throw new Error(
+                `Gemini reduced-prompt undercovered "${videoTitle}": segments stop at ${Math.round(maxEnd)}s but video is ${durationSeconds}s (${Math.round(coverageRatio * 100)}% coverage)`,
+              );
+            }
+          }
+
           console.info(
             `[gemini] Reduced-prompt analysis recovered "${videoTitle}" on attempt ${attempt}/${REDUCED_PROMPT_ATTEMPTS}: ${validated.segments.length} segments, ${validated.topics.length} topics (transcript omitted by design)`,
           );
