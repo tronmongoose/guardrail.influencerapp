@@ -38,37 +38,53 @@ export async function sendEmail({
   const defaultFrom = process.env.EMAIL_FROM || "JourneyLine <noreply@journeyline.ai>";
 
   if (resendApiKey) {
-    try {
-      const payload: Record<string, unknown> = {
-        from: from || defaultFrom,
-        to,
-        subject,
-        text,
-        html: html || text,
-      };
-      if (replyTo) payload.reply_to = replyTo;
+    const payload: Record<string, unknown> = {
+      from: from || defaultFrom,
+      to,
+      subject,
+      text,
+      html: html || text,
+    };
+    if (replyTo) payload.reply_to = replyTo;
 
-      const response = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${resendApiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
+    // Resend's API occasionally drops the connection mid-TLS-handshake
+    // ("Client network socket disconnected", surfaced as "fetch failed").
+    // Since sends are often fire-and-forget (welcome/magic-link/enrollment
+    // emails), a single blip silently loses a message the user needed. Retry
+    // network-level failures a couple of times with backoff before giving up.
+    const MAX_ATTEMPTS = 3;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const response = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${resendApiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        logger.warn({ operation: "email.send_failed", to, error: errorText });
+        if (!response.ok) {
+          const errorText = await response.text();
+          logger.warn({ operation: "email.send_failed", to, error: errorText });
+          return false;
+        }
+
+        logger.info({ operation: "email.sent", to, subject });
+        return true;
+      } catch (error) {
+        // Network-level failure (thrown by fetch). Retry unless we're out of
+        // attempts, then log at error level so genuine outages stay visible.
+        if (attempt < MAX_ATTEMPTS) {
+          logger.warn({ operation: "email.send_retry", to, attempt });
+          await new Promise((r) => setTimeout(r, 250 * attempt));
+          continue;
+        }
+        logger.error({ operation: "email.send_error", to, attempts: attempt }, error);
         return false;
       }
-
-      logger.info({ operation: "email.sent", to, subject });
-      return true;
-    } catch (error) {
-      logger.error({ operation: "email.send_error", to }, error);
-      return false;
     }
+    return false;
   }
 
   if (process.env.NODE_ENV === "production") {

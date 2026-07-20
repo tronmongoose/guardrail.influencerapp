@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { getOrCreateUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
@@ -228,11 +228,13 @@ export async function POST(
     priceInCents: program.priceInCents,
   });
 
-  notifyAdminProgramPublished(
-    { id, title: program.title, slug: slug ?? "", priceInCents: program.priceInCents, currency: program.currency },
-    { email: user.email, name: user.name },
-    { weekCount: program.weeks.length, sessionCount: totalSessions },
-  ).catch(() => {});
+  after(() =>
+    notifyAdminProgramPublished(
+      { id, title: program.title, slug: slug ?? "", priceInCents: program.priceInCents, currency: program.currency },
+      { email: user.email, name: user.name },
+      { weekCount: program.weeks.length, sessionCount: totalSessions },
+    ).catch(() => {}),
+  );
 
   return NextResponse.json({
     ...updated,

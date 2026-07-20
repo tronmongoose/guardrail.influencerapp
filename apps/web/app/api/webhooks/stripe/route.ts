@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
 import { createMagicLink, getMagicLinkUrl } from "@/lib/magic-link";
@@ -156,13 +156,15 @@ export async function POST(req: NextRequest) {
         const platformCents = computeApplicationFeeCents(grossCents, bps);
         const creatorCents = grossCents - platformCents;
 
-        notifyAdminEnrollment(
-          { email: user.email, name: user.name },
-          { title: program.title, id: programId },
-          "paid",
-          { grossCents, platformCents, creatorCents, currency },
-          { id: program.creator.id, email: program.creator.email, name: program.creator.name },
-        ).catch(() => {});
+        after(() =>
+          notifyAdminEnrollment(
+            { email: user.email, name: user.name },
+            { title: program.title, id: programId },
+            "paid",
+            { grossCents, platformCents, creatorCents, currency },
+            { id: program.creator.id, email: program.creator.email, name: program.creator.name },
+          ).catch(() => {}),
+        );
 
         // Generate magic link, embed in branded welcome email
         const { token } = await createMagicLink({
@@ -178,21 +180,24 @@ export async function POST(req: NextRequest) {
           creator: { name: program.creator.name, email: program.creator.email },
         });
 
-        // "You just got paid" — fire-and-forget, payout lookup walks Stripe
-        sendCreatorEnrollmentEmail({
-          creator: program.creator,
-          programTitle: program.title,
-          learnerEmail: user.email,
-          stripeSessionId: session.id,
-          fallbackAmountCents: grossCents,
-          fallbackCurrency: currency,
-        }).catch((err) => {
-          logger.warn({
-            operation: "stripe.webhook.creator_email_failed",
-            programId,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        });
+        // "You just got paid" — deferred via after() (payout lookup walks
+        // Stripe); after() keeps the instance alive so the send completes.
+        after(() =>
+          sendCreatorEnrollmentEmail({
+            creator: program.creator,
+            programTitle: program.title,
+            learnerEmail: user.email,
+            stripeSessionId: session.id,
+            fallbackAmountCents: grossCents,
+            fallbackCurrency: currency,
+          }).catch((err) => {
+            logger.warn({
+              operation: "stripe.webhook.creator_email_failed",
+              programId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }),
+        );
 
         logger.info({
           operation: "stripe.webhook.welcome_emails_sent",
