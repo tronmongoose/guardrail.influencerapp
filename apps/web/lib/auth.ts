@@ -1,4 +1,5 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
+import { after } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "./prisma";
 import { notifyAdminNewCreator } from "./email";
@@ -35,7 +36,10 @@ export async function getOrCreateUser() {
           : undefined),
       },
     });
-    notifyAdminNewCreator(promoted).catch(() => {});
+    // Defer with after() so Vercel keeps the function instance alive until the
+    // Resend call finishes — a bare fire-and-forget send is dropped when the
+    // response returns and the serverless instance freezes.
+    after(() => notifyAdminNewCreator(promoted).catch(() => {}));
     return promoted;
   }
 
@@ -50,7 +54,7 @@ export async function getOrCreateUser() {
         role: "CREATOR",
       },
     });
-    notifyAdminNewCreator(newUser).catch(() => {});
+    after(() => notifyAdminNewCreator(newUser).catch(() => {}));
     return newUser;
   } catch (err) {
     // P2002 = unique constraint. A concurrent request from the same Clerk

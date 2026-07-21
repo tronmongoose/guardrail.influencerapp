@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { getOrCreateUser, getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
@@ -146,21 +146,25 @@ export async function POST(
       promoCode: upperCode,
     });
 
-    notifyAdminEnrollment(
-      { email: user.email, name: user.name },
-      { title: program.title, id: programId },
-      "promo",
-      undefined,
-      { id: program.creator.id, email: program.creator.email, name: program.creator.name },
-    ).catch(() => {});
+    after(() =>
+      notifyAdminEnrollment(
+        { email: user.email, name: user.name },
+        { title: program.title, id: programId },
+        "promo",
+        undefined,
+        { id: program.creator.id, email: program.creator.email, name: program.creator.name },
+      ).catch(() => {}),
+    );
 
     // Branded welcome email + creator notification (fire-and-forget)
-    sendBrandedEnrollmentEmails({
-      learnerEmail: user.email,
-      programId,
-      creator: program.creator,
-      programTitle: program.title,
-    }).catch(() => {});
+    after(() =>
+      sendBrandedEnrollmentEmails({
+        learnerEmail: user.email,
+        programId,
+        creator: program.creator,
+        programTitle: program.title,
+      }).catch(() => {}),
+    );
 
     if (clerkUser) {
       return NextResponse.json({ enrolled: true, redirectUrl: `/learn/${programId}` });
@@ -183,21 +187,25 @@ export async function POST(
       programId,
     });
 
-    notifyAdminEnrollment(
-      { email: user.email, name: user.name },
-      { title: program.title, id: programId },
-      "free",
-      undefined,
-      { id: program.creator.id, email: program.creator.email, name: program.creator.name },
-    ).catch(() => {});
+    after(() =>
+      notifyAdminEnrollment(
+        { email: user.email, name: user.name },
+        { title: program.title, id: programId },
+        "free",
+        undefined,
+        { id: program.creator.id, email: program.creator.email, name: program.creator.name },
+      ).catch(() => {}),
+    );
 
     // Branded welcome email + "you got a new student" notification
-    sendBrandedEnrollmentEmails({
-      learnerEmail: user.email,
-      programId,
-      creator: program.creator,
-      programTitle: program.title,
-    }).catch(() => {});
+    after(() =>
+      sendBrandedEnrollmentEmails({
+        learnerEmail: user.email,
+        programId,
+        creator: program.creator,
+        programTitle: program.title,
+      }).catch(() => {}),
+    );
 
     // Clerk users go straight to learn page, others get magic link
     if (clerkUser) {
