@@ -21,6 +21,15 @@ export type LLMProvider = "anthropic" | "openai" | "gemini" | "stub";
 const LLM_TIMEOUT_MS = 60_000; // 60s for content extraction
 const GENERATION_TIMEOUT_MS = 600_000; // 10min for curriculum generation
 
+// Anthropic occasionally drops the connection mid-response (~150s observed,
+// well before GENERATION_TIMEOUT_MS). One retry absorbs the transient drop;
+// keep it tight so we don't blow the route-level `generating` stage budget.
+const ANTHROPIC_MAX_ATTEMPTS = 2;
+const ANTHROPIC_RETRY_BACKOFF_MS = 2_000;
+// Guard: don't kick off another full call if the elapsed time already ate
+// most of GENERATION_TIMEOUT_MS — the retry would just be cut short again.
+const ANTHROPIC_RETRY_DEADLINE_GUARD_MS = 30_000;
+
 // undici's default `headersTimeout` / `bodyTimeout` (300s) is overridden at
 // the route-handler level via `setGlobalDispatcher` in
 // apps/web/app/api/programs/[id]/generate-async/route.ts. Doing the override
@@ -1061,63 +1070,130 @@ QUALITY GUIDELINES:
 - Use the specific concepts, skills, and examples from each content source to design exercises and reflection prompts`;
 }
 
+// Walks the .cause chain (undici wraps the original socket error inside
+// .cause; the abort path can nest 2-3 deep). Returns a compact diagnostic
+// string and a retryability flag. Avoids logging full message bodies — they
+// may include prompt content.
+function analyzeAnthropicError(err: unknown): { chainStr: string; retryable: boolean } {
+  const chain: string[] = [];
+  let retryable = false;
+  let cur: unknown = err;
+  let depth = 0;
+  while (cur && typeof cur === "object" && depth < 5) {
+    const e = cur as { name?: string; message?: string; code?: string; cause?: unknown };
+    chain.push(`${e.name ?? "?"}${e.code ? `/${e.code}` : ""}: ${(e.message ?? "?").slice(0, 200)}`);
+    const name = e.name ?? "";
+    const code = e.code ?? "";
+    if (
+      name === "AbortError" ||
+      name === "TimeoutError" ||
+      code === "UND_ERR_SOCKET" ||
+      code === "UND_ERR_HEADERS_TIMEOUT" ||
+      code === "UND_ERR_BODY_TIMEOUT" ||
+      code === "ECONNRESET" ||
+      code === "ECONNREFUSED" ||
+      code === "ETIMEDOUT" ||
+      code === "EPIPE"
+    ) {
+      retryable = true;
+    }
+    cur = e.cause;
+    depth++;
+  }
+  if (err instanceof Error) {
+    const msg = err.message ?? "";
+    // Anthropic 5xx / 429 from the !res.ok branch get wrapped as
+    // "Anthropic API error: <status> ...". Retry those too.
+    if (/Anthropic API error: (5\d\d|429)\b/.test(msg)) retryable = true;
+  }
+  return { chainStr: chain.join(" -> "), retryable };
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function callAnthropic(input: GenerateInput): Promise<string> {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error("ANTHROPIC_API_KEY not set");
 
-  // DIAGNOSTIC INSTRUMENTATION (2026-06-02): the harness observed the
-  // Anthropic fetch aborting at ~153s with bare "This operation was aborted"
-  // despite GENERATION_TIMEOUT_MS=600_000. Cause unknown — could be Anthropic
-  // LB drop, Vercel function instance recycling, or an AbortSignal injected
-  // elsewhere. This wrapper walks the err.cause chain so future aborts surface
-  // the underlying socket/error code (UND_ERR_SOCKET, ECONNRESET, etc.) and
-  // we can pick the right targeted fix in Phase 2. No behavior change vs the
-  // bare fetchWithTimeout — same timeout, same error rethrow.
-  const llmStart = Date.now();
-  try {
-    const res = await fetchWithTimeout("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
-        max_tokens: 32768,
-        messages: [{ role: "user", content: buildPrompt(input) }],
-      }),
-    }, GENERATION_TIMEOUT_MS);
+  const model = process.env.ANTHROPIC_MODEL || "claude-opus-4-8";
+  const prompt = buildPrompt(input);
 
-    if (!res.ok) {
-      const bodyPreview = await res.text().catch(() => "");
-      throw new Error(`Anthropic API error: ${res.status} ${bodyPreview.slice(0, 200)}`);
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data: any = await res.json();
-    return data.content[0].text;
-  } catch (err) {
-    const elapsedMs = Date.now() - llmStart;
-    // Walk the .cause chain. undici wraps the original socket error inside
-    // .cause; the abort path can nest 2-3 deep. Capture name/code/message at
-    // each level. Avoid logging full message bodies (may include prompt content).
-    const chain: string[] = [];
-    let cur: unknown = err;
-    let depth = 0;
-    while (cur && typeof cur === "object" && depth < 5) {
-      const e = cur as { name?: string; message?: string; code?: string; cause?: unknown };
-      chain.push(
-        `${e.name ?? "?"}${e.code ? `/${e.code}` : ""}: ${(e.message ?? "?").slice(0, 200)}`,
+  // Fast mode (~2.5x output tok/s) is available on Opus 4.8 / 4.7 only. It
+  // roughly halves the ~90s structure-generation wait that makes creators
+  // think the build stalled. Gated to Opus models so a non-Opus ANTHROPIC_MODEL
+  // never sends the unsupported params; opt out entirely via ANTHROPIC_FAST_MODE=off.
+  const fastModeSupported =
+    /claude-opus-4-(7|8)/.test(model) && process.env.ANTHROPIC_FAST_MODE !== "off";
+  // Mutable so a fast-mode rate-limit (429 — fast mode has its own quota) can
+  // drop back to standard speed mid-loop instead of failing the generation.
+  let useFast = fastModeSupported;
+
+  const buildBody = (fast: boolean) =>
+    JSON.stringify({
+      model,
+      max_tokens: 32768,
+      messages: [{ role: "user", content: prompt }],
+      ...(fast ? { speed: "fast" } : {}),
+    });
+  const buildHeaders = (fast: boolean): Record<string, string> => ({
+    "x-api-key": key,
+    "anthropic-version": "2023-06-01",
+    "content-type": "application/json",
+    ...(fast ? { "anthropic-beta": "fast-mode-2026-02-01" } : {}),
+  });
+
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= ANTHROPIC_MAX_ATTEMPTS; attempt++) {
+    const llmStart = Date.now();
+    try {
+      const res = await fetchWithTimeout("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: buildHeaders(useFast),
+        body: buildBody(useFast),
+      }, GENERATION_TIMEOUT_MS);
+
+      if (!res.ok) {
+        const bodyPreview = await res.text().catch(() => "");
+        // Fast mode has a separate rate limit; on 429 drop to standard speed
+        // and retry immediately rather than failing the whole generation.
+        if (res.status === 429 && useFast) {
+          console.warn("[LLM] Fast-mode rate-limited (429) — falling back to standard speed");
+          useFast = false;
+          continue;
+        }
+        throw new Error(`Anthropic API error: ${res.status} ${bodyPreview.slice(0, 200)}`);
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data: any = await res.json();
+      if (attempt > 1) {
+        console.info(`[LLM] Anthropic succeeded on retry attempt ${attempt}/${ANTHROPIC_MAX_ATTEMPTS}`);
+      }
+      return data.content[0].text;
+    } catch (err) {
+      const elapsedMs = Date.now() - llmStart;
+      const { chainStr, retryable } = analyzeAnthropicError(err);
+      lastErr = err;
+
+      const hasAttemptsLeft = attempt < ANTHROPIC_MAX_ATTEMPTS;
+      // Don't kick off another attempt if we already burned most of the
+      // route's budget — it would just abort again at the same point.
+      const elapsedTooHigh = elapsedMs >= GENERATION_TIMEOUT_MS - ANTHROPIC_RETRY_DEADLINE_GUARD_MS;
+      const shouldRetry = hasAttemptsLeft && retryable && !elapsedTooHigh;
+
+      console.error(
+        `[LLM] Anthropic fetch threw after ${elapsedMs}ms ` +
+          `(attempt=${attempt}/${ANTHROPIC_MAX_ATTEMPTS} retryable=${retryable} ` +
+          `willRetry=${shouldRetry} GENERATION_TIMEOUT_MS=${GENERATION_TIMEOUT_MS}ms) — ` +
+          `cause chain: ${chainStr}`,
       );
-      cur = e.cause;
-      depth++;
+
+      if (!shouldRetry) throw err;
+      console.warn(`[LLM] Retrying Anthropic call in ${ANTHROPIC_RETRY_BACKOFF_MS}ms`);
+      await sleep(ANTHROPIC_RETRY_BACKOFF_MS);
     }
-    console.error(
-      `[LLM] Anthropic fetch threw after ${elapsedMs}ms ` +
-        `(GENERATION_TIMEOUT_MS=${GENERATION_TIMEOUT_MS}ms) — cause chain: ${chain.join(" -> ")}`,
-    );
-    throw err;
   }
+  // Defensive — loop always returns or throws.
+  throw lastErr ?? new Error("Anthropic call failed without error");
 }
 
 async function callOpenAI(input: GenerateInput): Promise<string> {

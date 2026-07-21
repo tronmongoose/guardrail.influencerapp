@@ -289,12 +289,14 @@ export default function ProgramEditPage() {
           // Always set lastGenError — even if `error` is null/empty — so the auto-wizard
           // effect doesn't fire and silently re-throw the user back into the wizard.
           setLastGenError(data.error || "Generation failed without an error message. Please try again.");
-        } else if (data?.status === "COMPLETED" && data.completedAt) {
-          // Generation finished recently - reload program to pick up persisted weeks.
-          const completedAt = new Date(data.completedAt);
-          if (Date.now() - completedAt.getTime() < 30000) {
-            setTimeout(() => load(), 500);
-          }
+        } else if (data?.status === "COMPLETED") {
+          // Job finished successfully — COMPLETED is authoritative. Always reload
+          // and clear any stale failure state. On mobile the tab is often
+          // discarded/reloaded during the 90-150s wait, so a returning creator
+          // must land in the editor with their generated program, never on a
+          // "failed" panel for a job that actually succeeded.
+          setLastGenError(null);
+          setTimeout(() => load(), 300);
         }
       })
       .finally(() => setGenStatusChecked(true));
@@ -484,6 +486,7 @@ export default function ProgramEditPage() {
         if (data.status === "COMPLETED") {
           wizardDismissedRef.current = true;
           setAsyncGenerating(false);
+          setLastGenError(null); // COMPLETED wins — clear any transient stall/stuck notice
           await load();
           showToast("Program generated!", "success");
           setActiveTab("preview");
@@ -502,6 +505,17 @@ export default function ProgramEditPage() {
 
     return () => clearInterval(interval);
   }, [asyncGenerating, prepPhaseActive, id, load, showToast]);
+
+  // Safety net against false-failure display: if the program has generated
+  // content, the generation succeeded — never show a "failed" panel over it.
+  // This catches every transient failure path (isStale notice, poll timeout,
+  // a tab that was backgrounded/reloaded mid-generation on mobile) once the
+  // persisted weeks are loaded.
+  useEffect(() => {
+    if (program && program.weeks.length > 0 && lastGenError) {
+      setLastGenError(null);
+    }
+  }, [program, lastGenError]);
 
   // Auto-show wizard for programs that haven't completed generation.
   // Skip when there's a known generation failure — the in-page "Generation failed"
