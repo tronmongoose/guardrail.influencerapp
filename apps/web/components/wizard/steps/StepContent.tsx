@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { extractAudioChunks } from "@/lib/audio-extract";
 import { ContentLegalNotice } from "../ContentLegalNotice";
 
@@ -51,6 +51,9 @@ interface FileExtractionState {
   status: "pending" | "extracting" | "transcribing" | "done" | "error";
   error?: string;
   phase?: string;
+  // Cheap local object-URL frame shown instantly while the file uploads and
+  // until Mux's thumbnail is ready. Revoked on unmount (objectUrlsRef).
+  previewUrl?: string;
 }
 
 // iOS Safari transcodes HEVC → H.264 inside the Photos picker when the input
@@ -99,50 +102,6 @@ function formatDuration(seconds: number): string {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
-// Extract a thumbnail frame and duration from a video File object (runs entirely client-side).
-// Seeks to `seekTo` seconds (or 10% of duration if shorter) to skip black frames.
-function extractVideoMetadata(
-  file: File,
-  seekTo = 2,
-): Promise<{ thumbnailUrl: string | null; durationSeconds: number | null }> {
-  return new Promise((resolve) => {
-    const objectUrl = URL.createObjectURL(file);
-    const video = document.createElement("video");
-    video.preload = "metadata";
-    video.muted = true;
-    video.playsInline = true;
-
-    let durationSeconds: number | null = null;
-    const cleanup = () => URL.revokeObjectURL(objectUrl);
-
-    video.onerror = () => { cleanup(); resolve({ thumbnailUrl: null, durationSeconds }); };
-
-    video.onloadedmetadata = () => {
-      durationSeconds = Number.isFinite(video.duration) ? Math.round(video.duration) : null;
-      video.currentTime = Math.min(seekTo, video.duration * 0.1);
-    };
-
-    video.onseeked = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        const aspect = video.videoHeight / (video.videoWidth || 1);
-        canvas.width = 640;
-        canvas.height = Math.round(640 * aspect) || 360;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) { cleanup(); resolve({ thumbnailUrl: null, durationSeconds }); return; }
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        cleanup();
-        resolve({ thumbnailUrl: canvas.toDataURL("image/jpeg", 0.7), durationSeconds });
-      } catch {
-        cleanup();
-        resolve({ thumbnailUrl: null, durationSeconds });
-      }
-    };
-
-    video.src = objectUrl;
-  });
-}
-
 export function StepContent({
   programId,
   videos,
@@ -153,6 +112,14 @@ export function StepContent({
 }: StepContentProps) {
   const [extractionStates, setExtractionStates] = useState<FileExtractionState[]>([]);
   const [aiMessageIndex, setAiMessageIndex] = useState(0);
+  // Local object-URL previews created during upload. Kept until unmount so the
+  // instant frame stays valid on both the progress card and the uploaded-video
+  // card; revoked in one pass on unmount to avoid leaking blob URLs.
+  const objectUrlsRef = useRef<string[]>([]);
+  useEffect(() => {
+    const urls = objectUrlsRef.current;
+    return () => { for (const url of urls) URL.revokeObjectURL(url); };
+  }, []);
   // iOS Safari makes the Photos picker prepare each video (iCloud download +
   // HEVC→H.264 transcode) before dismissing — out of our control. Show iOS
   // users an expectation-setting note so the wait doesn't read as "stuck."
@@ -265,6 +232,15 @@ export function StepContent({
       onUploadCountsChange?.({ pending: 0, bytes: -1 });
     };
 
+    // Cheap, synchronous local frame — shown instantly on the progress card so
+    // the picker closing feels immediate, with no main-thread <video>/canvas
+    // decode. Mux supplies the durable thumbnail + duration later via webhook.
+    const localPreview = URL.createObjectURL(file);
+    objectUrlsRef.current.push(localPreview);
+    setExtractionStates((prev) =>
+      prev.map((s) => s.filename === file.name ? { ...s, previewUrl: localPreview } : s)
+    );
+
     try {
       updateState(0, "Uploading");
 
@@ -336,13 +312,12 @@ export function StepContent({
       decrementBytes();
       updateState(92, "Saving");
 
-      // Extract thumbnail + duration from the local File (while we still have it).
-      // Duration lets the wizard show an accurate "~N lessons" estimate before Gemini analyzes.
-      const { thumbnailUrl, durationSeconds } = await extractVideoMetadata(file);
+      // No client-side metadata decode: keep the instant local frame on the card
+      // now, and let the Mux `video.asset.ready` webhook backfill the durable
+      // thumbnail + durationSeconds server-side (see webhooks/mux/route.ts).
       return {
         ...video,
-        thumbnailUrl: thumbnailUrl ?? video.thumbnailUrl,
-        durationSeconds: durationSeconds ?? video.durationSeconds,
+        thumbnailUrl: localPreview,
       };
     } finally {
       // Refund any counter we never paid down (e.g. upload-url failed, row
@@ -724,26 +699,37 @@ export function StepContent({
             <div className="space-y-2">
               {extractionStates.map((state, i) => (
                 <div key={`${state.filename}-${i}`} className="p-2 bg-surface-dark rounded-lg border border-surface-border">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-gray-400 truncate flex-1">{state.filename}</span>
-                    <span className="text-xs ml-2 flex items-center gap-2">
-                      {state.fileSize && (
-                        <span className="text-gray-500">{(state.fileSize / (1024 * 1024)).toFixed(0)} MB</span>
-                      )}
-                      {state.status === "pending" && <span className="text-gray-500">Queued</span>}
-                      {state.status === "extracting" && <span className="text-neon-pink">{state.phase ?? `${Math.round(state.progress)}%`}</span>}
-                      {state.status === "transcribing" && <span className="text-neon-cyan">{state.phase ?? "Transcribing..."}</span>}
-                      {state.status === "done" && <span className="text-green-400">Done</span>}
-                      {state.status === "error" && <span className="text-red-400">Error</span>}
-                    </span>
-                  </div>
-                  <div className="h-1 bg-surface-border rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-300 ${
-                        state.status === "error" ? "bg-red-500" : state.status === "done" ? "bg-green-500" : state.status === "transcribing" ? "bg-neon-cyan" : state.status === "pending" ? "bg-gray-600" : "bg-neon-pink"
-                      }`}
-                      style={{ width: `${state.status === "pending" ? 0 : state.progress}%` }}
-                    />
+                  <div className="flex items-start gap-2">
+                    {state.previewUrl && (
+                      <img
+                        src={state.previewUrl}
+                        alt=""
+                        className="w-16 h-9 object-cover rounded flex-shrink-0"
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-gray-400 truncate flex-1">{state.filename}</span>
+                        <span className="text-xs ml-2 flex items-center gap-2">
+                          {state.fileSize && (
+                            <span className="text-gray-500">{(state.fileSize / (1024 * 1024)).toFixed(0)} MB</span>
+                          )}
+                          {state.status === "pending" && <span className="text-gray-500">Queued</span>}
+                          {state.status === "extracting" && <span className="text-neon-pink">{state.phase ?? `${Math.round(state.progress)}%`}</span>}
+                          {state.status === "transcribing" && <span className="text-neon-cyan">{state.phase ?? "Transcribing..."}</span>}
+                          {state.status === "done" && <span className="text-green-400">Done</span>}
+                          {state.status === "error" && <span className="text-red-400">Error</span>}
+                        </span>
+                      </div>
+                      <div className="h-1 bg-surface-border rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${
+                            state.status === "error" ? "bg-red-500" : state.status === "done" ? "bg-green-500" : state.status === "transcribing" ? "bg-neon-cyan" : state.status === "pending" ? "bg-gray-600" : "bg-neon-pink"
+                          }`}
+                          style={{ width: `${state.status === "pending" ? 0 : state.progress}%` }}
+                        />
+                      </div>
+                    </div>
                   </div>
                   {state.error && (
                     <div className="flex items-start justify-between mt-1">
