@@ -43,6 +43,8 @@ model User {
   magicLinks          MagicLink[]
   promoCodes          PromoCode[]
   customSkins         CustomSkin[]
+  marketingUnsubscribedAt DateTime?
+  nurtureSends            NurtureSend[]
 }
 
 // --- Magic Link for Learner Authentication ---
@@ -641,4 +643,16 @@ enum CreativeStatus {
   RENDERED       // PNG in blob, awaiting review
   APPROVED
   REJECTED
+}
+
+
+model NurtureSend {
+  id     String   @id @default(cuid())
+  userId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  step   Int
+  sentAt DateTime @default(now())
+
+  @@unique([userId, step])
+  @@index([userId])
 }
