@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { absoluteUrl } from "@/lib/email-helpers";
 import { logger } from "@/lib/logger";
-import { renderNurtureEmail, type NurtureVars } from "@/emails/nurture/render";
+import { renderNurtureEmail, type NurtureVars, type RenderedNurture } from "@/emails/nurture/render";
 import { makeUnsubToken } from "@/lib/unsubscribe-token";
 
 // ---------------------------------------------------------------------------
@@ -121,7 +121,7 @@ export async function runNurtureCron(now: Date = new Date()): Promise<NurtureCro
       },
       nurtureSends: { select: { step: true } },
     },
-  })) as CreatorRow[];
+  })) as unknown as CreatorRow[];
 
   const summary: NurtureCronSummary = {
     scanned: creators.length,
@@ -156,7 +156,7 @@ export async function runNurtureCron(now: Date = new Date()): Promise<NurtureCro
       hasVideo: st.hasVideo,
     };
 
-    let rendered;
+    let rendered: RenderedNurture;
     try {
       rendered = renderNurtureEmail(step, vars);
     } catch (err) {
