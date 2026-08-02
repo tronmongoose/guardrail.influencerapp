@@ -9,6 +9,8 @@ const isPublicRoute = createRouteMatcher([
   "/onboarding/upgrade",
   "/api/auth/(.*)",
   "/api/webhooks/(.*)",
+  "/api/cron/(.*)", // Cron routes self-authenticate via CRON_SECRET / x-vercel-cron; Clerk would otherwise 404 the scheduled invocation before the handler runs
+  "/api/email/(.*)", // One-click unsubscribe is clicked by anonymous email recipients — must not be gated by a Clerk creator session
   "/api/promo-codes/validate",
   "/api/health",
   "/api/programs/(.*)/videos/upload", // Vercel Blob completion webhook is unauthenticated
